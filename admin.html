@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>딩글이 카드 도감 · 등대팀 관리자</title>
+<style>
+  :root{
+    --deep:#0B1730; --sea:#14264A; --sea2:#1B3159; --line:#2C4471;
+    --beam:#F7C948; --beam2:#FFE29A; --foam:#EAF0FA; --mist:#8FA3C4; --dim:#5E729A;
+    --cC:#7C8FA8; --cB:#3FB6A8; --cA:#A176E8; --cS:#F7C948;
+    --ok:#4ED8A0; --bad:#FF9A8B; --info:#6FA8E8;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;font-family:"Pretendard",-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    background:var(--deep);color:var(--foam);-webkit-font-smoothing:antialiased}
+  button,input,select{font-family:inherit}
+  button{cursor:pointer}
+  a{color:var(--beam)}
+
+  /* 로그인 */
+  .gate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+  .gate .box{width:100%;max-width:340px;text-align:center}
+  .gate h1{font-size:23px;margin:0 0 6px}
+  .gate p{color:var(--mist);font-size:13px;margin:0 0 22px}
+  .gate input{width:100%;padding:13px 14px;font-size:16px;background:rgba(255,255,255,.05);
+    border:1px solid rgba(143,163,196,.3);border-radius:10px;color:var(--foam);outline:none;margin-bottom:10px}
+  .gate input:focus{border-color:var(--beam)}
+  .btn{width:100%;padding:13px;font-size:15px;font-weight:700;background:var(--beam);
+    color:#16233D;border:none;border-radius:10px}
+  .btn:hover{filter:brightness(1.06)}
+  .btn.sm{width:auto;padding:8px 15px;font-size:13px;border-radius:8px}
+  .btn.gh{background:transparent;color:var(--foam);border:1px solid rgba(143,163,196,.35)}
+  .btn.gh:hover{border-color:var(--beam);color:var(--beam)}
+  .err{color:var(--bad);font-size:12.5px;margin-top:10px}
+
+  /* 레이아웃 */
+  .top{position:sticky;top:0;z-index:20;background:rgba(11,23,48,.96);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line)}
+  .topin{max-width:1180px;margin:0 auto;padding:13px 18px;display:flex;align-items:center;gap:14px}
+  .brand{font-weight:800;font-size:16px;white-space:nowrap}
+  .brand span{color:var(--beam)}
+  .tabs{display:flex;gap:3px;margin-left:auto;overflow-x:auto;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{padding:9px 14px;font-size:13.5px;font-weight:600;background:none;border:none;color:var(--mist);
+    border-radius:8px;white-space:nowrap}
+  .tab:hover{color:var(--foam);background:rgba(255,255,255,.05)}
+  .tab.on{color:#16233D;background:var(--beam)}
+  .wrap{max-width:1180px;margin:0 auto;padding:22px 18px 60px}
+
+  /* 카드/표 */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:11px;margin-bottom:22px}
+  .kpi{background:var(--sea);border:1px solid var(--line);border-radius:12px;padding:15px 16px}
+  .kpi .l{font-size:12px;color:var(--mist);margin-bottom:6px}
+  .kpi .v{font-size:26px;font-weight:800;line-height:1.1}
+  .kpi .s{font-size:11.5px;color:var(--dim);margin-top:5px}
+  .kpi.hl{border-color:rgba(247,201,72,.5);background:rgba(247,201,72,.08)}
+  .kpi.hl .v{color:var(--beam)}
+
+  .panel{background:var(--sea);border:1px solid var(--line);border-radius:12px;margin-bottom:18px;overflow:hidden}
+  .ph{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+  .ph h2{margin:0;font-size:15px;font-weight:700}
+  .ph .sub{font-size:12px;color:var(--mist)}
+  .ph .right{margin-left:auto;display:flex;gap:7px;align-items:center}
+  .pb{padding:16px}
+  .pb.flush{padding:0}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;padding:11px 14px;background:rgba(0,0,0,.2);color:var(--mist);font-weight:600;
+    font-size:12px;white-space:nowrap;position:sticky;top:0}
+  td{padding:11px 14px;border-top:1px solid rgba(143,163,196,.12);vertical-align:middle}
+  tbody tr:hover{background:rgba(255,255,255,.03)}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+  .scroll{max-height:520px;overflow:auto}
+
+  .chip{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:999px;white-space:nowrap}
+  .chip.C{background:rgba(124,143,168,.2);color:#B6C4D8;border:1px solid rgba(124,143,168,.5)}
+  .chip.B{background:rgba(63,182,168,.16);color:#8FE3D6;border:1px solid rgba(63,182,168,.5)}
+  .chip.A{background:rgba(161,118,232,.16);color:#CFB6F5;border:1px solid rgba(161,118,232,.5)}
+  .chip.S{background:rgba(247,201,72,.16);color:var(--beam2);border:1px solid rgba(247,201,72,.5)}
+  .chip.wait{background:rgba(143,163,196,.16);color:var(--mist);border:1px solid rgba(143,163,196,.4)}
+  .chip.ok{background:rgba(78,216,160,.16);color:#7FE9C0;border:1px solid rgba(78,216,160,.45)}
+  .chip.no{background:rgba(255,154,139,.14);color:var(--bad);border:1px solid rgba(255,154,139,.45)}
+
+  .bar{height:9px;background:rgba(0,0,0,.28);border-radius:999px;overflow:hidden;min-width:90px}
+  .bar i{display:block;height:100%;border-radius:999px}
+
+  input.search,select.sel{padding:8px 11px;font-size:13px;background:rgba(0,0,0,.25);
+    border:1px solid rgba(143,163,196,.3);border-radius:8px;color:var(--foam);outline:none}
+  input.search:focus,select.sel:focus{border-color:var(--beam)}
+  select.sel option{background:#12233F}
+
+  .rev{display:grid;grid-template-columns:repeat(auto-fill,minmax(268px,1fr));gap:13px}
+  .rc{background:rgba(0,0,0,.2);border:1px solid var(--line);border-radius:11px;overflow:hidden}
+  .rc .rh{padding:11px 13px;display:flex;align-items:center;gap:8px;font-size:13px}
+  .rc .rh b{font-weight:700}
+  .rc .rh .sid{color:var(--mist);font-size:11.5px}
+  .rc img{width:100%;height:210px;object-fit:contain;object-position:top;background:#0A1428;
+    display:block;cursor:zoom-in}
+  .rc .ra{display:flex;gap:6px;padding:11px 13px}
+  .rc .ra button{flex:1;padding:9px;font-size:12.5px;font-weight:700;border-radius:8px;border:none}
+  .rc .ra .y{background:rgba(78,216,160,.18);color:#7FE9C0;border:1px solid rgba(78,216,160,.45)}
+  .rc .ra .n{background:rgba(255,154,139,.14);color:var(--bad);border:1px solid rgba(255,154,139,.45)}
+  .rc .done{padding:12px;text-align:center;font-size:12.5px}
+
+  .qcard{background:rgba(0,0,0,.18);border:1px solid var(--line);border-radius:11px;padding:15px;margin-bottom:12px}
+  .qcard h3{margin:0 0 3px;font-size:14.5px}
+  .qcard .meta{font-size:11.5px;color:var(--mist);margin-bottom:12px}
+  .row{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:13px}
+  .row .lb{width:150px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .bar{flex:1}
+  .row .n{width:64px;text-align:right;color:var(--mist);font-size:12px;font-variant-numeric:tabular-nums}
+  .memos{margin-top:12px;padding-top:12px;border-top:1px solid rgba(143,163,196,.15)}
+  .memo{font-size:12.5px;color:var(--foam);background:rgba(0,0,0,.2);border-radius:8px;
+    padding:9px 11px;margin-bottom:6px;line-height:1.5}
+  .memo b{color:var(--mist);font-weight:600;font-size:11px}
+
+  .empty{padding:44px 16px;text-align:center;color:var(--dim);font-size:13.5px;line-height:1.7}
+  .spin{display:inline-block;width:16px;height:16px;border:2px solid rgba(143,163,196,.3);
+    border-top-color:var(--beam);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-3px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .zoom{position:fixed;inset:0;z-index:300;background:rgba(4,9,20,.95);display:flex;
+    align-items:center;justify-content:center;padding:20px;cursor:zoom-out}
+  .zoom img{max-width:100%;max-height:100%;border-radius:10px}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:rgba(20,38,74,.97);
+    border:1px solid var(--beam);color:var(--beam2);padding:11px 20px;border-radius:999px;
+    font-size:13.5px;z-index:400;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+  .note{font-size:12px;color:var(--dim);line-height:1.7}
+  @media(max-width:640px){
+    .topin{flex-wrap:wrap} .tabs{margin-left:0;width:100%;order:3}
+    .row .lb{width:104px}
+  }
+</style>
+</head>
+<body>
+<div id="app"><div class="gate"><span class="spin"></span></div></div>
+
+<script>
+/* ═══════════════════════════════════════════════
+   딩글이 카드 도감 — 등대팀 관리자
+   ═══════════════════════════════════════════════ */
+
+/* ── 설정: 학생용 index.html과 동일하게 맞춰주세요 ── */
+const CONFIG = {
+  API_URL: "https://script.google.com/macros/s/AKfycbxUZaehFQKouWSiDH52J7uikB3wTkJye_ef-6ADp7VRA9GlPgip0UY0YyQp46eRRapT6g/exec",                 // Apps Script 웹앱 주소
+  STAFF_CODE: "DINGLE20",      // 담당자 코드
+  CAP: 5,
+};
+
+const TIERS = {
+  C: { color: "#7C8FA8", word: "일반", goods: "소정의 선물" },
+  B: { color: "#3FB6A8", word: "희귀", goods: "조금 더 좋은 선물" },
+  A: { color: "#A176E8", word: "영웅", goods: "더 좋은 선물" },
+  S: { color: "#F7C948", word: "전설", goods: "특별 선물" },
+};
+const TIER_KEYS = ["C", "B", "A", "S"];
+const PER_TIER = 7;
+
+const PROGRAMS = [
+  { id: "p1", name: "학습동아리" },
+  { id: "p2", name: "학습튜터링" },
+  { id: "p3", name: "학습법 특강" },
+  { id: "p4", name: "학습코칭 상담" },
+  { id: "p5", name: "의사소통코칭" },
+  { id: "p6", name: "의사소통 워크숍" },
+];
+
+const api = CONFIG.API_URL && CONFIG.API_URL.indexOf("http") === 0;
+
+let D = { students: [], proofs: [], surveys: [], ratings: [] };
+let V = { tab: "home", loading: false, q: "", revFilter: "wait", err: "" };
+
+const app = document.getElementById("app");
+const $ = id => document.getElementById(id);
+const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function toast(m) {
+  const e = document.createElement("div");
+  e.className = "toast"; e.textContent = m;
+  document.body.appendChild(e);
+  setTimeout(() => e.remove(), 2200);
+}
+
+function proofLabel(key) {
+  if (key === "follow") return "인스타 팔로우";
+  const a = String(key).split(":");
+  const p = PROGRAMS.find(x => x.id === a[1]);
+  const nm = p ? p.name : a[1];
+  return a[0] === "apply" ? nm + " 신청" : nm + " 완료";
+}
+
+/* ── 데이터 로드 ── */
+async function load() {
+  V.loading = true; render();
+  try {
+    if (api) {
+      const r = await fetch(CONFIG.API_URL + "?action=admin");
+      const j = await r.json();
+      D = { students: j.students || [], proofs: j.proofs || [], surveys: j.surveys || [], ratings: j.ratings || [] };
+    } else {
+      D = fromLocal();
+    }
+    V.err = "";
+  } catch (e) {
+    V.err = "데이터를 불러오지 못했습니다. API 주소를 확인해 주세요.";
+  }
+  V.loading = false; render();
+}
+
+/* 서버 없이 이 기기에서 테스트할 때 */
+function fromLocal() {
+  const out = { students: [], proofs: [], surveys: [], ratings: [] };
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (!k || k.indexOf("dingle:") !== 0) continue;
+    let d; try { d = JSON.parse(localStorage.getItem(k)); } catch (e) { continue; }
+    const owned = d.owned || {};
+    out.students.push({
+      sid: d.sid, name: d.name, owned: owned, claims: d.claims || {}, proofs: d.proofs || {},
+      types: Object.keys(owned).filter(x => owned[x] > 0).length,
+      pending: d.pending || 0,
+      exchanged: Object.keys(d.exchanged || {}).join(","),
+      quizDone: (d.quizDone || []).length, at: d.createdAt || 0,
+    });
+    Object.keys(d.proofs || {}).forEach(key => {
+      const pr = d.proofs[key];
+      out.proofs.push({ sid: d.sid, name: d.name, key, at: pr.at, status: pr.status || "wait", img: pr.img });
+    });
+    (d.surveys || []).forEach(sv => out.surveys.push(Object.assign({ sid: d.sid, name: d.name }, sv)));
+    Object.keys(d.ratings || {}).forEach(pid => {
+      const rt = d.ratings[pid];
+      out.ratings.push({ sid: d.sid, name: d.name, program: rt.program, score: rt.score || 0, memo: rt.memo || "" });
+    });
+  }
+  return out;
+}
+
+/* ── 집계 ── */
+function tierDone(st, t) {
+  const o = st.owned || {};
+  let n = 0;
+  for (let i = 1; i <= PER_TIER; i++) if ((o[t + i] || 0) > 0) n++;
+  return n;
+}
+function stats() {
+  const s = { total: D.students.length, cards: 0, wait: 0, exch: 0, comp: { C: 0, B: 0, A: 0, S: 0 }, full: 0 };
+  D.students.forEach(st => {
+    const o = st.owned || {};
+    Object.keys(o).forEach(k => s.cards += o[k]);
+    TIER_KEYS.forEach(t => { if (tierDone(st, t) === PER_TIER) s.comp[t]++; });
+    if (TIER_KEYS.every(t => tierDone(st, t) === PER_TIER)) s.full++;
+    s.exch += String(st.exchanged || "").split(",").filter(Boolean).length;
+  });
+  s.wait = D.proofs.filter(p => p.status === "wait").length;
+  return s;
+}
+
+/* ── 화면: 로그인 ── */
+function viewGate() {
+  return `
+    <div class="gate"><div class="box">
+      <h1>등대팀 관리자</h1>
+      <p>딩글이 카드 도감 운영 화면입니다</p>
+      <input id="code" type="password" placeholder="담당자 코드" autocomplete="off">
+      <button class="btn" id="go">들어가기</button>
+      ${V.err ? `<div class="err">${esc(V.err)}</div>` : ""}
+      <p class="note" style="margin-top:20px">
+        ${api ? "서버에 연결되어 있습니다" : "API 주소가 비어 있어 이 기기의 데이터만 표시됩니다"}
+      </p>
+    </div></div>`;
+}
+
+/* ── 화면: 공통 틀 ── */
+function shell(inner) {
+  const tabs = [["home", "현황"], ["review", "인증 검토"], ["students", "참여자"],
+                ["survey", "설문"], ["rating", "만족도"], ["exchange", "교환"]];
+  const w = D.proofs.filter(p => p.status === "wait").length;
+  return `
+    <div class="top"><div class="topin">
+      <div class="brand">딩글이 카드 도감 <span>관리자</span></div>
+      <div class="tabs">
+        ${tabs.map(([k, l]) => `<button class="tab ${V.tab === k ? "on" : ""}" data-tab="${k}">
+          ${l}${k === "review" && w ? " " + w : ""}</button>`).join("")}
+      </div>
+      <button class="btn gh sm" id="reload">${V.loading ? '<span class="spin"></span>' : "새로고침"}</button>
+    </div></div>
+    <div class="wrap">${inner}</div>`;
+}
+
+/* ── 현황 ── */
+function viewHome() {
+  const s = stats();
+  const avg = s.total ? (s.cards / s.total).toFixed(1) : "0";
+  const rate = s.total ? Math.round(D.students.filter(x => x.types > 0).length / s.total * 100) : 0;
+
+  return shell(`
+    <div class="cards">
+      <div class="kpi"><div class="l">참여 학생</div><div class="v">${s.total}</div>
+        <div class="s">카드를 1장 이상 받은 학생 ${Math.round(rate)}%</div></div>
+      <div class="kpi"><div class="l">지급된 카드</div><div class="v">${s.cards.toLocaleString()}</div>
+        <div class="s">1인 평균 ${avg}장</div></div>
+      <div class="kpi ${s.wait ? "hl" : ""}"><div class="l">검토 대기</div><div class="v">${s.wait}</div>
+        <div class="s">${s.wait ? "확인이 필요합니다" : "모두 처리했습니다"}</div></div>
+      <div class="kpi"><div class="l">교환 완료</div><div class="v">${s.exch}</div>
+        <div class="s">전 등급 완성 ${s.full}명</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h2>등급별 완성자</h2><span class="sub">한 등급 ${PER_TIER}종을 모두 모은 학생 수</span></div>
+      <div class="pb">
+        ${TIER_KEYS.map(t => {
+          const n = s.comp[t], pct = s.total ? Math.round(n / s.total * 100) : 0;
+          return `<div class="row">
+            <div class="lb"><span class="chip ${t}">${t} ${TIERS[t].word}</span></div>
+            <div class="bar"><i style="width:${pct}%;background:${TIERS[t].color}"></i></div>
+            <div class="n">${n}명 · ${pct}%</div></div>`;
+        }).join("")}
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h2>참여 경로별 인원</h2><span class="sub">해당 항목으로 카드를 받은 학생 수</span></div>
+      <div class="pb">
+        ${routeRows()}
+      </div>
+    </div>
+  `);
+}
+
+function routeRows() {
+  const rows = [];
+  const N = D.students.length || 1;
+  const count = pred => D.students.filter(st => Object.keys(st.claims || {}).some(pred)).length;
+
+  rows.push(["인스타 팔로우", count(k => k === "follow")]);
+  rows.push(["퀴즈 참여", D.students.filter(st => (st.quizDone || 0) > 0).length]);
+  PROGRAMS.forEach(p => {
+    rows.push([p.name + " 신청", count(k => k === "apply:" + p.id)]);
+    rows.push([p.name + " 완료", count(k => k === "done:" + p.id)]);
+  });
+  rows.push(["이벤트 코드", count(k => k.indexOf("event:") === 0)]);
+
+  return rows.map(([l, n]) => {
+    const pct = Math.round(n / N * 100);
+    return `<div class="row"><div class="lb">${esc(l)}</div>
+      <div class="bar"><i style="width:${pct}%;background:var(--info)"></i></div>
+      <div class="n">${n}명</div></div>`;
+  }).join("");
+}
+
+/* ── 인증 검토 ── */
+function viewReview() {
+  const list = D.proofs
+    .filter(p => V.revFilter === "all" ? true : p.status === V.revFilter)
+    .sort((a, b) => (a.at || 0) - (b.at || 0));
+
+  return shell(`
+    <div class="panel">
+      <div class="ph">
+        <h2>인증 검토</h2>
+        <span class="sub">캡처를 확인하고 승인 또는 반려해 주세요</span>
+        <div class="right">
+          <select class="sel" id="rf">
+            <option value="wait" ${V.revFilter === "wait" ? "selected" : ""}>검토 대기</option>
+            <option value="ok" ${V.revFilter === "ok" ? "selected" : ""}>승인됨</option>
+            <option value="no" ${V.revFilter === "no" ? "selected" : ""}>반려됨</option>
+            <option value="all" ${V.revFilter === "all" ? "selected" : ""}>전체</option>
+          </select>
+        </div>
+      </div>
+      <div class="pb">
+        ${list.length ? `<div class="rev">${list.map((it, i) => `
+          <div class="rc" id="rc${i}">
+            <div class="rh"><b>${esc(it.name)}</b><span class="sid">${esc(it.sid)}</span>
+              <span class="chip ${it.status}" style="margin-left:auto">${proofLabel(it.key)}</span></div>
+            <img src="${esc(it.img)}" alt="인증 캡처" loading="lazy">
+            ${it.status === "wait"
+              ? `<div class="ra"><button class="y" data-ok="${i}">승인</button>
+                 <button class="n" data-no="${i}">반려</button></div>`
+              : `<div class="done" style="color:${it.status === "ok" ? "#7FE9C0" : "var(--bad)"}">
+                 ${it.status === "ok" ? "승인됨" : "반려됨"} · 
+                 <button class="btn gh sm" data-re="${i}" style="padding:4px 10px;font-size:11.5px">되돌리기</button></div>`}
+          </div>`).join("")}</div>`
+          : `<div class="empty">해당하는 인증이 없습니다.</div>`}
+      </div>
+    </div>`);
+}
+
+/* ── 참여자 ── */
+function viewStudents() {
+  const q = V.q.trim();
+  const list = D.students
+    .filter(s => !q || s.name.indexOf(q) >= 0 || String(s.sid).indexOf(q) >= 0)
+    .sort((a, b) => b.types - a.types);
+
+  return shell(`
+    <div class="panel">
+      <div class="ph"><h2>참여자</h2><span class="sub">${list.length}명</span>
+        <div class="right">
+          <input class="search" id="q" placeholder="이름 또는 학번" value="${esc(V.q)}">
+          <button class="btn gh sm" id="csv">CSV 내려받기</button>
+        </div>
+      </div>
+      <div class="pb flush"><div class="scroll">
+        <table>
+          <thead><tr>
+            <th>이름</th><th>학번</th><th class="num">보유</th>
+            <th>C</th><th>B</th><th>A</th><th>S</th>
+            <th class="num">미개봉</th><th class="num">퀴즈</th><th>교환</th>
+          </tr></thead>
+          <tbody>
+            ${list.length ? list.map(s => `<tr>
+              <td>${esc(s.name)}</td>
+              <td style="color:var(--mist)">${esc(s.sid)}</td>
+              <td class="num">${s.types} / ${PER_TIER * 4}</td>
+              ${TIER_KEYS.map(t => {
+                const n = tierDone(s, t);
+                return `<td style="color:${n === PER_TIER ? TIERS[t].color : "var(--dim)"};font-weight:${n === PER_TIER ? 800 : 400}">${n}/${PER_TIER}</td>`;
+              }).join("")}
+              <td class="num">${s.pending}</td>
+              <td class="num">${s.quizDone || 0}</td>
+              <td>${String(s.exchanged || "").split(",").filter(Boolean)
+                    .map(t => `<span class="chip ${t}">${t}</span>`).join(" ") || "-"}</td>
+            </tr>`).join("") : `<tr><td colspan="10"><div class="empty">참여자가 없습니다.</div></td></tr>`}
+          </tbody>
+        </table>
+      </div></div>
+    </div>`);
+}
+
+/* ── 설문 ── */
+function viewSurvey() {
+  const byQ = {};
+  D.surveys.forEach(s => {
+    if (!byQ[s.q]) byQ[s.q] = { total: 0, ans: {}, etc: [], weeks: {} };
+    const g = byQ[s.q];
+    g.total++;
+    if (s.answer) g.ans[s.answer] = (g.ans[s.answer] || 0) + 1;
+    if (s.etc) g.etc.push({ name: s.name, t: s.etc });
+    if (s.week) g.weeks[s.week] = true;
+  });
+  const keys = Object.keys(byQ);
+
+  return shell(`
+    <div class="panel">
+      <div class="ph"><h2>설문 응답</h2>
+        <span class="sub">총 ${D.surveys.length}건 · 문항 ${keys.length}개</span>
+        <div class="right"><button class="btn gh sm" id="csvsv">CSV 내려받기</button></div>
+      </div>
+      <div class="pb">
+        ${keys.length ? keys.map(q => {
+          const g = byQ[q];
+          const opts = Object.keys(g.ans).sort((a, b) => g.ans[b] - g.ans[a]);
+          const max = Math.max(1, ...opts.map(o => g.ans[o]));
+          return `<div class="qcard">
+            <h3>${esc(q)}</h3>
+            <div class="meta">응답 ${g.total}건 · ${Object.keys(g.weeks).length}개 주차</div>
+            ${opts.map(o => {
+              const n = g.ans[o], pct = Math.round(n / g.total * 100);
+              return `<div class="row"><div class="lb">${esc(o)}</div>
+                <div class="bar"><i style="width:${Math.round(n / max * 100)}%;background:var(--info)"></i></div>
+                <div class="n">${n}건 · ${pct}%</div></div>`;
+            }).join("")}
+            ${g.etc.length ? `<div class="memos">
+              <div class="meta" style="margin-bottom:8px">직접 입력 ${g.etc.length}건</div>
+              ${g.etc.slice(0, 30).map(e => `<div class="memo"><b>${esc(e.name)}</b> · ${esc(e.t)}</div>`).join("")}
+              ${g.etc.length > 30 ? `<div class="note">외 ${g.etc.length - 30}건 — CSV에서 전체를 볼 수 있습니다</div>` : ""}
+            </div>` : ""}
+          </div>`;
+        }).join("") : `<div class="empty">아직 설문 응답이 없습니다.<br>학생이 퀴즈를 풀면 이곳에 쌓입니다.</div>`}
+      </div>
+    </div>`);
+}
+
+/* ── 만족도 ── */
+function viewRating() {
+  const byP = {};
+  D.ratings.forEach(r => {
+    const k = r.program || "기타";
+    if (!byP[k]) byP[k] = { n: 0, sum: 0, cnt: 0, memos: [] };
+    byP[k].n++;
+    if (r.score) { byP[k].sum += r.score; byP[k].cnt++; }
+    if (r.memo) byP[k].memos.push({ name: r.name, t: r.memo, s: r.score });
+  });
+  const keys = Object.keys(byP).sort((a, b) => (byP[b].cnt ? byP[b].sum / byP[b].cnt : 0) - (byP[a].cnt ? byP[a].sum / byP[a].cnt : 0));
+
+  return shell(`
+    <div class="panel">
+      <div class="ph"><h2>프로그램 만족도</h2>
+        <span class="sub">활동 완료 인증 시 받은 응답 ${D.ratings.length}건</span>
+        <div class="right"><button class="btn gh sm" id="csvrt">CSV 내려받기</button></div>
+      </div>
+      <div class="pb">
+        ${keys.length ? keys.map(k => {
+          const g = byP[k];
+          const avg = g.cnt ? (g.sum / g.cnt) : 0;
+          return `<div class="qcard">
+            <h3>${esc(k)}</h3>
+            <div class="meta">응답 ${g.n}건 · 별점 ${g.cnt}건</div>
+            <div class="row">
+              <div class="lb" style="color:var(--beam);font-weight:800;font-size:17px">
+                ${g.cnt ? avg.toFixed(1) : "-"}<span style="font-size:12px;color:var(--mist);font-weight:400"> / 5</span></div>
+              <div class="bar"><i style="width:${avg / 5 * 100}%;background:var(--beam)"></i></div>
+              <div class="n">${"★".repeat(Math.round(avg))}</div>
+            </div>
+            ${g.memos.length ? `<div class="memos">
+              ${g.memos.slice(0, 20).map(m => `<div class="memo">
+                <b>${esc(m.name)}${m.s ? " · " + "★".repeat(m.s) : ""}</b><br>${esc(m.t)}</div>`).join("")}
+              ${g.memos.length > 20 ? `<div class="note">외 ${g.memos.length - 20}건</div>` : ""}
+            </div>` : ""}
+          </div>`;
+        }).join("") : `<div class="empty">아직 만족도 응답이 없습니다.<br>학생이 활동 완료를 인증하면 이곳에 쌓입니다.</div>`}
+      </div>
+    </div>`);
+}
+
+/* ── 교환 ── */
+function viewExchange() {
+  const rows = [];
+  D.students.forEach(s => {
+    const done = String(s.exchanged || "").split(",").filter(Boolean);
+    TIER_KEYS.forEach(t => {
+      if (tierDone(s, t) === PER_TIER && done.indexOf(t) < 0)
+        rows.push({ s, t });
+    });
+  });
+  rows.sort((a, b) => TIER_KEYS.indexOf(b.t) - TIER_KEYS.indexOf(a.t));
+
+  const doneList = [];
+  D.students.forEach(s => String(s.exchanged || "").split(",").filter(Boolean)
+    .forEach(t => doneList.push({ s, t })));
+
+  return shell(`
+    <div class="panel">
+      <div class="ph"><h2>교환 대상</h2>
+        <span class="sub">등급을 완성했지만 아직 교환하지 않은 학생 ${rows.length}건</span>
+      </div>
+      <div class="pb flush"><div class="scroll">
+        <table>
+          <thead><tr><th>이름</th><th>학번</th><th>등급</th><th>지급할 선물</th></tr></thead>
+          <tbody>
+            ${rows.length ? rows.map(r => `<tr>
+              <td>${esc(r.s.name)}</td><td style="color:var(--mist)">${esc(r.s.sid)}</td>
+              <td><span class="chip ${r.t}">${r.t} ${TIERS[r.t].word}</span></td>
+              <td>${TIERS[r.t].goods}</td></tr>`).join("")
+              : `<tr><td colspan="4"><div class="empty">교환 대기 중인 학생이 없습니다.</div></td></tr>`}
+          </tbody>
+        </table>
+      </div></div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h2>교환 완료</h2><span class="sub">${doneList.length}건</span>
+        <div class="right"><button class="btn gh sm" id="csvex">CSV 내려받기</button></div>
+      </div>
+      <div class="pb flush"><div class="scroll" style="max-height:340px">
+        <table>
+          <thead><tr><th>이름</th><th>학번</th><th>등급</th><th>지급한 선물</th></tr></thead>
+          <tbody>
+            ${doneList.length ? doneList.map(r => `<tr>
+              <td>${esc(r.s.name)}</td><td style="color:var(--mist)">${esc(r.s.sid)}</td>
+              <td><span class="chip ${r.t}">${r.t}</span></td>
+              <td>${TIERS[r.t].goods}</td></tr>`).join("")
+              : `<tr><td colspan="4"><div class="empty">아직 교환 내역이 없습니다.</div></td></tr>`}
+          </tbody>
+        </table>
+      </div></div>
+    </div>
+
+    <p class="note">교환 처리는 학생 화면에서 담당자 코드를 입력해 진행합니다. 이 표는 부스에서 대상자를 확인할 때 사용하세요.</p>`);
+}
+
+/* ── CSV ── */
+function csv(rows, name) {
+  const body = rows.map(r => r.map(c => {
+    const v = String(c == null ? "" : c);
+    return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  }).join(",")).join("\n");
+  const blob = new Blob(["\uFEFF" + body], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name + "_" + new Date().toISOString().slice(0, 10) + ".csv";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+}
+
+/* ── 렌더 ── */
+let authed = false;
+function render() {
+  if (!authed) { app.innerHTML = viewGate(); return bindGate(); }
+  if (V.tab === "review") app.innerHTML = viewReview();
+  else if (V.tab === "students") app.innerHTML = viewStudents();
+  else if (V.tab === "survey") app.innerHTML = viewSurvey();
+  else if (V.tab === "rating") app.innerHTML = viewRating();
+  else if (V.tab === "exchange") app.innerHTML = viewExchange();
+  else app.innerHTML = viewHome();
+  bind();
+}
+
+function bindGate() {
+  const go = $("go");
+  go.onclick = async () => {
+    const v = ($("code").value || "").trim().toUpperCase();
+    if (v !== CONFIG.STAFF_CODE.toUpperCase()) { V.err = "코드가 올바르지 않습니다."; return render(); }
+    authed = true; V.err = "";
+    await load();
+  };
+  $("code").onkeydown = e => { if (e.key === "Enter") go.click(); };
+  setTimeout(() => $("code") && $("code").focus(), 40);
+}
+
+function bind() {
+  app.querySelectorAll("[data-tab]").forEach(el => el.onclick = () => { V.tab = el.dataset.tab; render(); });
+  $("reload") && ($("reload").onclick = () => load());
+
+  // 검토
+  $("rf") && ($("rf").onchange = e => { V.revFilter = e.target.value; render(); });
+  const list = D.proofs.filter(p => V.revFilter === "all" ? true : p.status === V.revFilter)
+                       .sort((a, b) => (a.at || 0) - (b.at || 0));
+  app.querySelectorAll(".rc img").forEach(im => im.onclick = () => {
+    const z = document.createElement("div");
+    z.className = "zoom"; z.innerHTML = `<img src="${im.src}" alt="">`;
+    z.onclick = () => z.remove(); document.body.appendChild(z);
+  });
+  const rev = async (i, st, btn) => {
+    const it = list[i];
+    btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+    try {
+      await review(it.sid, it.key, st);
+      it.status = st;
+      const src = D.proofs.find(p => p.sid === it.sid && p.key === it.key);
+      if (src) src.status = st;
+      toast(st === "ok" ? "승인했습니다" : "반려했습니다");
+      render();
+    } catch (e) { btn.disabled = false; btn.textContent = st === "ok" ? "승인" : "반려"; toast("처리에 실패했습니다"); }
+  };
+  app.querySelectorAll("[data-ok]").forEach(b => b.onclick = () => rev(+b.dataset.ok, "ok", b));
+  app.querySelectorAll("[data-no]").forEach(b => b.onclick = () => rev(+b.dataset.no, "no", b));
+  app.querySelectorAll("[data-re]").forEach(b => b.onclick = () => rev(+b.dataset.re, "wait", b));
+
+  // 검색
+  const q = $("q");
+  if (q) {
+    q.oninput = () => { V.q = q.value; const p = q.selectionStart; render();
+      const n = $("q"); if (n) { n.focus(); n.setSelectionRange(p, p); } };
+  }
+
+  // CSV
+  $("csv") && ($("csv").onclick = () => csv(
+    [["이름", "학번", "보유종수", "C", "B", "A", "S", "미개봉", "퀴즈참여", "교환등급"]].concat(
+      D.students.map(s => [s.name, s.sid, s.types].concat(TIER_KEYS.map(t => tierDone(s, t)))
+        .concat([s.pending, s.quizDone || 0, s.exchanged || ""]))), "참여자"));
+  $("csvsv") && ($("csvsv").onclick = () => csv(
+    [["주차", "학번", "이름", "질문", "선택한 답", "직접 입력"]].concat(
+      D.surveys.map(s => [s.week, s.sid, s.name, s.q, s.answer, s.etc])), "설문응답"));
+  $("csvrt") && ($("csvrt").onclick = () => csv(
+    [["학번", "이름", "프로그램", "별점", "한 줄 후기"]].concat(
+      D.ratings.map(r => [r.sid, r.name, r.program, r.score, r.memo])), "만족도"));
+  $("csvex") && ($("csvex").onclick = () => {
+    const rows = [["이름", "학번", "등급", "선물"]];
+    D.students.forEach(s => String(s.exchanged || "").split(",").filter(Boolean)
+      .forEach(t => rows.push([s.name, s.sid, t, TIERS[t] ? TIERS[t].goods : ""])));
+    csv(rows, "교환내역");
+  });
+}
+
+async function review(sid, key, status) {
+  if (api) {
+    await fetch(CONFIG.API_URL, {
+      method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "review", sid, key, status }),
+    });
+    return;
+  }
+  const raw = localStorage.getItem("dingle:" + sid);
+  if (!raw) return;
+  const d = JSON.parse(raw);
+  if (d.proofs && d.proofs[key]) d.proofs[key].status = status;
+  localStorage.setItem("dingle:" + sid, JSON.stringify(d));
+}
+
+render();
+</script>
+</body>
+</html>

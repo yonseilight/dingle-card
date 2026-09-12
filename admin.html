@@ -95,8 +95,16 @@
   .rc .rh{padding:11px 13px;display:flex;align-items:center;gap:8px;font-size:13px}
   .rc .rh b{font-weight:700}
   .rc .rh .sid{color:var(--mist);font-size:11.5px}
+  .rc{position:relative}
   .rc img{width:100%;height:210px;object-fit:contain;object-position:top;background:#0A1428;
     display:block;cursor:zoom-in}
+  .rc img.bad{min-height:210px}
+  .rc img.bad+.openorig{background:rgba(255,154,139,.16);border-color:rgba(255,154,139,.5);
+    color:var(--bad)}
+  .rc .openorig{position:absolute;right:10px;top:46px;z-index:4;font-size:11px;
+    background:rgba(11,23,48,.85);border:1px solid rgba(143,163,196,.4);color:var(--mist);
+    padding:4px 9px;border-radius:999px;text-decoration:none}
+  .rc .openorig:hover{border-color:var(--beam);color:var(--beam)}
   .rc .ra{display:flex;gap:6px;padding:11px 13px}
   .rc .ra button{flex:1;padding:9px;font-size:12.5px;font-weight:700;border-radius:8px;border:none}
   .rc .ra .y{background:rgba(78,216,160,.18);color:#7FE9C0;border:1px solid rgba(78,216,160,.45)}
@@ -142,8 +150,8 @@
 
 /* ── 설정: 학생용 index.html과 동일하게 맞춰주세요 ── */
 const CONFIG = {
-  API_URL: "https://script.google.com/macros/s/AKfycbzG9m2zMqCLCkxWinagr5fRNIL_0e0Cm51GG9BhK_0mzXu0fOxqbyiZe8WjqFjbZ-T8qw/exec",                 // Apps Script 웹앱 주소
-  STAFF_CODE: "DINGLE20",      // 담당자 코드
+  API_URL: "https://script.google.com/macros/s/AKfycbyR4GC6zIlptvF2WscI_VbTyy7CEydxRxHFHJM_5Pw5O3RxczXJjRjCuvNCImbdde_Z3Q/exec",                 // Apps Script 웹앱 주소
+  STAFF_CODE: "LH20-K7XQ",      // 담당자 코드
   CAP: 5,
 };
 
@@ -181,6 +189,21 @@ function toast(m) {
   e.className = "toast"; e.textContent = m;
   document.body.appendChild(e);
   setTimeout(() => e.remove(), 2200);
+}
+
+/* 구글 드라이브 주소를 이미지로 표시 가능한 형태로 바꾼다.
+   예전에 저장된 uc?export=view 주소도 자동 변환된다. */
+function imgUrl(u) {
+  u = String(u || "");
+  const m = u.match(/[-\w]{25,}/);          // 드라이브 파일 ID
+  if (u.indexOf("drive.google.com") >= 0 && m) {
+    return "https://drive.google.com/thumbnail?id=" + m[0] + "&sz=w1200";
+  }
+  return u;
+}
+function origUrl(u) {
+  const m = String(u || "").match(/[-\w]{25,}/);
+  return m ? "https://drive.google.com/file/d/" + m[0] + "/view" : u;
 }
 
 function proofLabel(key) {
@@ -376,7 +399,10 @@ function viewReview() {
           <div class="rc" id="rc${i}">
             <div class="rh"><b>${esc(it.name)}</b><span class="sid">${esc(it.sid)}</span>
               <span class="chip ${it.status}" style="margin-left:auto">${proofLabel(it.key)}</span></div>
-            <img src="${esc(it.img)}" alt="인증 캡처" loading="lazy">
+            <img src="${esc(imgUrl(it.img))}" alt="" loading="lazy" referrerpolicy="no-referrer"
+                 data-full="${esc(origUrl(it.img))}"
+                 onerror="this.classList.add('bad')">
+            <a class="openorig" href="${esc(origUrl(it.img))}" target="_blank" rel="noopener">원본 열기</a>
             ${it.status === "wait"
               ? `<div class="ra"><button class="y" data-ok="${i}">승인</button>
                  <button class="n" data-no="${i}">반려</button></div>`
@@ -684,7 +710,8 @@ function bind() {
                        .sort((a, b) => (a.at || 0) - (b.at || 0));
   app.querySelectorAll(".rc img").forEach(im => im.onclick = () => {
     const z = document.createElement("div");
-    z.className = "zoom"; z.innerHTML = `<img src="${im.src}" alt="">`;
+    z.className = "zoom";
+    z.innerHTML = `<img src="${im.src}" alt="" referrerpolicy="no-referrer">`;
     z.onclick = () => z.remove(); document.body.appendChild(z);
   });
   const rev = async (i, st, btn) => {

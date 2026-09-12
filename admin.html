@@ -142,7 +142,7 @@
 
 /* ── 설정: 학생용 index.html과 동일하게 맞춰주세요 ── */
 const CONFIG = {
-  API_URL: "https://script.google.com/macros/s/AKfycbzG9m2zMqCLCkxWinagr5fRNIL_0e0Cm51GG9BhK_0mzXu0fOxqbyiZe8WjqFjbZ-T8qw/exec",                 // Apps Script 웹앱 주소
+  API_URL: "https://script.google.com/macros/s/AKfycbyR4GC6zIlptvF2WscI_VbTyy7CEydxRxHFHJM_5Pw5O3RxczXJjRjCuvNCImbdde_Z3Q/exec",                 // Apps Script 웹앱 주소
   STAFF_CODE: "LH20-K7XQ",      // 담당자 코드
   CAP: 5,
 };
@@ -154,7 +154,8 @@ const TIERS = {
   S: { color: "#F7C948", word: "전설", goods: "특별 선물" },
 };
 const TIER_KEYS = ["C", "B", "A", "S"];
-const PER_TIER = 7;
+const PER_TIER = { C: 7, B: 7, A: 7, S: 5 };      // 등급별 카드 종수
+const TOTAL_CARDS = TIER_KEYS.reduce((a, t) => a + PER_TIER[t], 0);
 
 const PROGRAMS = [
   { id: "p1", name: "학습동아리" },
@@ -222,6 +223,7 @@ function fromLocal() {
       pending: d.pending || 0,
       exchanged: Object.keys(d.exchanged || {}).join(","),
       quizDone: (d.quizDone || []).length, at: d.createdAt || 0,
+      ref: d.ref || "", refFrom: d.refFrom || [], contact: d.contact || "",
     });
     Object.keys(d.proofs || {}).forEach(key => {
       const pr = d.proofs[key];
@@ -240,7 +242,7 @@ function fromLocal() {
 function tierDone(st, t) {
   const o = st.owned || {};
   let n = 0;
-  for (let i = 1; i <= PER_TIER; i++) if ((o[t + i] || 0) > 0) n++;
+  for (let i = 1; i <= PER_TIER[t]; i++) if ((o[t + i] || 0) > 0) n++;
   return n;
 }
 function stats() {
@@ -248,8 +250,8 @@ function stats() {
   D.students.forEach(st => {
     const o = st.owned || {};
     Object.keys(o).forEach(k => s.cards += o[k]);
-    TIER_KEYS.forEach(t => { if (tierDone(st, t) === PER_TIER) s.comp[t]++; });
-    if (TIER_KEYS.every(t => tierDone(st, t) === PER_TIER)) s.full++;
+    TIER_KEYS.forEach(t => { if (tierDone(st, t) === PER_TIER[t]) s.comp[t]++; });
+    if (TIER_KEYS.every(t => tierDone(st, t) === PER_TIER[t])) s.full++;
     s.exch += String(st.exchanged || "").split(",").filter(Boolean).length;
   });
   s.wait = D.proofs.filter(p => p.status === "wait").length;
@@ -274,7 +276,7 @@ function viewGate() {
 /* ── 화면: 공통 틀 ── */
 function shell(inner) {
   const tabs = [["home", "현황"], ["review", "인증 검토"], ["students", "참여자"],
-                ["survey", "설문"], ["rating", "만족도"], ["exchange", "교환"]];
+                ["referral", "추천"], ["survey", "설문"], ["rating", "만족도"], ["exchange", "교환"]];
   const w = D.proofs.filter(p => p.status === "wait").length;
   return `
     <div class="top"><div class="topin">
@@ -307,7 +309,7 @@ function viewHome() {
     </div>
 
     <div class="panel">
-      <div class="ph"><h2>등급별 완성자</h2><span class="sub">한 등급 ${PER_TIER}종을 모두 모은 학생 수</span></div>
+      <div class="ph"><h2>등급별 완성자</h2><span class="sub">한 등급을 모두 모은 학생 수</span></div>
       <div class="pb">
         ${TIER_KEYS.map(t => {
           const n = s.comp[t], pct = s.total ? Math.round(n / s.total * 100) : 0;
@@ -413,10 +415,11 @@ function viewStudents() {
             ${list.length ? list.map(s => `<tr>
               <td>${esc(s.name)}</td>
               <td style="color:var(--mist)">${esc(s.sid)}</td>
-              <td class="num">${s.types} / ${PER_TIER * 4}</td>
+              <td class="num">${s.types} / ${TOTAL_CARDS}</td>
               ${TIER_KEYS.map(t => {
                 const n = tierDone(s, t);
-                return `<td style="color:${n === PER_TIER ? TIERS[t].color : "var(--dim)"};font-weight:${n === PER_TIER ? 800 : 400}">${n}/${PER_TIER}</td>`;
+                const need = PER_TIER[t];
+                return `<td style="color:${n === need ? TIERS[t].color : "var(--dim)"};font-weight:${n === need ? 800 : 400}">${n}/${need}</td>`;
               }).join("")}
               <td class="num">${s.pending}</td>
               <td class="num">${s.quizDone || 0}</td>
@@ -515,13 +518,71 @@ function viewRating() {
     </div>`);
 }
 
+/* ── 추천 ── */
+function viewReferral() {
+  const byRef = {};
+  D.students.forEach(s => {
+    if (!s.ref) return;
+    if (!byRef[s.ref]) byRef[s.ref] = [];
+    byRef[s.ref].push(s);
+  });
+  const nameOf = sid => {
+    const f = D.students.find(x => String(x.sid) === String(sid));
+    return f ? f.name : "(미가입)";
+  };
+  const joined = s => Object.keys(s.claims || {}).some(k => k.indexOf("apply:") === 0 || k.indexOf("done:") === 0);
+
+  const rows = Object.keys(byRef)
+    .map(sid => ({ sid, name: nameOf(sid), list: byRef[sid] }))
+    .sort((a, b) => b.list.length - a.list.length);
+
+  const invited = D.students.filter(s => s.ref).length;
+  const active = D.students.filter(s => s.ref && joined(s)).length;
+  const rate = invited ? Math.round(active / invited * 100) : 0;
+
+  return shell(`
+    <div class="cards">
+      <div class="kpi"><div class="l">추천으로 가입</div><div class="v">${invited}</div>
+        <div class="s">전체 ${D.students.length}명 중</div></div>
+      <div class="kpi"><div class="l">추천한 학생</div><div class="v">${rows.length}</div>
+        <div class="s">1명 이상 데려온 학생</div></div>
+      <div class="kpi ${rate >= 50 ? "hl" : ""}"><div class="l">실제 참여 전환</div><div class="v">${rate}%</div>
+        <div class="s">추천 가입자 중 프로그램 인증 ${active}명</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h2>추천 현황</h2>
+        <span class="sub">추천한 학생과 데려온 친구</span>
+        <div class="right"><button class="btn gh sm" id="csvref">CSV 내려받기</button></div>
+      </div>
+      <div class="pb flush"><div class="scroll">
+        <table>
+          <thead><tr><th>추천한 학생</th><th>학번</th><th class="num">데려온 인원</th><th>친구 목록</th></tr></thead>
+          <tbody>
+            ${rows.length ? rows.map(r => `<tr>
+              <td>${esc(r.name)}</td>
+              <td style="color:var(--mist)">${esc(r.sid)}</td>
+              <td class="num">${r.list.length}명</td>
+              <td>${r.list.map(x => `<span class="chip ${joined(x) ? "ok" : "wait"}">${esc(x.name)}${joined(x) ? "" : " 미참여"}</span>`).join(" ")}</td>
+            </tr>`).join("") : `<tr><td colspan="4"><div class="empty">아직 추천 기록이 없습니다.</div></td></tr>`}
+          </tbody>
+        </table>
+      </div></div>
+    </div>
+
+    <p class="note">
+      초록색은 추천으로 들어와 프로그램을 실제로 인증한 학생입니다. 이때 추천인에게 카드가 지급됩니다.<br>
+      회색(미참여)은 가입만 하고 아직 프로그램 인증을 하지 않은 상태로, 추천인 보상은 지급되지 않았습니다.
+    </p>`);
+}
+
 /* ── 교환 ── */
 function viewExchange() {
   const rows = [];
   D.students.forEach(s => {
     const done = String(s.exchanged || "").split(",").filter(Boolean);
     TIER_KEYS.forEach(t => {
-      if (tierDone(s, t) === PER_TIER && done.indexOf(t) < 0)
+      if (tierDone(s, t) === PER_TIER[t] && done.indexOf(t) < 0)
         rows.push({ s, t });
     });
   });
@@ -556,13 +617,15 @@ function viewExchange() {
       </div>
       <div class="pb flush"><div class="scroll" style="max-height:340px">
         <table>
-          <thead><tr><th>이름</th><th>학번</th><th>등급</th><th>지급한 선물</th></tr></thead>
+          <thead><tr><th>이름</th><th>학번</th><th>등급</th><th>지급한 선물</th><th>연락처</th></tr></thead>
           <tbody>
             ${doneList.length ? doneList.map(r => `<tr>
               <td>${esc(r.s.name)}</td><td style="color:var(--mist)">${esc(r.s.sid)}</td>
               <td><span class="chip ${r.t}">${r.t}</span></td>
-              <td>${TIERS[r.t].goods}</td></tr>`).join("")
-              : `<tr><td colspan="4"><div class="empty">아직 교환 내역이 없습니다.</div></td></tr>`}
+              <td>${TIERS[r.t].goods}</td>
+              <td style="color:${r.s.contact ? "var(--foam)" : "var(--dim)"}">${esc(r.s.contact) || "-"}</td>
+              </tr>`).join("")
+              : `<tr><td colspan="5"><div class="empty">아직 교환 내역이 없습니다.</div></td></tr>`}
           </tbody>
         </table>
       </div></div>
@@ -593,6 +656,7 @@ function render() {
   else if (V.tab === "students") app.innerHTML = viewStudents();
   else if (V.tab === "survey") app.innerHTML = viewSurvey();
   else if (V.tab === "rating") app.innerHTML = viewRating();
+  else if (V.tab === "referral") app.innerHTML = viewReferral();
   else if (V.tab === "exchange") app.innerHTML = viewExchange();
   else app.innerHTML = viewHome();
   bind();
@@ -657,10 +721,20 @@ function bind() {
   $("csvrt") && ($("csvrt").onclick = () => csv(
     [["학번", "이름", "프로그램", "별점", "한 줄 후기"]].concat(
       D.ratings.map(r => [r.sid, r.name, r.program, r.score, r.memo])), "만족도"));
+  $("csvref") && ($("csvref").onclick = () => {
+    const rows = [["추천한 학생", "추천인 학번", "데려온 학생", "학번", "프로그램 인증"]];
+    D.students.forEach(s => {
+      if (!s.ref) return;
+      const r = D.students.find(x => String(x.sid) === String(s.ref));
+      const j = Object.keys(s.claims || {}).some(k => k.indexOf("apply:") === 0 || k.indexOf("done:") === 0);
+      rows.push([r ? r.name : "(미가입)", s.ref, s.name, s.sid, j ? "O" : "X"]);
+    });
+    csv(rows, "추천현황");
+  });
   $("csvex") && ($("csvex").onclick = () => {
-    const rows = [["이름", "학번", "등급", "선물"]];
+    const rows = [["이름", "학번", "등급", "선물", "연락처"]];
     D.students.forEach(s => String(s.exchanged || "").split(",").filter(Boolean)
-      .forEach(t => rows.push([s.name, s.sid, t, TIERS[t] ? TIERS[t].goods : ""])));
+      .forEach(t => rows.push([s.name, s.sid, t, TIERS[t] ? TIERS[t].goods : "", s.contact || ""])));
     csv(rows, "교환내역");
   });
 }

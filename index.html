@@ -401,7 +401,7 @@ const IMG={"C1": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALAAAADICAMAAAB/
 /* ───────── 1. 설정 (운영 시 이 부분만 수정) ───────── */
 const CONFIG = {
   // Google Apps Script 웹앱 주소. 비워두면 이 기기에만 저장됩니다.
-  API_URL: "https://script.google.com/macros/s/AKfycbzG9m2zMqCLCkxWinagr5fRNIL_0e0Cm51GG9BhK_0mzXu0fOxqbyiZe8WjqFjbZ-T8qw/exec",
+  API_URL: "https://script.google.com/macros/s/AKfycbyR4GC6zIlptvF2WscI_VbTyy7CEydxRxHFHJM_5Pw5O3RxczXJjRjCuvNCImbdde_Z3Q/exec",
 
   // 담당자 코드 (굿즈 교환 시 부스에서 입력)
   STAFF_CODE: "LH20-K7XQ",
@@ -426,7 +426,14 @@ const CONFIG = {
   INSTAGRAM: "https://instagram.com/yonsei_lighthouse",
 
   // 카드 지급량
-  REWARD: { follow: 3, quiz: 3, apply: 4, done: 7 },
+  REWARD: {
+    follow: 3, quiz: 3, apply: 4, done: 7,
+    invited: 3,      // 추천인을 입력하고 가입한 학생이 받는 카드
+    referrer: 5,     // 추천한 학생이 받는 카드 (추천받은 사람이 프로그램을 인증해야 지급)
+  },
+
+  // 한 사람이 추천으로 보상받을 수 있는 최대 인원
+  REFERRAL_LIMIT: 5,
 
   // 같은 카드 보유 상한 (이만큼 모으면 그 카드는 더 나오지 않음)
   CAP: 5,
@@ -434,14 +441,14 @@ const CONFIG = {
 
 /* ───────── 2. 데이터 ───────── */
 const TIERS = {
-  C: { rate: 45, color: "#7C8FA8", label: "C", word: "일반", stars: 1, goods: "소정의 선물" },
+  C: { rate: 50, color: "#7C8FA8", label: "C", word: "일반", stars: 1, goods: "소정의 선물" },
   B: { rate: 30, color: "#3FB6A8", label: "B", word: "희귀", stars: 2, goods: "조금 더 좋은 선물" },
   A: { rate: 15, color: "#A176E8", label: "A", word: "영웅", stars: 3, goods: "더 좋은 선물" },
-  S: { rate: 10, color: "#F7C948", label: "S", word: "전설", stars: 4, goods: "특별 선물" },
+  S: { rate: 5,  color: "#F7C948", label: "S", word: "전설", stars: 4, goods: "특별 선물" },
 };
 const ORDER = { C: 0, B: 1, A: 2, S: 3 };
 
-// 28종 (등급별 7종)
+// 26종 (C·B·A 7종 / S 5종)
 const CARDS = [
   { id:"C1", tier:"C", name:"첫걸음 딩글이" },
   { id:"C2", tier:"C", name:"인사 딩글이" },
@@ -472,8 +479,6 @@ const CARDS = [
   { id:"S3", tier:"S", name:"별빛 딩글이" },
   { id:"S4", tier:"S", name:"황금빛 딩글이" },
   { id:"S5", tier:"S", name:"졸업 딩글이" },
-  { id:"S6", tier:"S", name:"수석 딩글이" },
-  { id:"S7", tier:"S", name:"전설의 딩글이" },
 ];
 
 /* ─────────────────────────────────────────────
@@ -634,6 +639,37 @@ const store = {
     localStorage.setItem("dingle:" + sid, JSON.stringify(d));
   },
 
+  /* 추천인에게 카드를 적립한다. 서버가 있으면 서버가, 없으면 로컬에서 처리 */
+  async reward(sid, cards, fromSid) {
+    if (api) {
+      const r = await fetch(CONFIG.API_URL, {
+        method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "reward", sid, cards, from: fromSid, limit: CONFIG.REFERRAL_LIMIT }),
+      });
+      const j = await r.json();
+      return j.ok === true;
+    }
+    const raw = localStorage.getItem("dingle:" + sid);
+    if (!raw) return false;
+    const d = JSON.parse(raw);
+    d.refFrom = d.refFrom || [];
+    if (d.refFrom.indexOf(fromSid) >= 0) return false;
+    if (d.refFrom.length >= CONFIG.REFERRAL_LIMIT) return false;
+    d.refFrom.push(fromSid);
+    d.pending = (d.pending || 0) + cards;
+    localStorage.setItem("dingle:" + sid, JSON.stringify(d));
+    return true;
+  },
+
+  /* 추천인이 실제로 존재하는지, 서로 추천이 아닌지 확인 */
+  async checkRef(refSid, mySid) {
+    let d = null;
+    try { d = await this.load(refSid); } catch (e) { return { ok: false, msg: "확인에 실패했습니다. 잠시 후 다시 시도해 주세요." }; }
+    if (!d) return { ok: false, msg: "그런 학번의 참여자가 없습니다. 친구가 먼저 가입해야 해요." };
+    if (String(d.ref || "") === String(mySid)) return { ok: false, msg: "서로 추천은 인정되지 않습니다." };
+    return { ok: true, name: d.name };
+  },
+
   async rank() {
     if (api) {
       const r = await fetch(CONFIG.API_URL + "?action=rank");
@@ -670,7 +706,11 @@ function blank(sid, name) {
     sid, name, pending: 0, owned: {},          // pending = 미개봉 카드 장수
     claims: {},                                 // key -> 지급 시각
     proofs: {},                                 // key -> {img, at, status}
-    exchanged: {}, quizDone: [], quizWeek: null, surveys: [], ratings: {}, createdAt: Date.now(),
+    exchanged: {}, quizDone: [], quizWeek: null, surveys: [], ratings: [],
+    contact: "",          // 선물 수령 안내용 연락처 (교환 시 선택 입력)
+    ref: null,            // 내가 입력한 추천인 학번
+    refPaid: false,       // 추천인에게 보상이 지급되었는지
+    createdAt: Date.now(),
   };
 }
 
@@ -686,6 +726,19 @@ function toast(msg, ms) {
 }
 
 async function persist() { try { await store.save(S.sid, S); } catch (e) { console.warn(e); } }
+
+/* 내가 프로그램을 처음 인증하면, 나를 추천한 친구에게 카드를 지급한다 */
+async function payReferrer() {
+  if (!S.ref || S.refPaid) return;
+  const joined = Object.keys(S.claims).some(k => k.indexOf("apply:") === 0 || k.indexOf("done:") === 0);
+  if (!joined) return;
+  try {
+    const ok = await store.reward(S.ref, CONFIG.REWARD.referrer, S.sid);
+    S.refPaid = true;
+    await persist();
+    if (ok) toast("추천해준 친구에게도 카드가 전달됐어요!", 3000);
+  } catch (e) { /* 다음 기회에 재시도 */ }
+}
 
 /* ───────── 5. 뽑기 ───────── */
 function pickTier() {
@@ -765,6 +818,14 @@ function viewLogin() {
       <div class="field">
         <label for="nm">이름</label>
         <input id="nm" placeholder="이름을 입력하세요" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="ref">추천인 학번 <span style="color:var(--dim)">(선택)</span></label>
+        <input id="ref" placeholder="먼저 참여한 친구의 학번" inputmode="numeric" autocomplete="off">
+        <p class="note" style="text-align:left;margin:7px 0 0">
+          입력하면 카드 ${CONFIG.REWARD.invited}장을 더 받고,
+          친구도 내가 프로그램을 인증하면 ${CONFIG.REWARD.referrer}장을 받아요
+        </p>
       </div>
       <label class="agree">
         <input type="checkbox" id="agree">
@@ -887,6 +948,19 @@ function viewGet() {
     </div>
 
     <div class="src">
+      <div class="hd"><div class="ttl">친구 추천</div>
+        ${S.ref ? `<span class="st ok">추천 받음</span>` : ""}
+        <div class="amt">${R.referrer}장</div></div>
+      <div class="meta">친구가 가입할 때 내 학번(${S.sid})을 넣고, 프로그램을 1개 인증하면 카드를 받아요</div>
+      <div class="act">
+        <button id="copysid">내 학번 복사하기</button>
+      </div>
+      <p class="note" style="margin-top:10px">
+        추천받은 친구도 가입 즉시 ${R.invited}장을 받습니다 · 한 사람당 최대 ${CONFIG.REFERRAL_LIMIT}명까지 인정
+      </p>
+    </div>
+
+    <div class="src">
       <div class="hd"><div class="ttl">이벤트 참여</div>
         ${doneEvents.length ? `<span class="st ok">${doneEvents.length}회</span>` : ""}
       </div>
@@ -937,7 +1011,7 @@ function viewDraw() {
   return shell(`
     <div class="panel">
       <h3>카드팩 구성</h3>
-      <p>C 45% / B 30% / A 15% / S 10% · 한 번에 최대 7장<br>
+      <p>C 50% / B 30% / A 15% / S 5% · 한 번에 최대 7장<br>
       같은 카드를 ${CONFIG.CAP}장 모으면 그 카드는 더 이상 나오지 않습니다.</p>
     </div>
     ${body}`);
@@ -965,6 +1039,14 @@ function viewAlbum() {
             <button data-xok="${t}">확인</button>
           </div>
           ${V.codeErr ? `<div class="cerr">코드가 올바르지 않습니다.</div>` : ""}
+          <div style="margin-top:12px">
+            <input class="svetc" id="xcontact" placeholder="연락처 (선택 · 선물 수령 안내용)"
+              value="${S.contact || ""}" autocomplete="off">
+            <p class="note" style="margin-top:7px">
+              선물을 현장에서 바로 받으시면 입력하지 않아도 됩니다.<br>
+              입력한 연락처는 선물 안내에만 쓰이며 활동 종료 후 파기합니다.
+            </p>
+          </div>
           <button class="lnk" data-xcancel="1">취소</button>
         </div>`;
     }
@@ -1164,6 +1246,7 @@ const Proof = {
 
       if (!already) { S.claims[k] = Date.now(); S.pending += amt; }
       await persist();
+      payReferrer();
       this.close();
       toast(already ? "다시 제출했습니다" : "카드 " + amt + "장을 받았습니다. 뽑기 탭에서 열어보세요!", 2600);
       render();
@@ -1456,11 +1539,28 @@ function bindLogin() {
     if (!/^\d{6,12}$/.test(sid)) { toast("학번을 숫자로 정확히 입력해 주세요."); return; }
     if (!nm) { toast("이름을 입력해 주세요."); return; }
     if (!$("agree").checked) { toast("개인정보 수집에 동의해 주세요."); return; }
+    const ref = ($("ref").value || "").trim();
+    if (ref && ref === sid) { toast("자기 학번은 추천인으로 넣을 수 없습니다."); return; }
+
     go.disabled = true; go.innerHTML = '<span class="spin"></span>';
+    let msg = "";
     try {
       const found = await store.load(sid);
+      const isNew = !found;
       S = found || blank(sid, nm);
       if (found && found.name !== nm) S.name = nm;
+
+      // 추천인은 신규 가입 때만 인정
+      if (isNew && ref) {
+        const chk = await store.checkRef(ref, sid);
+        if (chk.ok) {
+          S.ref = ref;
+          S.pending += CONFIG.REWARD.invited;
+          msg = `${chk.name}님의 추천으로 카드 ${CONFIG.REWARD.invited}장을 받았어요!`;
+        } else {
+          msg = chk.msg;
+        }
+      }
       await persist();
     } catch (e) {
       S = blank(sid, nm);
@@ -1468,6 +1568,7 @@ function bindLogin() {
     }
     V.tab = "get";
     render();
+    if (msg) toast(msg, 3400);
   };
   [$("sid"), $("nm")].forEach(el => el.onkeydown = e => { if (e.key === "Enter") go.click(); });
 }
@@ -1532,6 +1633,16 @@ function bind() {
     V.quizOpen = false; V.quizPick = null; V.svPick = null; V.svEtc = "";
     toast(`카드 ${CONFIG.REWARD.quiz}장을 받았습니다!`);
     render();
+  });
+
+  // 내 학번 복사
+  $("copysid") && ($("copysid").onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(S.sid);
+      toast("학번을 복사했어요. 친구에게 보내주세요!");
+    } catch (e) {
+      toast("내 학번: " + S.sid, 3000);
+    }
   });
 
   // 이벤트 코드
@@ -1608,6 +1719,8 @@ function bind() {
   app.querySelectorAll("[data-xok]").forEach(el => el.onclick = async () => {
     const v = ($("xcode").value || "").trim().toUpperCase();
     if (v === CONFIG.STAFF_CODE.toUpperCase()) {
+      const ce = $("xcontact");
+      if (ce && ce.value.trim()) S.contact = ce.value.trim().slice(0, 40);
       S.exchanged[el.dataset.xok] = Date.now();
       V.codeOpen = null; V.codeErr = false;
       await persist();

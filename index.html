@@ -147,6 +147,8 @@
   .field input::placeholder{color:#4E6389}
   .agree{display:flex;gap:10px;align-items:flex-start;margin:14px 0;font-size:12.5px;
     color:var(--mist);line-height:1.55}
+  .gate .welcome{text-align:center;background:rgba(255,201,74,.12);border-radius:var(--r-sm);
+    padding:12px;margin-bottom:11px;font-size:13.5px;font-weight:600;color:var(--beam2)}
   .agree input{margin-top:1px;width:19px;height:19px;accent-color:var(--beam);flex:none}
 
   /* ── 카드 얻기 ── */
@@ -230,7 +232,10 @@
   .tapme{font-size:13px;color:var(--mist);animation:blink 1.9s ease-in-out infinite;margin-bottom:6px}
   .bit{position:fixed;z-index:210;width:8px;height:8px;border-radius:2px;pointer-events:none}
   @keyframes fly{to{transform:translate(var(--dx),var(--dy)) rotate(var(--rot));opacity:0}}
-  .reveal{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:18px}
+  .reveal{display:flex;flex-wrap:wrap;justify-content:center;gap:9px;margin-bottom:18px}
+  .reveal .flip{width:calc((100% - 28px) / 4)}
+  .reveal .card{width:100%}
+  @media(max-width:430px){.reveal .flip{width:calc((100% - 19px) / 3)}}
   .flip{animation:fi .5s cubic-bezier(.2,.9,.3,1.3) backwards}
   @keyframes fi{from{opacity:0;transform:rotateY(85deg) scale(.85)}to{opacity:1;transform:none}}
 
@@ -339,11 +344,11 @@
   .th .okd{font-size:11.5px;font-weight:650;color:var(--mist);background:var(--hull2);
     padding:5px 11px;border-radius:999px;white-space:nowrap}
   /* 도감 한 페이지 */
-  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;
+  .grid{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;
     background:var(--hull);border-radius:var(--r-lg);padding:12px;box-shadow:var(--lift)}
-  .grid .card{width:100%;cursor:pointer}
+  .grid .card{width:calc((100% - 25px) / 4);cursor:pointer}
   .grid.dim{opacity:.5}
-  @media(max-width:430px){.grid{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:430px){.grid .card{width:calc((100% - 17px) / 3)}}
 
   .codebox{background:var(--hull);border-radius:var(--r-lg);padding:16px;margin-bottom:12px;
     box-shadow:var(--lift)}
@@ -695,8 +700,8 @@ const CONFIG = {
 
   // 카드 지급량
   REWARD: {
-    welcome: 7, 
-    follow: 5, quiz: 4, apply: 7, done: 10,
+    welcome: 5,      // 처음 시작할 때 바로 주는 카드 (0으로 두면 지급하지 않음)
+    follow: 3, quiz: 3, apply: 4, done: 7,
     invited: 3,      // 추천인을 입력하고 가입한 학생이 받는 카드
     referrer: 5,     // 추천한 학생이 받는 카드 (추천받은 사람이 프로그램을 인증해야 지급)
   },
@@ -984,7 +989,9 @@ const $ = id => document.getElementById(id);
 
 function blank(sid, name) {
   return {
-    sid, name, pending: 0, owned: {},          // pending = 미개봉 카드 장수
+    sid, name,
+    pending: Number(CONFIG.REWARD.welcome) || 0,   // 시작 카드
+    owned: {},                                     // pending = 미개봉 카드 장수
     claims: {},                                 // key -> 지급 시각
     proofs: {},                                 // key -> {img, at, status}
     exchanged: {}, quizDone: [], quizWeek: null, surveys: [], ratings: {},
@@ -1173,6 +1180,7 @@ function viewLogin() {
         <input type="checkbox" id="agree">
         <span>중복 참여 및 선물 중복 수령 확인을 위해 학번과 이름을 수집하는 데 동의합니다. 수집한 정보는 활동 종료 후 파기합니다.</span>
       </label>
+      ${CONFIG.REWARD.welcome ? `<div class="welcome">지금 시작하면 카드 ${CONFIG.REWARD.welcome}장을 바로 받아요</div>` : ""}
       <button class="btn" id="go">시작하기</button>
       </div>
       <p class="note" style="text-align:center;margin-top:14px">
@@ -2292,16 +2300,26 @@ function bindLogin() {
       S = found || blank(sid, nm);
       if (found && found.name !== nm) S.name = nm;
 
+      const welcome = isNew ? (Number(CONFIG.REWARD.welcome) || 0) : 0;
+
       // 추천인은 신규 가입 때만 인정
+      let refName = "";
       if (isNew && ref) {
         const chk = await store.checkRef(ref, sid);
         if (chk.ok) {
           S.ref = ref;
           S.pending += CONFIG.REWARD.invited;
-          msg = `${chk.name}님의 추천으로 카드 ${CONFIG.REWARD.invited}장을 받았어요!`;
+          refName = chk.name;
         } else {
           msg = chk.msg;
         }
+      }
+
+      if (isNew) {
+        if (refName)
+          msg = `${refName}님의 추천으로 시작 카드까지 ${welcome + CONFIG.REWARD.invited}장을 받았어요!`;
+        else if (welcome)
+          msg = `시작 카드 ${welcome}장을 받았어요. 뽑기 탭에서 열어보세요!`;
       }
       await persist(true);
     } catch (e) {

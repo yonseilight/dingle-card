@@ -341,8 +341,9 @@
   .th .xbtn{font-size:13px;font-weight:700;color:#13203A;background:var(--beam);border:none;
     padding:0 16px;min-height:38px;border-radius:999px;white-space:nowrap}
   .th .xbtn:active{transform:scale(.95)}
-  .th .okd{font-size:11.5px;font-weight:650;color:var(--mist);background:var(--hull2);
-    padding:5px 11px;border-radius:999px;white-space:nowrap}
+  .th .okd{font-size:11.5px;font-weight:650;color:var(--beam2);background:rgba(255,201,74,.16);
+    padding:6px 12px;border-radius:999px;white-space:nowrap}
+  .th .okd.done{color:#7FE9C0;background:rgba(78,216,160,.16)}
   /* 도감 한 페이지 */
   .grid{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;
     background:var(--hull);border-radius:var(--r-lg);padding:12px;box-shadow:var(--lift)}
@@ -361,6 +362,31 @@
   .crow button{padding:13px 19px;font-size:15px;font-weight:650;background:var(--beam);
     color:#13203A;border:none;border-radius:var(--r-sm);white-space:nowrap}
   .cerr{font-size:12.5px;color:var(--bad);margin-top:10px}
+
+  /* ── 세트 완성 알림 ── */
+  .celebrate{position:fixed;inset:0;z-index:280;background:rgba(3,8,18,.86);
+    -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+    display:flex;align-items:center;justify-content:center;padding:24px;
+    overflow:hidden;animation:fadein .22s}
+  .celebrate .cbox{position:relative;z-index:2;width:100%;max-width:330px;text-align:center;
+    background:#14264A;border-radius:var(--r-xl);padding:26px 22px 20px;
+    box-shadow:0 1px 0 rgba(255,255,255,.07) inset,0 24px 70px rgba(0,0,0,.6),0 0 60px var(--cc);
+    animation:cbIn .42s cubic-bezier(.2,.9,.3,1.25)}
+  @keyframes cbIn{from{transform:scale(.82) translateY(16px);opacity:0}to{transform:none;opacity:1}}
+  .celebrate .cmedal{position:relative;width:74px;height:74px;margin:0 auto 16px}
+  .celebrate .cmedal span{position:absolute;inset:0;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    font-size:30px;font-weight:800;color:#12203A;letter-spacing:-.02em;
+    box-shadow:0 0 34px var(--cc);animation:medalIn .5s cubic-bezier(.2,.9,.3,1.5) .1s backwards}
+  @keyframes medalIn{from{transform:scale(.3) rotate(-30deg);opacity:0}to{transform:none;opacity:1}}
+  .celebrate .cmedal::after{content:"";position:absolute;inset:-9px;border-radius:50%;
+    border:2px solid var(--cc);opacity:0;animation:medalRing 1.5s ease-out .35s infinite}
+  @keyframes medalRing{0%{transform:scale(.85);opacity:.8}100%{transform:scale(1.5);opacity:0}}
+  .celebrate .ceyebrow{margin:0 0 7px;font-size:10.5px;font-weight:700;letter-spacing:.2em;
+    color:var(--cc);opacity:.9}
+  .celebrate h3{margin:0 0 9px;font-size:21px;font-weight:750;letter-spacing:-.03em;line-height:1.3}
+  .celebrate .cdesc{margin:0 0 20px;font-size:13.5px;color:var(--mist);line-height:1.65}
+  .celebrate .lnk{display:block;margin:8px auto 0}
 
   /* ── 카드 상세 ── */
   .cardzoom{position:fixed;inset:0;z-index:260;background:rgba(3,8,18,.9);
@@ -701,8 +727,8 @@ const CONFIG = {
   // 카드 지급량
   REWARD: {
     welcome: 5,      // 처음 시작할 때 바로 주는 카드 (0으로 두면 지급하지 않음)
-    follow: 5, quiz: 5, apply: 7, done: 10,
-    invited: 5,      // 추천인을 입력하고 가입한 학생이 받는 카드
+    follow: 3, quiz: 3, apply: 4, done: 7,
+    invited: 3,      // 추천인을 입력하고 가입한 학생이 받는 카드
     referrer: 5,     // 추천한 학생이 받는 카드 (추천받은 사람이 프로그램을 인증해야 지급)
   },
 
@@ -909,6 +935,18 @@ const store = {
     return out.sort((a, b) => (a.at || 0) - (b.at || 0));
   },
 
+  /* 굿즈 교환 신청. 서버가 접수하고, 지급 여부는 등대팀이 관리자 화면에서 처리한다. */
+  async requestExchange(sid, tier, contact, goods, name) {
+    if (!api) return "req";
+    const r = await fetch(CONFIG.API_URL, {
+      method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "exchange", sid, tier, contact, goods, name }),
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || "exchange failed");
+    return j.status || "req";
+  },
+
   async review(sid, key, status) {
     if (api) {
       await fetch(CONFIG.API_URL, {
@@ -1017,6 +1055,12 @@ function normalize(d) {
   if (!d) return d;
   if (Array.isArray(d.ratings) || !d.ratings || typeof d.ratings !== "object") d.ratings = {};
   if (!Array.isArray(d.surveys)) d.surveys = [];
+  d.exchanged = d.exchanged || {};
+  Object.keys(d.exchanged).forEach(t => {
+    const v = d.exchanged[t];
+    // 예전에는 교환 완료 시각(숫자)만 저장했다
+    if (!v || typeof v !== "object") d.exchanged[t] = { at: Number(v) || Date.now(), status: "done" };
+  });
   if (!Array.isArray(d.quizDone)) d.quizDone = [];
   d.owned = d.owned || {}; d.claims = d.claims || {};
   d.proofs = d.proofs || {}; d.exchanged = d.exchanged || {};
@@ -1383,34 +1427,32 @@ function viewDraw() {
 /* ───────── 10. 화면: 보관함 ───────── */
 function viewAlbum() {
   const sections = Object.keys(TIERS).map(t => {
-    const have = tierHave(t), need = CARDS.filter(c => c.tier === t).length, full = have === need, ex = !!S.exchanged[t];
+    const have = tierHave(t), need = CARDS.filter(c => c.tier === t).length, full = have === need;
+    const xr = S.exchanged[t];
+    const paid = !!(xr && xr.status === "done");
+    const sent = !!(xr && xr.status === "req");
     const cards = CARDS.filter(c => c.tier === t)
-      .map(c => cardHTML(c, { locked: owned(c.id) === 0, qty: owned(c.id), used: ex, tap: owned(c.id) > 0 })).join("");
+      .map(c => cardHTML(c, { locked: owned(c.id) === 0, qty: owned(c.id), used: paid, tap: owned(c.id) > 0 })).join("");
 
     let act = "";
-    if (ex) act = `<div class="okd">교환 완료</div>`;
-    else if (full) act = `<button class="xbtn" data-x="${t}">교환하기</button>`;
+    if (paid) act = `<div class="okd done">지급 완료</div>`;
+    else if (sent) act = `<div class="okd">연락 예정</div>`;
+    else if (full) act = `<button class="xbtn" data-x="${t}">교환 신청</button>`;
 
     let code = "";
     if (V.codeOpen === t) {
       code = `
         <div class="codebox">
-          <h4>${TIERS[t].goods} 교환</h4>
-          <p>등대팀 부스에서 학생증을 제시하면 담당자가 코드를 입력합니다.</p>
-          <div class="crow">
-            <input id="xcode" type="password" placeholder="담당자 코드" autocomplete="off">
-            <button data-xok="${t}">확인</button>
-          </div>
-          ${V.codeErr ? `<div class="cerr">코드가 올바르지 않습니다.</div>` : ""}
-          <div style="margin-top:12px">
-            <input class="svetc" id="xcontact" placeholder="연락처 (선택 · 선물 수령 안내용)"
-              value="${S.contact || ""}" autocomplete="off">
-            <p class="note" style="margin-top:7px">
-              선물을 현장에서 바로 받으시면 입력하지 않아도 됩니다.<br>
-              입력한 연락처는 선물 안내에만 쓰이며 활동 종료 후 파기합니다.
-            </p>
-          </div>
-          <button class="lnk" data-xcancel="1">취소</button>
+          <h4>${TIERS[t].goods} 신청</h4>
+          <p>연락처를 남겨 주시면 등대팀이 확인한 뒤 선물 수령 방법을 안내해 드립니다.</p>
+          <input class="svetc" id="xcontact" type="tel" inputmode="tel"
+            placeholder="연락처 (예: 010-1234-5678)" value="${esc(S.contact || "")}" autocomplete="tel">
+          ${V.codeErr ? `<div class="cerr">${V.codeMsg || "연락처를 정확히 입력해 주세요."}</div>` : ""}
+          <button class="btn" data-xok="${t}" style="margin-top:12px">신청하기</button>
+          <p class="note" style="margin-top:9px">
+            입력한 연락처는 선물 안내에만 쓰이며 활동 종료 후 파기합니다.
+          </p>
+          <button class="lnk" data-xcancel="1" style="display:block;margin:4px auto 0">취소</button>
         </div>`;
     }
 
@@ -1422,14 +1464,14 @@ function viewAlbum() {
         ${act}
       </div>
       ${code}
-      <div class="grid ${ex ? "dim" : ""}">${cards}</div>`;
+      <div class="grid ${paid ? "dim" : ""}">${cards}</div>`;
   }).join("");
 
   return shell(`
     <div class="panel">
       <h3>등급을 완성하면 교환할 수 있어요</h3>
-      <p>한 등급을 모두 모으면 등대팀 부스에서 선물로 교환할 수 있습니다.<br>
-      교환은 등급당 1회이며, 학생증 확인 후 담당자가 처리합니다.</p>
+      <p>한 등급을 모두 모으면 교환을 신청할 수 있습니다. 연락처를 남기면<br>
+      등대팀이 확인 후 연락드립니다. 교환은 등급당 1회입니다.</p>
     </div>
     ${progHTML()}
     ${sections}`);
@@ -1452,7 +1494,7 @@ function progHTML() {
 
   let next;
   if (ready.length)
-    next = `<p class="next" style="color:var(--beam)">${ready.map(t => TIERS[t].label).join(" · ")} 등급 완성! 부스에서 교환할 수 있어요.</p>`;
+    next = `<p class="next" style="color:var(--beam)">${ready.map(t => TIERS[t].label).join(" · ")} 등급 완성! 지금 교환을 신청할 수 있어요.</p>`;
   else if (near)
     next = `<p class="next">다음 목표 · ${TIERS[near.t].label}(${TIERS[near.t].word}) 등급까지 ${near.left}종 남았어요</p>`;
   else
@@ -2238,8 +2280,66 @@ const Stage = {
     this.el = null; this.busy = false;
     document.body.style.overflow = "";
     render();
+    // 이번 팩으로 등급을 완성했다면 연출이 끝난 뒤에 알린다
+    if (V.newDone && V.newDone.length) {
+      const t = V.newDone; V.newDone = null;
+      setTimeout(() => celebrate(t), 380);
+    }
   },
 };
+
+/* ───────── 세트 완성 알림 ─────────
+   한 등급을 다 모은 순간 화면 가운데에 띄운다. */
+function doneTiers() {
+  return Object.keys(TIERS).filter(t => tierHave(t) === CARDS.filter(c => c.tier === t).length);
+}
+
+function celebrate(tiers) {
+  if (!tiers || !tiers.length || document.querySelector(".celebrate")) return;
+  const main = TIERS[tiers[0]];
+  const el = document.createElement("div");
+  el.className = "celebrate";
+  el.innerHTML = `
+    <div class="cbox" style="--cc:${main.color}">
+      <div class="cmedal"><span style="background:${main.color}">${tiers[0]}</span></div>
+      <p class="ceyebrow">SET COMPLETE</p>
+      <h3>${tiers.map(t => TIERS[t].label + " · " + TIERS[t].word).join(" / ")} 등급 완성!</h3>
+      <p class="cdesc">${tiers.map(t => TIERS[t].goods).join(", ")}<br>지금 교환을 신청할 수 있어요.</p>
+      <button class="btn" data-cgo="1">교환 신청하러 가기</button>
+      <button class="lnk" data-cclose="1">나중에 하기</button>
+    </div>`;
+  document.body.appendChild(el);
+
+  // 색종이
+  const cols = ["#FFC94A", "#FFE6A8", "#6FC4E8", "#FF8FA3", "#A87BF0", "#FFFFFF"];
+  for (let i = 0; i < 40; i++) {
+    const c = document.createElement("i");
+    c.className = "conf";
+    c.style.cssText = `left:${(Math.random() * 100).toFixed(1)}%;top:-6%;
+      background:${cols[i % cols.length]};
+      --r:${(Math.random() * 900 - 450).toFixed(0)}deg;
+      animation:confFall ${(1.6 + Math.random() * 1.3).toFixed(2)}s linear ${(Math.random() * .5).toFixed(2)}s forwards;`;
+    el.appendChild(c);
+    setTimeout(() => c.remove(), 3600);
+  }
+  SFX.chime(4);
+  haptic([28, 40, 28, 40, 70]);
+
+  const close = () => el.remove();
+  el.querySelector("[data-cclose]").onclick = close;
+  el.querySelector("[data-cgo]").onclick = () => {
+    close();
+    V.tab = "album";
+    V.codeOpen = tiers[0];
+    render();
+    setTimeout(() => {
+      const box = document.querySelector(".codebox");
+      if (box && box.scrollIntoView) box.scrollIntoView({ behavior: "smooth", block: "center" });
+      const inp = $("xcontact"); if (inp) inp.focus();
+    }, 60);
+  };
+  el.onclick = e => { if (e.target === el) close(); };
+}
 
 /* ───────── 12. 렌더 & 이벤트 ───────── */
 function render() {
@@ -2470,6 +2570,7 @@ function bind() {
     if (pack) burstBits(pack);
     setTimeout(async () => {
       const n = Math.min(S.pending, 7);
+      const before = doneTiers();
       const got = [];
       let used = 0;
       for (let i = 0; i < n; i++) {
@@ -2488,6 +2589,7 @@ function bind() {
         return;
       }
       if (types() === CARDS.length && !S.completedAt) S.completedAt = Date.now();
+      V.newDone = doneTiers().filter(t => before.indexOf(t) < 0);
       V.drawn = got; V.busy = false;
       await persist();
       Stage.start(got);
@@ -2503,23 +2605,34 @@ function bind() {
 
   // 교환
   app.querySelectorAll("[data-x]").forEach(el => el.onclick = () => {
-    V.codeOpen = el.dataset.x; V.codeErr = false; render();
-    setTimeout(() => $("xcode") && $("xcode").focus(), 30);
+    V.codeOpen = el.dataset.x; V.codeErr = false; V.codeMsg = ""; render();
+    setTimeout(() => $("xcontact") && $("xcontact").focus(), 30);
   });
-  app.querySelectorAll("[data-xcancel]").forEach(el => el.onclick = () => { V.codeOpen = null; V.codeErr = false; render(); });
+  app.querySelectorAll("[data-xcancel]").forEach(el => el.onclick = () => {
+    V.codeOpen = null; V.codeErr = false; V.codeMsg = ""; render();
+  });
   app.querySelectorAll("[data-xok]").forEach(el => el.onclick = async () => {
-    const v = ($("xcode").value || "").trim().toUpperCase();
-    if (v === CONFIG.STAFF_CODE.toUpperCase()) {
-      const ce = $("xcontact");
-      if (ce && ce.value.trim()) S.contact = ce.value.trim().slice(0, 40);
-      S.exchanged[el.dataset.xok] = Date.now();
-      V.codeOpen = null; V.codeErr = false;
-      await persist();
-      toast("교환이 완료되었습니다");
-    } else V.codeErr = true;
+    const t = el.dataset.xok;
+    const ce = $("xcontact");
+    const contact = ce ? ce.value.trim().slice(0, 40) : "";
+    if (contact.replace(/\D/g, "").length < 9) {
+      V.codeErr = true; V.codeMsg = "연락처를 정확히 입력해 주세요.";
+      return render();
+    }
+    el.disabled = true; el.innerHTML = '<span class="spin"></span>';
+    try {
+      const st = await store.requestExchange(S.sid, t, contact, TIERS[t].goods, S.name);
+      S.contact = contact;
+      S.exchanged[t] = { at: Date.now(), status: st, contact };
+      V.codeOpen = null; V.codeErr = false; V.codeMsg = "";
+      await persist(true);
+      toast(st === "done" ? "이미 지급 처리된 등급입니다." : "신청이 접수됐습니다. 등대팀이 연락드릴게요!", 3400);
+    } catch (e) {
+      V.codeErr = true; V.codeMsg = "신청을 보내지 못했습니다. 잠시 후 다시 시도해 주세요.";
+    }
     render();
   });
-  $("xcode") && ($("xcode").onkeydown = e => {
+  $("xcontact") && ($("xcontact").onkeydown = e => {
     if (e.key === "Enter") { const b = app.querySelector("[data-xok]"); b && b.click(); }
   });
 }

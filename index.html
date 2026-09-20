@@ -727,9 +727,9 @@ const CONFIG = {
   // 카드 지급량
   REWARD: {
     welcome: 5,      // 처음 시작할 때 바로 주는 카드 (0으로 두면 지급하지 않음)
-    follow: 5, quiz: 5, apply: 7, done: 10,
-    invited: 5,      // 추천인을 입력하고 가입한 학생이 받는 카드
-    referrer: 7,     // 추천한 학생이 받는 카드 (추천받은 사람이 프로그램을 인증해야 지급)
+    follow: 3, quiz: 3, apply: 4, done: 7,
+    invited: 3,      // 추천인을 입력하고 가입한 학생이 받는 카드
+    referrer: 5,     // 추천한 학생이 받는 카드 (추천받은 사람이 프로그램을 인증해야 지급)
   },
 
   // 한 사람이 추천으로 보상받을 수 있는 최대 인원
@@ -896,10 +896,11 @@ const store = {
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ action: "save", sid, data }),
     });
-    // 응답을 못 읽는 경우는 성공으로 본다 (네트워크 오류는 fetch에서 이미 throw 됨)
+    // 서버가 정상 응답(JSON)을 주지 않으면 저장됐다고 단정하지 않는다.
+    // (잠금 대기 초과 등으로 오류 페이지가 돌아오는 경우가 있다)
     let j = null;
-    try { j = await r.json(); } catch (e) { return; }
-    if (j && j.ok === false) throw new Error(j.error || "save failed");
+    try { j = await r.json(); } catch (e) { throw new Error("no response"); }
+    if (!j || j.ok !== true) throw new Error((j && j.error) || "save failed");
   },
 
   async upload(sid, key, img) {
@@ -1110,11 +1111,23 @@ function pickTier() {
   return "C";
 }
 function drawOne() {
-  const t = pickTier();
-  // 이미 상한까지 모은 카드는 아예 나오지 않는다
-  let pool = CARDS.filter(c => c.tier === t && owned(c.id) < CONFIG.CAP);
-  if (!pool.length) pool = CARDS.filter(c => owned(c.id) < CONFIG.CAP);   // 해당 등급이 다 찼으면 전체에서
-  if (!pool.length) return null;                                          // 전 종류가 상한 도달
+  const room = k => CARDS.some(c => c.tier === k && owned(c.id) < CONFIG.CAP);
+  let t = pickTier();
+
+  // 뽑힌 등급을 이미 상한까지 모았다면, 자리가 남은 등급 중에서
+  // 원래 확률 비율대로 다시 고른다. (전체에서 아무거나 고르면 희귀도가 무너진다)
+  if (!room(t)) {
+    const left = Object.keys(TIERS).filter(room);
+    if (!left.length) return null;                       // 전 종류가 상한 도달
+    let r = Math.random() * left.reduce((a, k) => a + TIERS[k].rate, 0);
+    t = left[left.length - 1];
+    for (let i = 0; i < left.length; i++) {
+      r -= TIERS[left[i]].rate;
+      if (r <= 0) { t = left[i]; break; }
+    }
+  }
+
+  const pool = CARDS.filter(c => c.tier === t && owned(c.id) < CONFIG.CAP);
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
@@ -1968,11 +1981,62 @@ const LV = { C: 1, B: 2, A: 3, S: 4 };
 
 const Stage = {
   queue: [], idx: 0, el: null, busy: false, phase: "pack", dragged: false,
+  timers: null, watch: null, idleTicks: 0,
+
+  /* 연출 중의 모든 지연 동작은 이 함수를 거친다.
+     - 무대가 이미 닫혔으면 아무것도 하지 않는다
+     - 중간에 오류가 나면 연출을 멈추지 않고 결과 화면으로 빠져나간다 */
+  after(fn, ms) {
+    if (!this.timers) this.timers = new Set();
+    const id = window.setTimeout(() => {
+      this.timers && this.timers.delete(id);
+      if (!this.el) return;
+      try { fn(); } catch (e) { this.recover(e); }
+    }, ms);
+    this.timers.add(id);
+    return id;
+  },
+
+  clearTimers() {
+    if (this.timers) { this.timers.forEach(id => clearTimeout(id)); this.timers.clear(); }
+    if (this.watch) { clearInterval(this.watch); this.watch = null; }
+    this.idleTicks = 0;
+  },
+
+  /* 연출이 멈춰 버리면 사용자는 아무것도 할 수 없다.
+     1초마다 확인해서 화면이 비어 있는 채로 멈춰 있으면 스스로 빠져나간다. */
+  guard() {
+    if (this.watch) clearInterval(this.watch);
+    this.watch = setInterval(() => {
+      if (!this.el) { this.clearTimers(); return; }
+      const body = document.getElementById("stageBody");
+      const empty = !body || !body.children.length;
+      this.idleTicks = empty ? this.idleTicks + 1 : 0;
+      if (this.idleTicks >= 4) {          // 4초 넘게 빈 화면이면 이상한 상태
+        this.idleTicks = 0;
+        this.busy = false;
+        if (this.queue[this.idx]) { this.phase = "card"; this.show(); }
+        else this.finish();
+      }
+    }, 1000);
+  },
+
+  recover(e) {
+    try { console.warn("연출 오류:", e); } catch (_) {}
+    this.clearTimers();
+    this.busy = false;
+    // 카드가 남아 있으면 다음 장으로, 아니면 결과 화면으로
+    if (this.queue[this.idx + 1]) { this.idx++; this.phase = "card"; this.show(); }
+    else this.finish();
+  },
+
 
   start(cards) {
     if (!cards || !cards.length) return;
+    this.clearTimers();                       // 이전 연출의 예약된 동작을 확실히 끊는다
+    if (this.el) { this.el.remove(); this.el = null; }
     this.queue = cards.slice().sort((a, b) => ORDER[a.tier] - ORDER[b.tier]);
-    this.idx = 0;
+    this.idx = 0; this.dragged = false;
     this.el = document.createElement("div");
     this.el.id = "stage";
     this.el.innerHTML = `
@@ -1993,6 +2057,7 @@ const Stage = {
       sb.innerHTML = on ? SFX_ICON.on : SFX_ICON.off;
     };
     this.el.onclick = () => this.next();
+    this.guard();                             // 멈춤 감시 시작
     this.preload();
     this.intro();
   },
@@ -2030,7 +2095,7 @@ const Stage = {
 
     pk.classList.add("rip");
     SFX.rip();
-    setTimeout(() => {
+    this.after(() => {
       const box = pk.getBoundingClientRect();
       ["tearL", "tearR"].forEach((cls, i) => {
         const t = document.createElement("div");
@@ -2041,14 +2106,14 @@ const Stage = {
         t.style.height = box.height + "px";
         t.style.aspectRatio = "auto";
         this.el.appendChild(t);
-        setTimeout(() => t.remove(), 900);
+        this.after(() => t.remove(), 900);
       });
       pk.style.visibility = "hidden";
       const f = this.el.querySelector(".flash");
       f.className = "flash"; void f.offsetWidth; f.classList.add("on");
       this.sparks(16);
       this.ring();
-      setTimeout(() => {
+      this.after(() => {
         if (pi) pi.remove();
         this.phase = "card";
         this.show();
@@ -2057,10 +2122,12 @@ const Stage = {
   },
 
   show() {
+    const st = this.el;
+    if (!st) return;                               // 이미 닫힌 무대
     const c = this.queue[this.idx];
+    if (!c || !TIERS[c.tier]) return this.finish();  // 보여줄 카드가 없다
     const t = TIERS[c.tier];
     const lv = LV[c.tier];
-    const st = this.el;
 
     st.style.setProperty("--gc", t.color);
     st.className = "";
@@ -2086,20 +2153,20 @@ const Stage = {
     this.busy = true;
 
     // 1) 배경이 서서히 밝아지며 등급을 암시
-    setTimeout(() => st.classList.add("lv" + lv), 100);
-    setTimeout(() => {
+    this.after(() => st.classList.add("lv" + lv), 100);
+    this.after(() => {
       const tr = document.createElement("div");
       tr.className = "tring";
       st.querySelector(".rings").appendChild(tr);
       void tr.offsetWidth; tr.classList.add("go");
-      setTimeout(() => tr.remove(), 1100);
+      this.after(() => tr.remove(), 1100);
     }, 160);
 
     // 2) 상위 등급은 뜸을 더 들인다 — 맥동 횟수로 등급을 귀띔한다
     const wait = lv === 4 ? 1500 : lv === 3 ? 950 : lv === 2 ? 550 : 320;
     const beats = lv === 4 ? 3 : lv === 3 ? 2 : lv === 2 ? 1 : 0;
     for (let i = 0; i < beats; i++) {
-      setTimeout(() => {
+      this.after(() => {
         if (!document.getElementById("bc")) return;
         bc.classList.remove("pulse"); void bc.offsetWidth; bc.classList.add("pulse");
         SFX.tick(i); haptic(10);
@@ -2108,14 +2175,14 @@ const Stage = {
 
     // 전설: 공개 직전 빛무리가 차오른다
     if (lv === 4) {
-      setTimeout(() => this.motes(14), 420);
-      setTimeout(() => this.ring(), 900);
-      setTimeout(() => this.ring(), 1130);
+      this.after(() => this.motes(14), 420);
+      this.after(() => this.ring(), 900);
+      this.after(() => this.ring(), 1130);
     } else if (lv === 3) {
-      setTimeout(() => this.motes(6), 480);
+      this.after(() => this.motes(6), 480);
     }
 
-    setTimeout(() => {
+    this.after(() => {
       // 3) 카드 공개
       SFX.whoosh();
       if (lv === 4) bc.classList.add("turn");
@@ -2127,18 +2194,18 @@ const Stage = {
 
       // 4) 착지 모션 + 파티클
       const land = lv === 4 ? 900 : 480;
-      setTimeout(() => {
+      this.after(() => {
         bc.classList.add("e" + lv);
         this.thud(t.color);
         SFX.land(lv);
         SFX.chime(lv);
         const nt = document.getElementById("newtag");
-        if (nt) setTimeout(() => { nt.style.display = ""; }, 180);
+        if (nt) this.after(() => { nt.style.display = ""; }, 180);
         if (lv === 4) {
           this.confetti(46);
           this.ring(); this.sparks(20); this.motes(18);
-          setTimeout(() => bc.classList.add("quake"), 260);
-          setTimeout(() => { bc.classList.remove("quake"); bc.classList.add("float"); }, 820);
+          this.after(() => bc.classList.add("quake"), 260);
+          this.after(() => { bc.classList.remove("quake"); bc.classList.add("float"); }, 820);
         } else if (lv === 3) {
           this.ring(); this.sparks(9);
         } else if (lv === 2) {
@@ -2146,7 +2213,7 @@ const Stage = {
         }
 
         // 5) 등급 문구
-        setTimeout(() => {
+        this.after(() => {
           const aw = document.getElementById("afterword");
           if (aw) aw.innerHTML =
             `<div class="tierword w${lv}">${t.word.split("").join(" ")}</div>` +
@@ -2164,14 +2231,15 @@ const Stage = {
      카드를 문지른 것은 '다음 카드'로 넘기지 않는다. */
   tilt(bc) {
     if (!bc || !bc.addEventListener) return;
-    let sx = 0, sy = 0;
+    let sx = 0, sy = 0, down = false;
     const at = (e, r) => [
       Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)),
       Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)),
     ];
     const move = e => {
-      // 손가락이 움직인 거리는 카드 크기와 무관하게 먼저 센다
-      if (Math.abs(e.clientX - sx) + Math.abs(e.clientY - sy) > 12) this.dragged = true;
+      // 누른 채로 움직인 경우에만 '문지름'으로 본다.
+      // (마우스를 올리기만 한 것을 문지름으로 세면 클릭이 씹힌다)
+      if (down && Math.abs(e.clientX - sx) + Math.abs(e.clientY - sy) > 12) this.dragged = true;
       const r = bc.getBoundingClientRect();
       if (!r.width) return;
       const [mx, my] = at(e, r);
@@ -2186,16 +2254,16 @@ const Stage = {
       bc.style.setProperty("--mx", ".5");   bc.style.setProperty("--my", ".5");
     };
     bc.addEventListener("pointerdown", e => {
-      sx = e.clientX; sy = e.clientY; this.dragged = false;
+      sx = e.clientX; sy = e.clientY; down = true; this.dragged = false;
       bc.classList.add("tilting");
       try { bc.setPointerCapture(e.pointerId); } catch (_) {}
       move(e);
     });
     bc.addEventListener("pointermove", e => { if (bc.classList.contains("tilting")) move(e); });
     bc.addEventListener("pointerenter", e => { if (e.pointerType === "mouse") bc.classList.add("tilting"); });
-    bc.addEventListener("pointerup", rest);
-    bc.addEventListener("pointercancel", rest);
-    bc.addEventListener("pointerleave", rest);
+    bc.addEventListener("pointerup", () => { down = false; rest(); });
+    bc.addEventListener("pointercancel", () => { down = false; rest(); });
+    bc.addEventListener("pointerleave", () => { down = false; rest(); });
   },
 
   confetti(n) {
@@ -2208,7 +2276,7 @@ const Stage = {
         --r:${(Math.random()*900-450).toFixed(0)}deg;
         animation:confFall ${(1.5+Math.random()*1.4).toFixed(2)}s linear ${(Math.random()*0.5).toFixed(2)}s forwards;`;
       this.el.appendChild(c);
-      setTimeout(() => c.remove(), 3600);
+      this.after(() => c.remove(), 3600);
     }
   },
 
@@ -2218,7 +2286,7 @@ const Stage = {
     e.className = "thud";
     e.style.setProperty("--gc", col);
     this.el.appendChild(e);
-    setTimeout(() => e.remove(), 900);
+    this.after(() => e.remove(), 900);
   },
 
   ring() {
@@ -2226,7 +2294,7 @@ const Stage = {
     r.className = "ring";
     this.el.querySelector(".rings").appendChild(r);
     void r.offsetWidth; r.classList.add("go");
-    setTimeout(() => r.remove(), 1300);
+    this.after(() => r.remove(), 1300);
   },
 
   sparks(n) {
@@ -2240,7 +2308,7 @@ const Stage = {
       sp.style.animationDelay = (Math.random() * .55) + "s";
       sp.style.color = Math.random() > .35 ? "#FFF0BC" : "#FFFFFF";
       this.el.appendChild(sp);
-      setTimeout(() => sp.remove(), 2200);
+      this.after(() => sp.remove(), 2200);
     }
   },
 
@@ -2254,7 +2322,7 @@ const Stage = {
       const sz = 3 + Math.random() * 5;
       m.style.width = m.style.height = sz + "px";
       this.el.appendChild(m);
-      setTimeout(() => m.remove(), 3400);
+      this.after(() => m.remove(), 3400);
     }
   },
 
@@ -2272,18 +2340,20 @@ const Stage = {
     SFX.whoosh();
     if (bc) { bc.classList.remove("float"); bc.classList.add("out"); }
     if (aw) aw.classList.add("out");
-    setTimeout(() => { this.idx++; this.show(); }, 250);
+    this.after(() => { this.idx++; this.show(); }, 250);
   },
 
   finish() {
+    this.clearTimers();
     if (this.el) this.el.remove();
-    this.el = null; this.busy = false;
+    this.el = null; this.busy = false; this.dragged = false;
     document.body.style.overflow = "";
     render();
-    // 이번 팩으로 등급을 완성했다면 연출이 끝난 뒤에 알린다
+    // 이번 팩으로 등급을 완성했다면 연출이 끝난 뒤에 알린다.
+    // (무대가 이미 닫힌 뒤에 뜨는 것이므로 무대 타이머를 쓰지 않는다)
     if (V.newDone && V.newDone.length) {
       const t = V.newDone; V.newDone = null;
-      setTimeout(() => celebrate(t), 380);
+      window.setTimeout(() => celebrate(t), 380);
     }
   },
 };

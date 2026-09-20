@@ -6,14 +6,16 @@
 <title>딩글이 카드 도감 · 등대팀 관리자</title>
 <style>
   :root{
-    --deep:#0B1730; --sea:#14264A; --sea2:#1B3159; --line:#2C4471;
-    --beam:#F7C948; --beam2:#FFE29A; --foam:#EAF0FA; --mist:#8FA3C4; --dim:#5E729A;
-    --cC:#7C8FA8; --cB:#3FB6A8; --cA:#A176E8; --cS:#F7C948;
+    --deep:#060D1C; --sea:#101E3A; --sea2:#17274A; --line:rgba(255,255,255,.08);
+    --beam:#FFC94A; --beam2:#FFE6A8; --foam:#EEF3FB; --mist:#93A6C6; --dim:#7387AD;
+    --cC:#8397B2; --cB:#3FC4B2; --cA:#A87BF0; --cS:#FFC94A;
     --ok:#4ED8A0; --bad:#FF9A8B; --info:#6FA8E8;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  body{margin:0;font-family:"Pretendard",-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
-    background:var(--deep);color:var(--foam);-webkit-font-smoothing:antialiased}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Pretendard","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    background:radial-gradient(120% 55% at 50% -4%,#16294D 0%,var(--deep) 58%) no-repeat,var(--deep);
+    background-attachment:fixed;color:var(--foam);-webkit-font-smoothing:antialiased;letter-spacing:-.01em}
+  :focus-visible{outline:2px solid var(--beam);outline-offset:2px}
   button,input,select{font-family:inherit}
   button{cursor:pointer}
   a{color:var(--beam)}
@@ -193,17 +195,30 @@ function toast(m) {
 
 /* 구글 드라이브 주소를 이미지로 표시 가능한 형태로 바꾼다.
    예전에 저장된 uc?export=view 주소도 자동 변환된다. */
+function driveId(u) {
+  const t = String(u || "");
+  if (t.indexOf("google") < 0) return "";   // data: 주소 등은 그대로 둔다
+  const m = t.match(/[-\w]{25,}/);          // 드라이브 파일 ID
+  return m ? m[0] : "";
+}
 function imgUrl(u) {
   u = String(u || "");
-  const m = u.match(/[-\w]{25,}/);          // 드라이브 파일 ID
-  if (u.indexOf("drive.google.com") >= 0 && m) {
-    return "https://drive.google.com/thumbnail?id=" + m[0] + "&sz=w1200";
-  }
-  return u;
+  const id = driveId(u);
+  return id ? "https://drive.google.com/thumbnail?id=" + id + "&sz=w1200" : u;
 }
 function origUrl(u) {
-  const m = String(u || "").match(/[-\w]{25,}/);
-  return m ? "https://drive.google.com/file/d/" + m[0] + "/view" : u;
+  const id = driveId(u);
+  return id ? "https://drive.google.com/file/d/" + id + "/view" : String(u || "");
+}
+/* 썸네일 주소가 실패하면 lh3 주소로 한 번 더 시도한다 */
+function admImgFallback(im) {
+  const id = im.getAttribute("data-id") || "";
+  if (id && !im.getAttribute("data-retry")) {
+    im.setAttribute("data-retry", "1");
+    im.src = "https://lh3.googleusercontent.com/d/" + id + "=w1200";
+    return;
+  }
+  im.classList.add("bad");
 }
 
 function proofLabel(key) {
@@ -400,8 +415,8 @@ function viewReview() {
             <div class="rh"><b>${esc(it.name)}</b><span class="sid">${esc(it.sid)}</span>
               <span class="chip ${it.status}" style="margin-left:auto">${proofLabel(it.key)}</span></div>
             <img src="${esc(imgUrl(it.img))}" alt="" loading="lazy" referrerpolicy="no-referrer"
-                 data-full="${esc(origUrl(it.img))}"
-                 onerror="this.classList.add('bad')">
+                 data-full="${esc(origUrl(it.img))}" data-id="${esc(driveId(it.img))}"
+                 onerror="admImgFallback(this)">
             <a class="openorig" href="${esc(origUrl(it.img))}" target="_blank" rel="noopener">원본 열기</a>
             ${it.status === "wait"
               ? `<div class="ra"><button class="y" data-ok="${i}">승인</button>

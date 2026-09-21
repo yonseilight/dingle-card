@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>딩글이 카드 도감 · 연세대학교 미래캠퍼스 등대팀</title>
 <meta name="description" content="학습지원 프로그램에 참여하고 딩글이 카드를 모아보세요.">
+<meta name="theme-color" content="#060D1C">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="딩글이 카드 도감">
+<meta property="og:title" content="딩글이 카드 도감 · 등대팀">
+<meta property="og:description" content="학습지원 프로그램에 참여하고 딩글이 카드 26종을 모아보세요.">
+<meta property="og:type" content="website">
 <style>
   /* ═══════════════════════════════════════════════
      딩글이 카드 도감 — 화면 스타일
@@ -87,7 +95,15 @@
     display:flex;flex-direction:column;align-items:center;gap:3px;
     font-size:10.5px;font-weight:550;letter-spacing:-.01em;
     transition:color .16s ease,transform .16s ease}
+  .tab{position:relative}
   .tab svg{width:23px;height:23px;display:block}
+  .tab .dot{position:absolute;top:1px;left:50%;margin-left:5px;min-width:17px;height:17px;
+    padding:0 5px;border-radius:999px;background:var(--beam);color:#13203A;
+    font-size:10.5px;font-weight:800;line-height:17px;text-align:center;
+    box-shadow:0 0 0 2px rgba(8,16,34,.85);font-variant-numeric:tabular-nums;
+    animation:dotIn .3s cubic-bezier(.2,.9,.3,1.5)}
+  .tab .dot.sm{min-width:9px;width:9px;height:9px;padding:0;margin-left:8px;top:4px}
+  @keyframes dotIn{from{transform:scale(.2);opacity:0}to{transform:none;opacity:1}}
   .tab:active{transform:scale(.92)}
   .tab.on{color:var(--beam)}
 
@@ -144,6 +160,7 @@
     border:1px solid transparent;border-radius:var(--r-sm);color:var(--foam);outline:none;
     box-shadow:var(--press);transition:border-color .15s}
   .field input:focus{border-color:var(--beam)}
+  .field input.prefilled{border-color:var(--beam);background:rgba(255,201,74,.08)}
   .field input::placeholder{color:#4E6389}
   .agree{display:flex;gap:10px;align-items:flex-start;margin:14px 0;font-size:12.5px;
     color:var(--mist);line-height:1.55}
@@ -726,9 +743,9 @@ const CONFIG = {
 
   // 카드 지급량
   REWARD: {
-    welcome: 7,      // 처음 시작할 때 바로 주는 카드 (0으로 두면 지급하지 않음)
-    follow: 5, quiz: 5, apply: 7, done: 10,
-    invited: 5,      // 추천인을 입력하고 가입한 학생이 받는 카드
+    welcome: 5,      // 처음 시작할 때 바로 주는 카드 (0으로 두면 지급하지 않음)
+    follow: 3, quiz: 3, apply: 4, done: 7,
+    invited: 3,      // 추천인을 입력하고 가입한 학생이 받는 카드
     referrer: 5,     // 추천한 학생이 받는 카드 (추천받은 사람이 프로그램을 인증해야 지급)
   },
 
@@ -1045,6 +1062,20 @@ const owned    = id => S.owned[id] || 0;
 const types    = () => CARDS.filter(c => owned(c.id) > 0).length;
 const tierHave = t => CARDS.filter(c => c.tier === t && owned(c.id) > 0).length;
 
+/* 내 추천 링크 (친구가 이 링크로 들어오면 추천인이 미리 채워진다) */
+function refLink(sid) {
+  const base = location.origin + location.pathname;
+  return base + "?ref=" + encodeURIComponent(sid || (S && S.sid) || "");
+}
+
+/* 주소에 ?ref=학번 이 붙어 있으면 읽어 둔다 */
+function urlRef() {
+  try {
+    const v = new URLSearchParams(location.search).get("ref") || "";
+    return /^\d{6,12}$/.test(v) ? v : "";
+  } catch (e) { return ""; }
+}
+
 /* 사용자가 입력한 값(이름 등)을 화면에 넣을 때 HTML로 해석되지 않게 한다 */
 function esc(v) {
   return String(v == null ? "" : v).replace(/[&<>"']/g, c =>
@@ -1189,8 +1220,20 @@ function shell(inner) {
     <nav class="tabbar">
       ${TABS.map(([id, label]) => `
         <button class="tab ${V.tab === id ? "on" : ""}" data-tab="${id}"
-          aria-current="${V.tab === id ? "page" : "false"}">${ICON[id]}<span>${label}</span></button>`).join("")}
+          aria-current="${V.tab === id ? "page" : "false"}">${ICON[id]}${badge(id)}<span>${label}</span></button>`).join("")}
     </nav>`;
+}
+
+/* 아직 하지 않은 일이 있는 탭에 표시를 남긴다 */
+function badge(tab) {
+  if (tab === "draw" && S.pending > 0)
+    return `<span class="dot" aria-label="미개봉 ${S.pending}장">${S.pending}</span>`;
+  if (tab === "album") {
+    const ready = Object.keys(TIERS).some(t =>
+      tierHave(t) === CARDS.filter(c => c.tier === t).length && !S.exchanged[t]);
+    if (ready) return `<span class="dot sm" aria-label="교환할 수 있는 등급 있음"></span>`;
+  }
+  return "";
 }
 
 /* ───────── 7. 화면: 로그인 ───────── */
@@ -1229,7 +1272,7 @@ function viewLogin() {
         <label for="ref">추천인 학번 <span style="color:var(--dim)">(선택)</span></label>
         <input id="ref" placeholder="먼저 참여한 친구의 학번" inputmode="numeric" autocomplete="off">
         <p class="note" style="text-align:left;margin:7px 0 0">
-          입력하면 카드 ${CONFIG.REWARD.invited}장을 더 받고,
+          ${urlRef() ? `친구의 추천 링크로 들어오셨어요. ` : ""}입력하면 카드 ${CONFIG.REWARD.invited}장을 더 받고,
           친구도 내가 프로그램을 인증하면 ${CONFIG.REWARD.referrer}장을 받아요
         </p>
       </div>
@@ -1361,7 +1404,8 @@ function viewGet() {
         <div class="amt">${R.referrer}장</div></div>
       <div class="meta">친구가 가입할 때 내 학번(${S.sid})을 넣고, 프로그램을 1개 인증하면 카드를 받아요</div>
       <div class="act">
-        <button id="copysid">내 학번 복사하기</button>
+        <button id="sharelink">추천 링크 보내기</button>
+        <button id="copysid">내 학번만 복사</button>
       </div>
       <p class="note" style="margin-top:10px">
         추천받은 친구도 가입 즉시 ${R.invited}장을 받습니다 · 한 사람당 최대 ${CONFIG.REFERRAL_LIMIT}명까지 인정
@@ -2452,6 +2496,13 @@ function bindLogin() {
     }
   } catch (e) {}
 
+  // 추천 링크로 들어왔으면 친구 학번을 미리 채워 둔다
+  const rf = urlRef();
+  if (rf && $("ref") && !$("ref").value) {
+    $("ref").value = rf;
+    $("ref").classList.add("prefilled");
+  }
+
   const go = $("go");
   go.onclick = async () => {
     const sid = $("sid").value.trim();
@@ -2515,7 +2566,11 @@ function bind() {
     if (V.tab === "rank" && (!V.ranking || Date.now() - (V.rankAt || 0) > 60000)) loadRank();
   });
 
-  $("rankrefresh") && ($("rankrefresh").onclick = () => { V.ranking = null; render(); loadRank(); });
+  $("rankrefresh") && ($("rankrefresh").onclick = e => {
+    const b = e.currentTarget;
+    b.disabled = true; b.textContent = "불러오는 중";
+    loadRank();                       // 기존 목록은 그대로 두고 갱신한다
+  });
 
   $("adminbtn") && ($("adminbtn").onclick = () => Admin.open());
   $("logout") && ($("logout").onclick = () => {
@@ -2597,6 +2652,20 @@ function bind() {
       toast("학번을 복사했어요. 친구에게 보내주세요!");
     } catch (e) {
       toast("내 학번: " + S.sid, 3000);
+    }
+  });
+
+  // 추천인이 미리 채워진 링크를 보낸다 (카톡·문자로 바로 공유)
+  $("sharelink") && ($("sharelink").onclick = async () => {
+    const url = refLink();
+    const text = `딩글이 카드 도감에서 학습지원 프로그램 참여하고 카드 모아요! 이 링크로 들어오면 시작 카드를 더 받아요.`;
+    try {
+      if (navigator.share) { await navigator.share({ title: "딩글이 카드 도감", text, url }); return; }
+      await navigator.clipboard.writeText(text + "\n" + url);
+      toast("추천 링크를 복사했어요. 친구에게 보내주세요!", 3000);
+    } catch (e) {
+      if (e && e.name === "AbortError") return;      // 사용자가 공유를 취소함
+      toast("추천 링크: " + url, 4000);
     }
   });
 
@@ -2738,6 +2807,17 @@ async function loadRank() {
 /* ───────── 13. 시작 ─────────
    지난번에 쓴 학번이 이 기기에 남아 있으면 바로 들어간다.
    서버가 느리거나 끊겨도 이 기기 기록으로 화면을 띄운다. */
+/* 키보드로도 닫을 수 있게 (ESC) */
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  const cz = document.querySelector(".cardzoom"); if (cz) return cz.remove();
+  const cb = document.querySelector(".celebrate"); if (cb) return cb.remove();
+  const zm = document.querySelector(".zoom");      if (zm) return zm.remove();
+  if (document.getElementById("stage")) return;    // 연출 중에는 건너뛰기 버튼으로만
+  if (document.getElementById("proofModal")) return Proof.close();
+  if (document.getElementById("admModal")) return Admin.close();
+});
+
 async function boot() {
   let last = null;
   try { last = JSON.parse(localStorage.getItem(LAST_KEY)); } catch (e) {}

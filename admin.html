@@ -138,6 +138,29 @@
     border:1px solid var(--beam);color:var(--beam2);padding:11px 20px;border-radius:999px;
     font-size:13.5px;z-index:400;box-shadow:0 8px 30px rgba(0,0,0,.5)}
   .note{font-size:12px;color:var(--dim);line-height:1.7}
+  /* 학생 상세 */
+  .drawer{position:fixed;inset:0;z-index:200;background:rgba(4,9,20,.72);display:flex;justify-content:flex-end}
+  .drawer .dp{width:100%;max-width:540px;height:100%;overflow-y:auto;background:var(--sea);
+    border-left:1px solid var(--line);padding:22px 22px 70px;animation:dIn .22s ease}
+  @keyframes dIn{from{transform:translateX(30px);opacity:0}to{transform:none;opacity:1}}
+  .dp .dh{display:flex;align-items:flex-start;gap:10px}
+  .dp h3{margin:0;font-size:21px}
+  .dp .sec{margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
+  .dp .sec h4{margin:0 0 10px;font-size:13px;color:var(--mist);font-weight:700}
+  .kv{display:grid;grid-template-columns:112px 1fr;gap:7px 12px;font-size:13.5px;margin:0}
+  .kv dt{color:var(--dim)} .kv dd{margin:0}
+  .frm{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .frm input,.frm textarea{flex:1;min-width:0;padding:10px 12px;font-size:14px;background:rgba(255,255,255,.05);
+    border:1px solid rgba(143,163,196,.3);border-radius:9px;color:var(--foam);outline:none;font-family:inherit}
+  .frm input.n{flex:0 0 120px}
+  .frm textarea{width:100%;min-height:78px;resize:vertical}
+  .frm input:focus,.frm textarea:focus{border-color:var(--beam)}
+  .btn.danger{background:rgba(255,154,139,.15);color:var(--bad);border:1px solid rgba(255,154,139,.4)}
+  .owned{display:flex;flex-wrap:wrap;gap:5px}
+  .owned span{font-size:12px;padding:4px 9px;border-radius:7px;background:rgba(255,255,255,.05)}
+  .owned span b{margin-left:4px;color:var(--beam)}
+  .plus{color:#7FE9C0;font-weight:800} .minus{color:var(--bad);font-weight:800}
+  .vwarn{background:rgba(255,154,139,.12);color:#FFD5CD;border-radius:10px;padding:11px 14px;font-size:13px;margin-bottom:16px}
   @media(max-width:640px){
     .topin{flex-wrap:wrap} .tabs{margin-left:0;width:100%;order:3}
     .row .lb{width:104px}
@@ -155,8 +178,8 @@
 /* ── 설정: 학생용 index.html과 동일하게 맞춰주세요 ── */
 const CONFIG = {
   API_URL: "https://script.google.com/macros/s/AKfycbzG9m2zMqCLCkxWinagr5fRNIL_0e0Cm51GG9BhK_0mzXu0fOxqbyiZe8WjqFjbZ-T8qw/exec",                 // Apps Script 웹앱 주소
-  STAFF_CODE: "DINGLE20",      // 담당자 코드
-  CAP: 5,
+  // 담당자 코드는 여기 두지 않습니다. Apps Script → 프로젝트 설정 → 스크립트 속성의 ADMIN_CODE에 둡니다.
+  CAP: 3,
 };
 
 const TIERS = {
@@ -180,7 +203,8 @@ const PROGRAMS = [
 
 const api = CONFIG.API_URL && CONFIG.API_URL.indexOf("http") === 0;
 
-let D = { students: [], proofs: [], surveys: [], ratings: [], exchanges: [] };
+let D = { students: [], proofs: [], surveys: [], ratings: [], exchanges: [], grants: [], meta: {} };
+let ADMIN = "";        // 로그인 때 입력한 담당자 코드 (이 창을 닫으면 사라짐)
 let V = { tab: "home", loading: false, q: "", revFilter: "wait", err: "" };
 
 const app = document.getElementById("app");
@@ -236,10 +260,16 @@ async function load() {
   V.loading = true; render();
   try {
     if (api) {
-      const r = await fetch(CONFIG.API_URL + "?action=admin");
+      const r = await fetch(CONFIG.API_URL + "?action=admin&admin=" + encodeURIComponent(ADMIN));
       const j = await r.json();
+      if (!j.ok) {
+        authed = false; V.loading = false;
+        V.err = j.error === "no admin code" ? NO_CODE_MSG : "담당자 코드가 맞지 않습니다. 다시 입력해 주세요.";
+        return render();
+      }
       D = { students: j.students || [], proofs: j.proofs || [], surveys: j.surveys || [],
-            ratings: j.ratings || [], exchanges: j.exchanges || [] };
+            ratings: j.ratings || [], exchanges: j.exchanges || [], grants: j.grants || [],
+            meta: { v: j.v || "", epoch: j.epoch || "", notice: j.notice || null } };
     } else {
       D = fromLocal();
     }
@@ -307,6 +337,8 @@ function stats() {
   return s;
 }
 
+const NO_CODE_MSG = "서버에 담당자 코드가 아직 없습니다. Apps Script 편집기 → 왼쪽 톱니바퀴(프로젝트 설정) → 스크립트 속성 → 속성 ADMIN_CODE, 값에 원하는 코드를 넣고 저장해 주세요.";
+
 /* ── 화면: 로그인 ── */
 function viewGate() {
   return `
@@ -325,7 +357,7 @@ function viewGate() {
 /* ── 화면: 공통 틀 ── */
 function shell(inner) {
   const tabs = [["home", "현황"], ["review", "인증 검토"], ["students", "참여자"],
-                ["referral", "추천"], ["survey", "설문"], ["rating", "만족도"], ["exchange", "교환"]];
+                ["referral", "추천"], ["survey", "설문"], ["rating", "만족도"], ["exchange", "교환"], ["ops", "운영"]];
   const w = D.proofs.filter(p => p.status === "wait").length;
   return `
     <div class="top"><div class="topin">
@@ -336,7 +368,8 @@ function shell(inner) {
       </div>
       <button class="btn gh sm" id="reload">${V.loading ? '<span class="spin"></span>' : "새로고침"}</button>
     </div></div>
-    <div class="wrap">${inner}</div>`;
+    <div class="wrap">${api && D.meta && D.meta.v && D.meta.v < SERVER_EXPECT
+      ? `<div class="vwarn">서버가 예전 버전(${esc(D.meta.v)})입니다. 카드 지급·공지·학생 삭제가 동작하지 않을 수 있으니 apps-script.gs를 새 버전으로 배포해 주세요.</div>` : ""}${inner}</div>`;
 }
 
 /* ── 현황 ── */
@@ -412,6 +445,7 @@ function viewReview() {
         <h2>인증 검토</h2>
         <span class="sub">캡처를 확인하고 승인 또는 반려해 주세요</span>
         <div class="right">
+          ${V.revFilter === "wait" && list.length ? `<button class="btn sm" id="okall">대기 ${list.length}건 모두 승인</button>` : ""}
           <select class="sel" id="rf">
             <option value="wait" ${V.revFilter === "wait" ? "selected" : ""}>검토 대기</option>
             <option value="ok" ${V.revFilter === "ok" ? "selected" : ""}>승인됨</option>
@@ -461,7 +495,7 @@ function viewStudents() {
           <thead><tr>
             <th>이름</th><th>학번</th><th class="num">보유</th>
             <th>C</th><th>B</th><th>A</th><th>S</th>
-            <th class="num">미개봉</th><th class="num">퀴즈</th><th>교환</th>
+            <th class="num">미개봉</th><th class="num">퀴즈</th><th>교환</th><th></th>
           </tr></thead>
           <tbody>
             ${list.length ? list.map(s => `<tr>
@@ -477,7 +511,8 @@ function viewStudents() {
               <td class="num">${s.quizDone || 0}</td>
               <td>${String(s.exchanged || "").split(",").filter(Boolean)
                     .map(t => `<span class="chip ${t}">${t}</span>`).join(" ") || "-"}</td>
-            </tr>`).join("") : `<tr><td colspan="10"><div class="empty">참여자가 없습니다.</div></td></tr>`}
+              <td class="num"><button class="btn gh sm" data-st="${esc(s.sid)}">관리</button></td>
+            </tr>`).join("") : `<tr><td colspan="11"><div class="empty">참여자가 없습니다.</div></td></tr>`}
           </tbody>
         </table>
       </div></div>
@@ -628,6 +663,187 @@ function viewReferral() {
     </p>`);
 }
 
+/* ── 운영 ── */
+const SERVER_EXPECT = "2026-09-24";
+function errMsg(e) {
+  const m = e && e.message;
+  return m === "auth" ? "담당자 코드가 맞지 않습니다" : m === "not found" ? "학생을 찾지 못했습니다"
+    : m === "unknown action" ? "서버가 예전 버전입니다. 새 버전으로 배포해 주세요"
+    : m === "bad cards" ? "장수는 -100~100 사이로 넣어 주세요" : "처리하지 못했습니다" + (m ? " (" + m + ")" : "");
+}
+const when = ms => ms ? new Date(ms).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "-";
+
+function viewOps() {
+  const nt = D.meta.notice;
+  const ep = Number(D.meta.epoch) || 0;
+  return shell(`
+    <div class="panel">
+      <div class="ph"><h2>학생 화면 공지</h2><span class="sub">학생 앱 맨 위에 뜹니다</span></div>
+      <div class="pb">
+        <p class="note" style="margin:0 0 10px">지금 공지: ${nt ? `<b style="color:var(--foam)">${esc(nt.t)}</b> · ${when(nt.at)}` : "없음"}</p>
+        <div class="frm"><textarea id="nt" maxlength="300" placeholder="예) 오늘 부스는 17시까지 운영합니다">${esc(nt ? nt.t : "")}</textarea></div>
+        <div class="frm" style="margin-top:8px">
+          <button class="btn sm" id="ntgo">공지 올리기</button>
+          ${nt ? `<button class="btn gh sm" id="ntdel">공지 내리기</button>` : ""}
+          <span class="note">학생이 앱을 열거나 카드를 저장할 때 새 공지를 받습니다 · 300자까지</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h2>카드 지급·회수</h2><span class="sub">부스 이벤트, 오류 보상, 잘못 준 카드 정정</span></div>
+      <div class="pb">
+        <div class="frm">
+          <input id="qsid" placeholder="학번" inputmode="numeric" style="flex:0 0 150px">
+          <input id="qn" class="n" type="number" min="-100" max="100" placeholder="장수 (회수는 -3)">
+          <input id="qr" placeholder="사유 (기록에 남습니다)">
+          <button class="btn sm" id="qgo">반영</button>
+        </div>
+        <p class="note" style="margin:8px 0 0">학생이 다음에 앱을 열거나 저장할 때 미개봉 카드로 들어갑니다. 앱을 켜 둔 채여도 사라지지 않습니다.
+          회수는 아직 뜯지 않은 카드에서만 빠집니다.</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h2>지급 기록</h2><span class="sub">${D.grants.length}건 (최근 300건)</span>
+        <div class="right"><button class="btn gh sm" id="grcsv">CSV 내려받기</button></div></div>
+      <div class="pb flush"><div class="scroll" style="max-height:380px">
+        <table>
+          <thead><tr><th>시각</th><th>이름</th><th>학번</th><th class="num">장수</th><th>사유</th></tr></thead>
+          <tbody>${D.grants.length ? D.grants.map(g => `<tr>
+            <td style="color:var(--mist)">${when(g.at)}</td><td>${esc(g.name)}</td>
+            <td style="color:var(--mist)">${esc(g.sid)}</td>
+            <td class="num ${g.cards > 0 ? "plus" : "minus"}">${g.cards > 0 ? "+" : ""}${g.cards}</td>
+            <td>${esc(g.reason) || "-"}</td></tr>`).join("")
+            : `<tr><td colspan="5"><div class="empty">아직 지급 기록이 없습니다.</div></td></tr>`}</tbody>
+        </table>
+      </div></div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h2>서버 상태</h2></div>
+      <div class="pb">
+        <dl class="kv">
+          <dt>서버 버전</dt><dd>${api ? (D.meta.v ? esc(D.meta.v) + (D.meta.v >= SERVER_EXPECT ? " ✓" : " · 새 버전 배포 필요") : "확인 불가 (예전 버전)") : "서버 없이 이 기기 데이터만 보는 중"}</dd>
+          <dt>마지막 전체 초기화</dt><dd>${ep ? new Date(ep).toLocaleString("ko-KR") : "한 번도 하지 않음"}</dd>
+          <dt>참여 학생</dt><dd>${D.students.length}명</dd>
+          <dt>서버 주소</dt><dd style="word-break:break-all;color:var(--mist)">${esc(CONFIG.API_URL || "-")}</dd>
+        </dl>
+        <p class="note" style="margin:14px 0 0">전체 초기화는 실수를 막기 위해 이 화면이 아니라 Apps Script 편집기에서
+          '전체삭제'를 90초 안에 두 번 실행해서 합니다. 지우기 전에 시트 백업본이 자동으로 만들어집니다.</p>
+      </div>
+    </div>`);
+}
+
+/* 학생 한 명의 상세 — 오른쪽에서 열리는 창 */
+function openStudent(sid) {
+  const st = D.students.find(x => String(x.sid) === String(sid));
+  if (!st) return;
+  closeStudent();
+  const owned = st.owned || {};
+  const byTier = TIER_KEYS.map(t => {
+    const ids = Object.keys(owned).filter(k => k[0] === t && owned[k] > 0).sort((a, b) => parseInt(a.slice(1)) - parseInt(b.slice(1)));
+    return `<div style="margin-bottom:8px"><span class="chip ${t}">${t} ${TIERS[t].word} ${ids.length}/${PER_TIER[t]}</span>
+      <div class="owned" style="margin-top:6px">${ids.map(k => `<span>${k}<b>×${owned[k]}</b></span>`).join("") || '<span style="color:var(--dim)">없음</span>'}</div></div>`;
+  }).join("");
+  const proofs = D.proofs.filter(p => String(p.sid) === String(sid));
+  const ex = (D.exchanges || []).filter(x => String(x.sid) === String(sid));
+  const gr = D.grants.filter(g => String(g.sid) === String(sid));
+  const stLabel = { ok: "승인", no: "반려", wait: "대기" };
+
+  const el = document.createElement("div");
+  el.className = "drawer"; el.id = "drawer";
+  el.innerHTML = `<div class="dp">
+    <div class="dh"><div><h3>${esc(st.name)}</h3><div class="note">${esc(st.sid)}</div></div>
+      <button class="btn gh sm" id="dx" style="margin-left:auto">닫기</button></div>
+
+    <div class="sec"><h4>기본 정보</h4><dl class="kv">
+      <dt>연락처</dt><dd>${esc(st.contact) || "-"}</dd>
+      <dt>보유</dt><dd>${st.types} / ${TOTAL_CARDS}종</dd>
+      <dt>미개봉 카드</dt><dd>${st.pending}장</dd>
+      <dt>퀴즈 참여</dt><dd>${st.quizDone || 0}회</dd>
+      <dt>추천인</dt><dd>${esc(st.ref) || "-"}</dd>
+      <dt>내가 추천한 친구</dt><dd>${(st.refFrom || []).length}명</dd>
+    </dl></div>
+
+    <div class="sec"><h4>보유 카드</h4>${byTier}</div>
+
+    <div class="sec"><h4>인증 ${proofs.length}건</h4>
+      ${proofs.length ? proofs.map(p => `<div class="note" style="color:var(--foam)">${proofLabel(p.key)} ·
+        <span class="chip ${p.status}">${stLabel[p.status] || p.status}</span> · ${when(p.at)}</div>`).join("") : '<div class="note">없음</div>'}</div>
+
+    <div class="sec"><h4>굿즈 교환</h4>
+      ${ex.length ? ex.map(x => `<div class="note" style="color:var(--foam)"><span class="chip ${x.tier}">${x.tier}</span>
+        ${esc(x.goods || "")} · ${x.status === "done" ? "지급 완료" : "신청(연락 예정)"} · ${when(x.doneAt || x.at)}</div>`).join("") : '<div class="note">없음</div>'}</div>
+
+    <div class="sec"><h4>카드 지급·회수</h4>
+      <div class="frm">
+        <input id="gn" class="n" type="number" min="-100" max="100" placeholder="장수 (회수는 -3)">
+        <input id="gr" placeholder="사유 (기록에 남습니다)">
+        <button class="btn sm" id="ggo">반영</button>
+      </div>
+      <p class="note" style="margin:8px 0 0">학생이 다음에 앱을 열거나 저장할 때 미개봉 카드로 들어갑니다. 회수는 아직 뜯지 않은 카드에서만 빠집니다.</p>
+      ${gr.length ? `<div style="margin-top:10px">${gr.map(g => `<div class="note">${when(g.at)} ·
+        <span class="${g.cards > 0 ? "plus" : "minus"}">${g.cards > 0 ? "+" : ""}${g.cards}</span> · ${esc(g.reason) || "사유 없음"}</div>`).join("")}</div>` : ""}
+    </div>
+
+    <div class="sec"><h4>기록 삭제</h4>
+      <p class="note" style="margin:0 0 10px">개인정보 삭제 요청 등에 씁니다. 이 학생의 카드·인증·설문·별점·교환·지급 기록과
+        인증 캡처 파일이 지워지며 되돌릴 수 없습니다.</p>
+      <div class="frm">
+        <input id="dconf" placeholder="확인을 위해 학번 입력" inputmode="numeric">
+        <button class="btn sm danger" id="dgo">이 학생 기록 삭제</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(el);
+  el.onclick = e => { if (e.target === el) closeStudent(); };
+  el.querySelector("#dx").onclick = closeStudent;
+
+  el.querySelector("#ggo").onclick = async e => {
+    const n = parseInt(el.querySelector("#gn").value, 10);
+    const reason = el.querySelector("#gr").value.trim();
+    if (!n || Math.abs(n) > 100) return toast("장수를 -100~100 사이로 넣어 주세요");
+    if (!reason) return toast("사유를 적어 주세요 (지급 기록에 남습니다)");
+    if (!(await grantCards(st.sid, n, reason, e.currentTarget))) return;
+    openStudent(st.sid);
+  };
+
+  el.querySelector("#dgo").onclick = async e => {
+    if (el.querySelector("#dconf").value.trim() !== String(st.sid)) return toast("학번을 정확히 입력해야 삭제됩니다");
+    if (!api) return toast("서버에 연결된 상태에서만 쓸 수 있습니다");
+    const b = e.currentTarget; b.disabled = true; b.innerHTML = '<span class="spin"></span>';
+    try {
+      const j = await adminPost({ action: "deleteStudent", sid: st.sid });
+      const keep = x => String(x.sid) !== String(st.sid);
+      D.students = D.students.filter(keep); D.proofs = D.proofs.filter(keep);
+      D.exchanges = (D.exchanges || []).filter(keep); D.surveys = D.surveys.filter(keep);
+      D.ratings = D.ratings.filter(keep); D.grants = D.grants.filter(keep);
+      closeStudent(); render();
+      toast(`${st.name} 학생 기록을 삭제했습니다 (${j.removed}줄, 캡처 ${j.files}개)`);
+    } catch (err) { b.disabled = false; b.textContent = "이 학생 기록 삭제"; toast(errMsg(err)); }
+  };
+}
+function closeStudent() { const d = $("drawer"); if (d) d.remove(); }
+
+/* 카드 지급·회수 (상세 창과 운영 화면이 같이 씀) */
+async function grantCards(sid, n, reason, btn) {
+  if (!api) { toast("서버에 연결된 상태에서만 쓸 수 있습니다"); return false; }
+  const label = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'; }
+  try {
+    await adminPost({ action: "grant", sid, cards: n, reason });
+    const st = D.students.find(x => String(x.sid) === String(sid));
+    if (st) st.pending = Math.max(0, (st.pending || 0) + n);
+    D.grants.unshift({ at: Date.now(), sid: String(sid), name: st ? st.name : "", cards: n, reason });
+    toast(`${st ? st.name : sid} 학생에게 ${n > 0 ? n + "장 지급" : -n + "장 회수"}했습니다`);
+    return true;
+  } catch (err) {
+    toast(errMsg(err));
+    return false;
+  } finally { if (btn) { btn.disabled = false; btn.textContent = label; } }
+}
+
 /* ── 교환 ── */
 function viewExchange() {
   const ex = (D.exchanges || []).slice();
@@ -745,6 +961,7 @@ function render() {
   else if (V.tab === "rating") app.innerHTML = viewRating();
   else if (V.tab === "referral") app.innerHTML = viewReferral();
   else if (V.tab === "exchange") app.innerHTML = viewExchange();
+  else if (V.tab === "ops") app.innerHTML = viewOps();
   else app.innerHTML = viewHome();
   bind();
 }
@@ -752,9 +969,22 @@ function render() {
 function bindGate() {
   const go = $("go");
   go.onclick = async () => {
-    const v = ($("code").value || "").trim().toUpperCase();
-    if (v !== CONFIG.STAFF_CODE.toUpperCase()) { V.err = "코드가 올바르지 않습니다."; return render(); }
-    authed = true; V.err = "";
+    const v = ($("code").value || "").trim();
+    if (!v) { V.err = "담당자 코드를 입력해 주세요."; return render(); }
+    if (api) {
+      go.disabled = true; go.innerHTML = '<span class="spin"></span>';
+      try {
+        const r = await fetch(CONFIG.API_URL + "?action=auth&admin=" + encodeURIComponent(v));
+        const j = await r.json();
+        if (!j.ok) {
+          V.err = j.error === "no admin code" ? NO_CODE_MSG
+                : j.error === "unknown action" ? "서버가 예전 버전입니다. apps-script.gs를 새 버전으로 배포한 뒤 다시 들어와 주세요."
+                : "코드가 올바르지 않습니다.";
+          return render();
+        }
+      } catch (e) { V.err = "서버에 연결하지 못했습니다."; return render(); }
+    }
+    ADMIN = v; authed = true; V.err = "";
     await load();
   };
   $("code").onkeydown = e => { if (e.key === "Enter") go.click(); };
@@ -788,6 +1018,57 @@ function bind() {
     } catch (e) { btn.disabled = false; btn.textContent = st === "ok" ? "승인" : "반려"; toast("처리에 실패했습니다"); }
   };
   app.querySelectorAll("[data-ok]").forEach(b => b.onclick = () => rev(+b.dataset.ok, "ok", b));
+
+  // 대기 전체 승인
+  $("okall") && ($("okall").onclick = async e => {
+    const items = list.filter(p => p.status === "wait");
+    if (!items.length) return;
+    if (!confirm(`검토 대기 ${items.length}건을 모두 승인할까요?`)) return;
+    const b = e.currentTarget; b.disabled = true; b.innerHTML = '<span class="spin"></span>';
+    try {
+      if (api) await adminPost({ action: "reviewBatch", status: "ok", items: items.map(p => ({ sid: p.sid, key: p.key })) });
+      else for (const p of items) await review(p.sid, p.key, "ok");
+      items.forEach(p => { p.status = "ok"; });
+      toast(`${items.length}건을 승인했습니다`);
+      render();
+    } catch (err) { b.disabled = false; b.textContent = `대기 ${items.length}건 모두 승인`; toast(errMsg(err)); }
+  });
+
+  // 참여자 → 상세
+  app.querySelectorAll("[data-st]").forEach(b => b.onclick = () => openStudent(b.dataset.st));
+
+  // 운영: 공지
+  const postNotice = async (text, btn) => {
+    if (!api) return toast("서버에 연결된 상태에서만 쓸 수 있습니다");
+    btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+    try {
+      await adminPost({ action: "notice", text });
+      D.meta.notice = text ? { t: text, at: Date.now() } : null;
+      toast(text ? "공지를 올렸습니다" : "공지를 내렸습니다");
+      render();
+    } catch (err) { toast(errMsg(err)); render(); }
+  };
+  $("ntgo") && ($("ntgo").onclick = e => {
+    const t = ($("nt").value || "").trim();
+    if (!t) return toast("공지 내용을 적어 주세요");
+    postNotice(t, e.currentTarget);
+  });
+  $("ntdel") && ($("ntdel").onclick = e => postNotice("", e.currentTarget));
+
+  // 운영: 학번으로 바로 지급
+  $("qgo") && ($("qgo").onclick = async e => {
+    const sid = ($("qsid").value || "").trim(), n = parseInt($("qn").value, 10), reason = ($("qr").value || "").trim();
+    if (!/^\d{6,12}$/.test(sid)) return toast("학번을 확인해 주세요");
+    if (!D.students.some(x => String(x.sid) === sid)) return toast("참여자 목록에 없는 학번입니다");
+    if (!n || Math.abs(n) > 100) return toast("장수를 -100~100 사이로 넣어 주세요");
+    if (!reason) return toast("사유를 적어 주세요 (지급 기록에 남습니다)");
+    if (await grantCards(sid, n, reason, e.currentTarget)) render();
+  });
+  $("grcsv") && ($("grcsv").onclick = () => {
+    const rows = [["시각", "이름", "학번", "장수", "사유"]];
+    D.grants.forEach(g => rows.push([g.at ? new Date(g.at).toLocaleString("ko-KR") : "", g.name, g.sid, g.cards, g.reason]));
+    csv(rows, "카드지급기록");
+  });
   app.querySelectorAll("[data-no]").forEach(b => b.onclick = () => rev(+b.dataset.no, "no", b));
   app.querySelectorAll("[data-re]").forEach(b => b.onclick = () => rev(+b.dataset.re, "wait", b));
 
@@ -852,15 +1133,7 @@ function bind() {
 }
 
 async function exchangeDone(sid, tier, status) {
-  if (api) {
-    const r = await fetch(CONFIG.API_URL, {
-      method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action: "exchangeDone", sid, tier, status }),
-    });
-    const j = await r.json();
-    if (!j.ok) throw new Error(j.error || "failed");
-    return;
-  }
+  if (api) { await adminPost({ action: "exchangeDone", sid, tier, status }); return; }
   const raw = localStorage.getItem("dingle:" + sid);
   if (!raw) return;
   const d = JSON.parse(raw);
@@ -869,14 +1142,19 @@ async function exchangeDone(sid, tier, status) {
   localStorage.setItem("dingle:" + sid, JSON.stringify(d));
 }
 
+/* 등대팀 전용 요청. 담당자 코드를 붙여 보내고, 서버가 거절하면 예외를 던진다. */
+async function adminPost(body) {
+  const r = await fetch(CONFIG.API_URL, {
+    method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(Object.assign({}, body, { admin: ADMIN })),
+  });
+  const j = await r.json();
+  if (!j || j.ok !== true) throw new Error((j && j.error) || "failed");
+  return j;
+}
+
 async function review(sid, key, status) {
-  if (api) {
-    await fetch(CONFIG.API_URL, {
-      method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action: "review", sid, key, status }),
-    });
-    return;
-  }
+  if (api) { await adminPost({ action: "review", sid, key, status }); return; }
   const raw = localStorage.getItem("dingle:" + sid);
   if (!raw) return;
   const d = JSON.parse(raw);

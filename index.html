@@ -332,6 +332,14 @@
     align-items:center;justify-content:center;padding:16px;animation:fadein .18s;cursor:zoom-out}
   .zoom img{max-width:100%;max-height:100%;border-radius:var(--r-md)}
 
+  /* ── 등대팀 공지 ── */
+  .notice{display:flex;gap:10px;align-items:flex-start;background:rgba(255,201,74,.1);
+    border-radius:var(--r-md);padding:12px 10px 12px 13px;margin-bottom:14px}
+  .notice .tag{flex:none;font-size:11px;font-weight:700;color:#13203A;background:var(--beam);
+    border-radius:999px;padding:3px 9px;margin-top:1px}
+  .notice p{margin:0;flex:1;font-size:13.5px;line-height:1.55;color:var(--beam2);white-space:pre-wrap;word-break:break-word}
+  .notice button{flex:none;background:none;border:none;color:var(--mist);font-size:15px;padding:2px 6px;line-height:1}
+
   /* ── 보관함 ── */
   .prog{background:var(--hull);border-radius:var(--r-lg);padding:16px;margin-bottom:18px;
     box-shadow:var(--lift)}
@@ -720,7 +728,7 @@ const CONFIG = {
   API_URL: "https://script.google.com/macros/s/AKfycbzG9m2zMqCLCkxWinagr5fRNIL_0e0Cm51GG9BhK_0mzXu0fOxqbyiZe8WjqFjbZ-T8qw/exec",
 
   // 담당자 코드 (굿즈 교환 시 부스에서 입력)
-  STAFF_CODE: "DINGLE20",
+  // 담당자 코드는 공개 페이지에 두지 않습니다 (Apps Script 스크립트 속성 ADMIN_CODE)
 
   // 이벤트 목록. 새 이벤트가 생기면 여기에 한 줄만 추가하면 됩니다.
   //   code  : 학생에게 안내할 참여 코드 (추측하기 어렵게)
@@ -728,11 +736,11 @@ const CONFIG = {
   //   cards : 지급할 카드 장수
   //   until : (선택) 마감일. 지나면 코드가 만료됩니다. 예: "2026-11-30"
   EVENTS: [
-    { code: "DG-4K7M", label: "1회차 부스",       cards: 7 },
-    { code: "DG-9TQX", label: "2회차 부스",       cards: 5 },
-    { code: "DG-6WZP", label: "3회차 부스",       cards: 5 },
+    { code: "DG-4K7M", label: "1회차 부스",       cards: 3 },
+    { code: "DG-9TQX", label: "2회차 부스",       cards: 3 },
+    { code: "DG-6WZP", label: "3회차 부스",       cards: 3 },
     { code: "DG-2HFN", label: "활동발표회",       cards: 5 },
-    { code: "DG-8RVK", label: "학습지원 수요조사", cards: 5 },
+    { code: "DG-8RVK", label: "학습지원 수요조사", cards: 4 },
   ],
 
   // 참여기록 캡처 제출용 구글 폼 주소 (없으면 버튼 숨김)
@@ -743,9 +751,9 @@ const CONFIG = {
 
   // 카드 지급량
   REWARD: {
-    welcome: 7,      // 처음 시작할 때 바로 주는 카드 (0으로 두면 지급하지 않음)
-    follow:5, quiz: 7, apply: 7, done: 10,
-    invited: 5,      // 추천인을 입력하고 가입한 학생이 받는 카드
+    welcome: 5,      // 처음 시작할 때 바로 주는 카드 (0으로 두면 지급하지 않음)
+    follow: 3, quiz: 3, apply: 4, done: 7,
+    invited: 3,      // 추천인을 입력하고 가입한 학생이 받는 카드
     referrer: 5,     // 추천한 학생이 받는 카드 (추천받은 사람이 프로그램을 인증해야 지급)
   },
 
@@ -895,11 +903,23 @@ const store = {
      (서버 저장이 한 번 실패해도 카드가 사라지지 않도록) */
   /* 서버에 있는 기록만 가져온다. 서버가 제대로 답하지 않으면 예외를 던진다.
      (오류 응답을 '기록 없음'으로 읽으면 새 학생으로 취급해 기존 카드를 덮어쓰게 된다) */
+  serverEpoch: null,   // 서버의 초기화 회차 (모르면 null)
+  notice: null,        // 등대팀 공지 { t, at }
+
   async remote(sid) {
     const r = await fetch(CONFIG.API_URL + "?action=load&sid=" + encodeURIComponent(sid));
     const j = await r.json();
     if (!j || j.ok !== true) throw new Error((j && j.error) || "load failed");
-    return j.data || null;
+    if (j.epoch !== undefined) this.serverEpoch = String(j.epoch || "");
+    if (j.v) this.notice = j.notice || null;          // 새 서버는 공지가 없으면 notice를 싣지 않는다
+    const d = j.data || null;
+    if (d && this.serverEpoch !== null) d.epoch = this.serverEpoch;
+    return d;
+  },
+
+  /* 이 기기에 남은 이 학번의 기록을 지운다 */
+  forget(sid) {
+    try { localStorage.removeItem(this.key(sid)); localStorage.removeItem("dingle:verify:" + sid); } catch (e) {}
   },
 
   /* 서버와 대조하지 못한 채 쌓인 기기 기록이 있으면, 그 기록이 출발한 시점(base)을 따로 남겨 둔다 */
@@ -914,9 +934,14 @@ const store = {
   keep(sid, data) { try { localStorage.setItem(this.key(sid), JSON.stringify(data)); } catch (e) {} },
 
   async load(sid) {
-    const mine = this.local(sid);
-    if (!api) return mine;
-    const far = await this.remote(sid);
+    if (!api) return this.local(sid);
+    const far = await this.remote(sid);          // 서버가 초기화됐는지도 여기서 알게 된다
+    let mine = this.local(sid);
+    if (mine && this.serverEpoch && String(mine.epoch || "") !== this.serverEpoch) {
+      // 등대팀이 전체 초기화한 뒤다. 이 기기에 남은 예전 기록은 버린다.
+      this.forget(sid);
+      mine = null;
+    }
     const base = this.verifyBase(sid);
     if (mine && base !== null) {
       // 대조 대기 중이던 기록: 그 사이 서버가 바뀌었으면 서버를, 아니면 기기 기록을 쓴다
@@ -941,7 +966,12 @@ const store = {
     // 서버가 정상 응답(JSON)을 주지 않으면 저장됐다고 단정하지 않는다.
     let j = null;
     try { j = await r.json(); } catch (e) { throw new Error("no response"); }
-    if (!j || j.ok !== true) throw new Error((j && j.error) || "save failed");
+    if (!j || j.ok !== true) {
+      const err = new Error((j && j.error) || "save failed");
+      if (j && j.error === "reset") err.reset = true;      // 초기화 전 기록이라 서버가 거절함
+      throw err;
+    }
+    if (j.v) this.notice = j.notice || null;
     return j;
   },
 
@@ -958,8 +988,9 @@ const store = {
 
   async pending() {
     if (api) {
-      const r = await fetch(CONFIG.API_URL + "?action=pending");
+      const r = await fetch(CONFIG.API_URL + "?action=pending&admin=" + encodeURIComponent(Admin.key || ""));
       const j = await r.json();
+      if (!j.ok) throw new Error(j.error || "failed");
       return j.list || [];
     }
     const out = [];
@@ -992,10 +1023,12 @@ const store = {
 
   async review(sid, key, status) {
     if (api) {
-      await fetch(CONFIG.API_URL, {
+      const r = await fetch(CONFIG.API_URL, {
         method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "review", sid, key, status }),
+        body: JSON.stringify({ action: "review", sid, key, status, admin: Admin.key || "" }),
       });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || "failed");
       return;
     }
     const raw = localStorage.getItem("dingle:" + sid);
@@ -1038,7 +1071,7 @@ const store = {
 
   async rank() {
     if (api) {
-      const r = await fetch(CONFIG.API_URL + "?action=rank");
+      const r = await fetch(CONFIG.API_URL + "?action=rank&me=" + encodeURIComponent(S ? S.sid : ""));
       const j = await r.json();
       return j.list || [];
     }
@@ -1073,6 +1106,7 @@ function blank(sid, name) {
     sid, name,
     pending: Number(CONFIG.REWARD.welcome) || 0,   // 시작 카드
     seenGranted: 0,                                // 서버가 적립한 추천 보상 중 이미 받은 양
+    epoch: store.serverEpoch || "",                // 이 기록이 속한 초기화 회차
     owned: {},                                     // pending = 미개봉 카드 장수
     claims: {},                                 // key -> 지급 시각
     proofs: {},                                 // key -> {img, at, status}
@@ -1131,6 +1165,7 @@ function normalize(d) {
   d.proofs = d.proofs || {}; d.exchanged = d.exchanged || {};
   d.pending = Number(d.pending) || 0;
   d.seenGranted = Number(d.seenGranted) || 0;
+  d.epoch = d.epoch ? String(d.epoch) : "";
   return d;
 }
 
@@ -1202,17 +1237,22 @@ async function persist(quiet) {
         if (!document.getElementById("stage")) render();
         return true;
       }
+      if (store.serverEpoch && String(S.epoch || "") !== store.serverEpoch) {
+        if (!V.baseSavedAt) S.epoch = store.serverEpoch;   // 서버와 닿기 전에 새로 시작한 임시 기록 → 이어 간다
+        else { resetLocal(); return false; }               // 초기화 전 기록 → 버린다
+      }
     }
     const j = await store.save(sid, S, V.needSync);
     if (!S || S.sid !== sid) return true;            // 그 사이 로그아웃했으면 반영하지 않는다
     if (j && j.synced !== false) V.needSync = false;
 
     // 친구 추천 보상이 서버에 쌓여 있었다면 이번 저장에서 함께 받는다
-    if (j && j.gained > 0 && (Number(S.seenGranted) || 0) < j.seenGranted) {
-      S.pending = (Number(S.pending) || 0) + j.gained;
+    // 친구 추천 보상·등대팀 지급(또는 회수)이 서버에 쌓여 있었다면 이번 저장에서 반영된다
+    if (j && j.gained && typeof j.seenGranted === "number" && (Number(S.seenGranted) || 0) !== j.seenGranted) {
+      S.pending = Math.max(0, (Number(S.pending) || 0) + j.gained);
       S.seenGranted = j.seenGranted;
       try { localStorage.setItem(store.key(sid), JSON.stringify(S)); } catch (e) {}
-      toast(`친구 추천 보상으로 카드 ${j.gained}장이 도착했어요!`, 3400);
+      toast(j.gained > 0 ? `새 카드 ${j.gained}장이 도착했어요!` : `등대팀이 미개봉 카드 ${-j.gained}장을 조정했어요.`, 3400);
       if (!document.getElementById("stage")) quiet = false;   // 숫자가 바뀌었으니 다시 그린다
     }
 
@@ -1222,11 +1262,27 @@ async function persist(quiet) {
     if (!quiet) render();
     return true;
   } catch (e) {
+    if (e && e.reset) { resetLocal(); return false; }
     V.saveErr = true;
     if (!quiet) render();
     scheduleRetry();
     return false;
   }
+}
+
+/* 등대팀이 전체 초기화했을 때: 이 기기의 예전 기록을 지우고 처음 화면으로 */
+function resetLocal() {
+  if (S && S.sid) store.forget(S.sid);
+  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+  retryCount = 0;
+  try { Stage.clearTimers(); if (Stage.el) { Stage.el.remove(); Stage.el = null; } } catch (e) {}
+  S = null;
+  V = { tab: "get", drawn: null, busy: false, quizOpen: false, quizIdx: 0, quizPick: null,
+        svPick: null, svEtc: "", evMsg: null, evOk: false, codeOpen: null, codeErr: false,
+        ranking: null, saveErr: false };
+  unlockScroll();
+  render();
+  toast("등대팀이 기록을 초기화했어요. 처음부터 다시 시작해 주세요.", 4200);
 }
 
 /* 저장에 실패하면 잠시 뒤 알아서 다시 시도한다.
@@ -1298,6 +1354,16 @@ function cardHTML(card, o) {
     </div>`;
 }
 
+/* 등대팀 공지 — 닫으면 같은 공지는 다시 띄우지 않는다 */
+function noticeHTML() {
+  const n = store.notice;
+  if (!n || !n.t) return "";
+  let seen = ""; try { seen = localStorage.getItem("dingle:noticeSeen") || ""; } catch (e) {}
+  if (seen === String(n.at)) return "";
+  return `<div class="notice" id="noticebar"><span class="tag">공지</span><p>${esc(n.t)}</p>
+    <button id="noticex" aria-label="공지 닫기">✕</button></div>`;
+}
+
 /* 하단 탭 아이콘 */
 const SVG = s => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${s}</svg>`;
@@ -1326,6 +1392,7 @@ function shell(inner) {
 
     <div class="wrap app">
       ${V.saveErr && retryCount >= 1 ? SAVE_BANNER : ""}
+      ${noticeHTML()}
       ${inner}
       <p class="foot">
         연세대학교 미래캠퍼스 미래융합교육혁신원 Lighthouse Team 20기<br>
@@ -1701,7 +1768,7 @@ function showCard(id) {
         ${q >= CONFIG.CAP ? "상한까지 모아서 이 카드는 더 이상 나오지 않아요" : "같은 카드는 " + CONFIG.CAP + "장까지 모을 수 있어요"}</p>
       <button class="close">닫기</button>
     </div>`;
-  z.onclick = e => { if (e.target === z || e.target.classList.contains("close")) z.remove(); };
+  z.onclick = e => { if (e.target === z || e.target.classList.contains("close")) { z.remove(); unlockScroll(); } };
   document.body.appendChild(z);
 }
 
@@ -1963,12 +2030,20 @@ const Admin = {
     m.onclick = e => { if (e.target === m) Admin.close(); };
     m.querySelector("#admX").onclick = () => Admin.close();
     const go = m.querySelector("#admGo");
-    go.onclick = () => {
-      const v = (document.getElementById("admCode").value || "").trim().toUpperCase();
-      if (v !== CONFIG.STAFF_CODE.toUpperCase()) {
-        document.getElementById("admErr").innerHTML = '<div class="cerr">코드가 올바르지 않습니다.</div>';
-        return;
+    go.onclick = async () => {
+      const v = (document.getElementById("admCode").value || "").trim();
+      const err = t => { document.getElementById("admErr").innerHTML = '<div class="cerr">' + t + '</div>'; };
+      if (!v) return err("담당자 코드를 입력해 주세요.");
+      if (api) {
+        go.disabled = true;
+        try {
+          const r = await fetch(CONFIG.API_URL + "?action=auth&admin=" + encodeURIComponent(v));
+          const j = await r.json();
+          if (!j.ok) { go.disabled = false;
+            return err(j.error === "no admin code" ? "서버에 담당자 코드가 아직 설정되지 않았습니다." : "코드가 올바르지 않습니다."); }
+        } catch (e) { go.disabled = false; return err("서버에 연결하지 못했습니다."); }
       }
+      Admin.key = v;
       Admin.list();
     };
     m.querySelector("#admCode").onkeydown = e => { if (e.key === "Enter") go.click(); };
@@ -2009,7 +2084,7 @@ const Admin = {
       const z = document.createElement("div");
       z.className = "zoom";
       z.innerHTML = '<img src="' + im.src + '" alt="">';
-      z.onclick = () => z.remove();
+      z.onclick = () => { z.remove(); unlockScroll(); };
       document.body.appendChild(z);
     });
     sh.querySelectorAll("[data-ok]").forEach(b => b.onclick = () => Admin.review(items[+b.dataset.ok], "ok", b));
@@ -2559,7 +2634,7 @@ function celebrate(tiers) {
   SFX.chime(4);
   haptic([28, 40, 28, 40, 70]);
 
-  const close = () => el.remove();
+  const close = () => { el.remove(); unlockScroll(); };   // 뒤에 남은 창이 없으면 스크롤 잠금도 푼다
   el.querySelector("[data-cclose]").onclick = close;
   el.querySelector("[data-cgo]").onclick = () => {
     close();
@@ -2730,6 +2805,10 @@ function bind() {
 
   // 저장 실패 시 다시 시도
   $("retrysave") && ($("retrysave").onclick = retryNow);
+  $("noticex") && ($("noticex").onclick = () => {
+    try { localStorage.setItem("dingle:noticeSeen", String(store.notice && store.notice.at)); } catch (e) {}
+    const b = $("noticebar"); if (b) b.remove();
+  });
 
   // 보관함 카드 눌러서 크게 보기
   app.querySelectorAll("[data-cid]").forEach(el => el.onclick = () => showCard(el.dataset.cid));
@@ -2951,9 +3030,9 @@ async function loadRank() {
 /* 키보드로도 닫을 수 있게 (ESC) */
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
-  const cz = document.querySelector(".cardzoom"); if (cz) return cz.remove();
-  const cb = document.querySelector(".celebrate"); if (cb) return cb.remove();
-  const zm = document.querySelector(".zoom");      if (zm) return zm.remove();
+  const cz = document.querySelector(".cardzoom"); if (cz) { cz.remove(); return unlockScroll(); }
+  const cb = document.querySelector(".celebrate"); if (cb) { cb.remove(); return unlockScroll(); }
+  const zm = document.querySelector(".zoom");      if (zm) { zm.remove(); return unlockScroll(); }
   if (document.getElementById("stage")) return;    // 연출 중에는 건너뛰기 버튼으로만
   if (document.getElementById("proofModal")) return Proof.close();
   if (document.getElementById("admModal")) return Admin.close();

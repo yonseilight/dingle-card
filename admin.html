@@ -202,8 +202,9 @@ const PROGRAMS = [
 ];
 
 const api = CONFIG.API_URL && CONFIG.API_URL.indexOf("http") === 0;
-const ADMIN_PAGE_VERSION = "2026-09-25";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-09-28";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
+let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
 let D = { students: [], proofs: [], surveys: [], ratings: [], exchanges: [], grants: [], meta: {} };
 let ADMIN = "";        // 로그인 때 입력한 담당자 코드 (이 창을 닫으면 사라짐)
@@ -271,7 +272,8 @@ async function load() {
       }
       D = { students: j.students || [], proofs: j.proofs || [], surveys: j.surveys || [],
             ratings: j.ratings || [], exchanges: j.exchanges || [], grants: j.grants || [],
-            meta: { v: j.v || "", epoch: j.epoch || "", notice: j.notice || null } };
+            meta: { v: j.v || "", epoch: j.epoch || "", notice: j.notice || null,
+                    sheetName: j.sheetName || "", sheetUrl: j.sheetUrl || "" } };
     } else {
       D = fromLocal();
     }
@@ -357,12 +359,15 @@ function viewGate() {
 }
 
 /* 로그인 화면에서 서버가 실제로 닿는지, 몇 버전인지 보여준다 (문제가 어디 있는지 바로 알 수 있게) */
-function srvText() {
+function srvText() { return srvState() + (MISMATCH || ""); }
+function srvState() {
   if (!api) return "API 주소가 비어 있어 이 기기의 데이터만 표시됩니다";
   if (!SRV) return '<span class="spin"></span> 서버 확인 중…';
   if (SRV.state === "down") return '<span style="color:var(--bad)">서버에 연결하지 못했습니다. API 주소와 배포 상태를 확인해 주세요.</span>';
   if (SRV.state === "old") return '<span style="color:var(--bad)">서버가 예전 버전입니다' + (SRV.v ? " (" + esc(SRV.v) + ")" : "") +
     '. apps-script.gs를 새 버전으로 배포해 주세요.</span>';
+  if (SRV.state === "stale") return '<span style="color:var(--beam)">서버 연결됨 · 버전 ' + esc(SRV.v) +
+    ' · 최신(' + SERVER_EXPECT + ')이 아닙니다. 새 버전으로 배포하면 관리자 페이지 전체 초기화를 쓸 수 있습니다.</span>';
   return '<span style="color:#7FE9C0">서버 연결됨 · 버전 ' + esc(SRV.v) + ' ✓</span>';
 }
 async function checkServer() {
@@ -370,9 +375,22 @@ async function checkServer() {
   try {
     const r = await fetch(CONFIG.API_URL + "?action=ping");
     const j = await r.json();
-    SRV = { state: j && j.v && j.v >= "2026-09-24" ? "ok" : "old", v: (j && j.v) || "" };
+    const v = (j && j.v) || "";
+    SRV = { state: v >= SERVER_EXPECT ? "ok" : v >= "2026-09-24" ? "stale" : "old", v };
   } catch (e) { SRV = { state: "down", v: "" }; }
   const el = $("srvline"); if (el) el.innerHTML = srvText();
+  // 같은 사이트의 학생 앱(index.html)이 쓰는 서버 주소와 비교한다 (파일로 열었을 때는 건너뜀)
+  try {
+    if (location.protocol.indexOf("http") === 0) {
+      const t = await (await fetch(new URL("index.html", location.href).href)).text();
+      const m = t.match(/API_URL:\s*"([^"]+)"/);
+      if (m && m[1].trim() !== CONFIG.API_URL.trim()) {
+        MISMATCH = '<br><span style="color:var(--bad)">⚠ 학생 앱(index.html)과 이 관리자 페이지의 서버 주소가 다릅니다. ' +
+                   '두 파일의 API_URL을 같게 맞춰야 학생 기록이 여기에 보입니다.</span>';
+        const e2 = $("srvline"); if (e2) e2.innerHTML = srvText();
+      }
+    }
+  } catch (e) {}
 }
 
 /* ── 화면: 공통 틀 ── */
@@ -685,7 +703,7 @@ function viewReferral() {
 }
 
 /* ── 운영 ── */
-const SERVER_EXPECT = "2026-09-24";
+const SERVER_EXPECT = "2026-09-28";
 function errMsg(e) {
   const m = e && e.message;
   return m === "auth" ? "담당자 코드가 맞지 않습니다" : m === "not found" ? "학생을 찾지 못했습니다"
@@ -749,9 +767,25 @@ function viewOps() {
           <dt>마지막 전체 초기화</dt><dd>${ep ? new Date(ep).toLocaleString("ko-KR") : "한 번도 하지 않음"}</dd>
           <dt>참여 학생</dt><dd>${D.students.length}명</dd>
           <dt>서버 주소</dt><dd style="word-break:break-all;color:var(--mist)">${esc(CONFIG.API_URL || "-")}</dd>
+          <dt>연결된 스프레드시트</dt><dd>${D.meta.sheetUrl
+            ? `<a href="${esc(D.meta.sheetUrl)}" target="_blank" rel="noopener">${esc(D.meta.sheetName || "열기")}</a>
+               <span class="note">— 학생 기록은 이 파일의 students 탭에 있습니다</span>`
+            : "확인 불가 (서버를 최신 버전으로 배포하면 보입니다)"}</dd>
         </dl>
-        <p class="note" style="margin:14px 0 0">전체 초기화는 실수를 막기 위해 이 화면이 아니라 Apps Script 편집기에서
-          '전체삭제'를 90초 안에 두 번 실행해서 합니다. 지우기 전에 시트 백업본이 자동으로 만들어집니다.</p>
+      </div>
+    </div>
+
+    <div class="panel" style="border-color:rgba(255,154,139,.35)">
+      <div class="ph"><h2>전체 초기화</h2><span class="sub">행사 시작 직전에 한 번</span></div>
+      <div class="pb">
+        <p class="note" style="margin:0 0 10px">위 '연결된 스프레드시트'의 학생·인증·설문·별점·교환·지급 기록과 인증 캡처 파일을 모두 지웁니다.
+          지우기 전에 스프레드시트 백업본을 자동으로 만들고, 테스트했던 폰에 남은 예전 기록도 서버로 되살아나지 않게 막습니다.
+          시트에서 직접 줄을 지우면 이 막음이 걸리지 않으니 꼭 여기서 초기화해 주세요.</p>
+        <div class="frm">
+          <input id="rsconf" placeholder="확인을 위해 '전체 초기화'라고 입력">
+          <button class="btn sm danger" id="rsgo">전체 초기화</button>
+        </div>
+        ${V.resetMsg ? `<p class="note" style="margin:10px 0 0;color:var(--foam)">${V.resetMsg}</p>` : ""}
       </div>
     </div>`);
 }
@@ -1087,6 +1121,24 @@ function bind() {
     if (!reason) return toast("사유를 적어 주세요 (지급 기록에 남습니다)");
     if (await grantCards(sid, n, reason, e.currentTarget)) render();
   });
+  // 운영: 전체 초기화
+  $("rsgo") && ($("rsgo").onclick = async e => {
+    if (($("rsconf").value || "").trim() !== "전체 초기화") return toast("'전체 초기화'라고 정확히 입력해 주세요");
+    if (!api) return toast("서버에 연결된 상태에서만 쓸 수 있습니다");
+    if (!confirm("모든 학생 기록을 지웁니다. 백업본은 자동으로 만들어집니다. 계속할까요?")) return;
+    const b = e.currentTarget; b.disabled = true; b.innerHTML = '<span class="spin"></span> 초기화 중';
+    try {
+      const j = await adminPost({ action: "resetAll", confirm: "전체 초기화" });
+      V.resetMsg = `초기화 완료 · ${esc((j.done || []).join(", "))} · 캡처 ${j.trashed || 0}개 휴지통으로 · ` +
+                   `<a href="${esc(j.backupUrl || "#")}" target="_blank" rel="noopener">백업본 열기</a>`;
+      toast("전체 초기화를 마쳤습니다");
+      await load();
+    } catch (err) {
+      b.disabled = false; b.textContent = "전체 초기화";
+      toast(err && err.message === "unknown action" ? "서버를 최신 버전(" + SERVER_EXPECT + ")으로 배포해야 쓸 수 있습니다" : errMsg(err));
+    }
+  });
+
   $("grcsv") && ($("grcsv").onclick = () => {
     const rows = [["시각", "이름", "학번", "장수", "사유"]];
     D.grants.forEach(g => rows.push([g.at ? new Date(g.at).toLocaleString("ko-KR") : "", g.name, g.sid, g.cards, g.reason]));

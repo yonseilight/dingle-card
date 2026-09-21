@@ -728,11 +728,11 @@ const CONFIG = {
   //   cards : 지급할 카드 장수
   //   until : (선택) 마감일. 지나면 코드가 만료됩니다. 예: "2026-11-30"
   EVENTS: [
-    { code: "DG-4K7M", label: "1회차 부스",       cards: 6 },
-    { code: "DG-9TQX", label: "2회차 부스",       cards: 6 },
-    { code: "DG-6WZP", label: "3회차 부스",       cards: 6 },
-    { code: "DG-2HFN", label: "활동발표회",       cards: 6 },
-    { code: "DG-8RVK", label: "학습지원 수요조사", cards: 6 },
+    { code: "DG-4K7M", label: "1회차 부스",       cards: 3 },
+    { code: "DG-9TQX", label: "2회차 부스",       cards: 3 },
+    { code: "DG-6WZP", label: "3회차 부스",       cards: 3 },
+    { code: "DG-2HFN", label: "활동발표회",       cards: 5 },
+    { code: "DG-8RVK", label: "학습지원 수요조사", cards: 4 },
   ],
 
   // 참여기록 캡처 제출용 구글 폼 주소 (없으면 버튼 숨김)
@@ -744,7 +744,7 @@ const CONFIG = {
   // 카드 지급량
   REWARD: {
     welcome: 5,      // 처음 시작할 때 바로 주는 카드 (0으로 두면 지급하지 않음)
-    follow: 5, quiz: 5, apply: 7, done: 10,
+    follow: 3, quiz: 3, apply: 4, done: 7,
     invited: 3,      // 추천인을 입력하고 가입한 학생이 받는 카드
     referrer: 5,     // 추천한 학생이 받는 카드 (추천받은 사람이 프로그램을 인증해야 지급)
   },
@@ -903,21 +903,22 @@ const store = {
     return far;
   },
 
-  async save(sid, data) {
+  async save(sid, data, sync) {
     data.savedAt = Date.now();
     // 서버 저장 여부와 무관하게 이 기기에도 항상 남긴다
     try { localStorage.setItem(this.key(sid), JSON.stringify(data)); } catch (e) {}
-    if (!api) return;
+    if (!api) return { ok: true, gained: 0 };
     const r = await fetch(CONFIG.API_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action: "save", sid, data }),
+      // sync: 설문·별점을 새로 남겼을 때만 서버가 시트로 옮기게 한다 (평소 저장을 가볍게)
+      body: JSON.stringify({ action: "save", sid, data, sync: !!sync }),
     });
     // 서버가 정상 응답(JSON)을 주지 않으면 저장됐다고 단정하지 않는다.
-    // (잠금 대기 초과 등으로 오류 페이지가 돌아오는 경우가 있다)
     let j = null;
     try { j = await r.json(); } catch (e) { throw new Error("no response"); }
     if (!j || j.ok !== true) throw new Error((j && j.error) || "save failed");
+    return j;
   },
 
   async upload(sid, key, img) {
@@ -1047,6 +1048,7 @@ function blank(sid, name) {
   return {
     sid, name,
     pending: Number(CONFIG.REWARD.welcome) || 0,   // 시작 카드
+    seenGranted: 0,                                // 서버가 적립한 추천 보상 중 이미 받은 양
     owned: {},                                     // pending = 미개봉 카드 장수
     claims: {},                                 // key -> 지급 시각
     proofs: {},                                 // key -> {img, at, status}
@@ -1076,6 +1078,13 @@ function urlRef() {
   } catch (e) { return ""; }
 }
 
+/* 겹쳐 뜬 창이 하나도 남지 않았을 때만 스크롤 잠금을 푼다.
+   (연출 위에서 다른 창을 닫았다고 연출 뒤 화면이 스크롤되지 않도록) */
+function unlockScroll() {
+  if (!document.querySelector("#stage, .modal, .cardzoom, .celebrate, .zoom"))
+    document.body.style.overflow = "";
+}
+
 /* 사용자가 입력한 값(이름 등)을 화면에 넣을 때 HTML로 해석되지 않게 한다 */
 function esc(v) {
   return String(v == null ? "" : v).replace(/[&<>"']/g, c =>
@@ -1097,6 +1106,7 @@ function normalize(d) {
   d.owned = d.owned || {}; d.claims = d.claims || {};
   d.proofs = d.proofs || {}; d.exchanged = d.exchanged || {};
   d.pending = Number(d.pending) || 0;
+  d.seenGranted = Number(d.seenGranted) || 0;
   return d;
 }
 
@@ -1108,16 +1118,52 @@ function toast(msg, ms) {
 }
 
 /* 저장 실패는 조용히 넘기지 않는다. 화면에 띄우고 다음 동작 때 자동으로 다시 시도한다. */
+let retryTimer = null, retryCount = 0;
+
 async function persist(quiet) {
+  if (!S) return false;
+  const sid = S.sid;
   try {
-    await store.save(S.sid, S);
-    if (V.saveErr) { V.saveErr = false; if (!quiet) render(); }
+    const j = await store.save(sid, S, V.needSync);
+    if (!S || S.sid !== sid) return true;            // 그 사이 로그아웃했으면 반영하지 않는다
+    if (j && j.synced !== false) V.needSync = false;
+
+    // 친구 추천 보상이 서버에 쌓여 있었다면 이번 저장에서 함께 받는다
+    if (j && j.gained > 0 && (Number(S.seenGranted) || 0) < j.seenGranted) {
+      S.pending = (Number(S.pending) || 0) + j.gained;
+      S.seenGranted = j.seenGranted;
+      try { localStorage.setItem(store.key(sid), JSON.stringify(S)); } catch (e) {}
+      toast(`친구 추천 보상으로 카드 ${j.gained}장이 도착했어요!`, 3400);
+      if (!document.getElementById("stage")) quiet = false;   // 숫자가 바뀌었으니 다시 그린다
+    }
+
+    retryCount = 0;
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    if (V.saveErr) {
+      V.saveErr = false;
+      const b = document.querySelector(".saveerr"); if (b) b.remove();
+    }
+    if (!quiet) render();
     return true;
   } catch (e) {
     V.saveErr = true;
     if (!quiet) render();
+    scheduleRetry();
     return false;
   }
+}
+
+/* 저장에 실패하면 잠시 뒤 알아서 다시 시도한다.
+   여러 명이 동시에 실패했을 때 한꺼번에 몰리지 않도록 간격을 조금씩 흩뜨린다. */
+function scheduleRetry() {
+  if (retryTimer || !S) return;
+  const base = [3000, 7000, 15000, 30000][Math.min(retryCount, 3)];
+  retryTimer = setTimeout(async () => {
+    retryTimer = null;
+    retryCount++;
+    if (!S || !V.saveErr) { retryCount = 0; return; }
+    await persist(true);
+  }, base + Math.floor(Math.random() * 3000));
 }
 
 /* 내가 프로그램을 처음 인증하면, 나를 추천한 친구에게 카드를 지급한다 */
@@ -1799,6 +1845,7 @@ const Proof = {
         const pg = PROGRAMS.find(x => x.id === pid);
         S.ratings = S.ratings || {};
         S.ratings[pid] = { program: pg ? pg.name : pid, score: this.rate || null, memo: memo, at: Date.now() };
+        V.needSync = true;   // 다음 저장 때 별점을 시트로 옮긴다
       }
 
       if (!already) { S.claims[k] = Date.now(); S.pending += amt; }
@@ -1817,7 +1864,7 @@ const Proof = {
   close() {
     const m = document.getElementById("proofModal");
     if (m) m.remove();
-    document.body.style.overflow = "";
+    unlockScroll();
     this.busy = false;
   },
 };
@@ -1916,7 +1963,7 @@ const Admin = {
   close() {
     const m = document.getElementById("admModal");
     if (m) m.remove();
-    document.body.style.overflow = "";
+    unlockScroll();
     render();
   },
 };
@@ -2391,7 +2438,7 @@ const Stage = {
     this.clearTimers();
     if (this.el) this.el.remove();
     this.el = null; this.busy = false; this.dragged = false;
-    document.body.style.overflow = "";
+    unlockScroll();
     render();
     // 이번 팩으로 등급을 완성했다면 연출이 끝난 뒤에 알린다.
     // (무대가 이미 닫힌 뒤에 뜨는 것이므로 무대 타이머를 쓰지 않는다)
@@ -2634,6 +2681,7 @@ function bind() {
           etc: etc,
           at: Date.now(),
         });
+        V.needSync = true;   // 다음 저장 때 설문을 시트로 옮긴다
       }
       S.quizDone.push(V.quizIdx);
       S.quizWeek = weekKey();

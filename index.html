@@ -728,11 +728,11 @@ const CONFIG = {
   //   cards : 지급할 카드 장수
   //   until : (선택) 마감일. 지나면 코드가 만료됩니다. 예: "2026-11-30"
   EVENTS: [
-    { code: "DG-4K7M", label: "1회차 부스",       cards: 7 },
-    { code: "DG-9TQX", label: "2회차 부스",       cards: 5 },
-    { code: "DG-6WZP", label: "3회차 부스",       cards: 5 },
+    { code: "DG-4K7M", label: "1회차 부스",       cards: 3 },
+    { code: "DG-9TQX", label: "2회차 부스",       cards: 3 },
+    { code: "DG-6WZP", label: "3회차 부스",       cards: 3 },
     { code: "DG-2HFN", label: "활동발표회",       cards: 5 },
-    { code: "DG-8RVK", label: "학습지원 수요조사", cards: 5 },
+    { code: "DG-8RVK", label: "학습지원 수요조사", cards: 4 },
   ],
 
   // 참여기록 캡처 제출용 구글 폼 주소 (없으면 버튼 숨김)
@@ -744,8 +744,8 @@ const CONFIG = {
   // 카드 지급량
   REWARD: {
     welcome: 5,      // 처음 시작할 때 바로 주는 카드 (0으로 두면 지급하지 않음)
-    follow: 5, quiz: 5, apply: 7, done: 10,
-    invited: 5,      // 추천인을 입력하고 가입한 학생이 받는 카드
+    follow: 3, quiz: 3, apply: 4, done: 7,
+    invited: 3,      // 추천인을 입력하고 가입한 학생이 받는 카드
     referrer: 5,     // 추천한 학생이 받는 카드 (추천받은 사람이 프로그램을 인증해야 지급)
   },
 
@@ -893,12 +893,36 @@ const store = {
 
   /* 서버와 이 기기에 남은 기록 중 더 최근 것을 쓴다.
      (서버 저장이 한 번 실패해도 카드가 사라지지 않도록) */
+  /* 서버에 있는 기록만 가져온다. 서버가 제대로 답하지 않으면 예외를 던진다.
+     (오류 응답을 '기록 없음'으로 읽으면 새 학생으로 취급해 기존 카드를 덮어쓰게 된다) */
+  async remote(sid) {
+    const r = await fetch(CONFIG.API_URL + "?action=load&sid=" + encodeURIComponent(sid));
+    const j = await r.json();
+    if (!j || j.ok !== true) throw new Error((j && j.error) || "load failed");
+    return j.data || null;
+  },
+
+  /* 서버와 대조하지 못한 채 쌓인 기기 기록이 있으면, 그 기록이 출발한 시점(base)을 따로 남겨 둔다 */
+  verifyBase(sid) {
+    try { const v = localStorage.getItem("dingle:verify:" + sid); return v === null ? null : Number(v) || 0; }
+    catch (e) { return null; }
+  },
+  setVerify(sid, base) { try { localStorage.setItem("dingle:verify:" + sid, String(Number(base) || 0)); } catch (e) {} },
+  clearVerify(sid) { try { localStorage.removeItem("dingle:verify:" + sid); } catch (e) {} },
+
+  /* 기기 백업만 갱신한다 (저장 시각은 그대로 — 서버보다 최신인 척하지 않도록) */
+  keep(sid, data) { try { localStorage.setItem(this.key(sid), JSON.stringify(data)); } catch (e) {} },
+
   async load(sid) {
     const mine = this.local(sid);
     if (!api) return mine;
-    const r = await fetch(CONFIG.API_URL + "?action=load&sid=" + encodeURIComponent(sid));
-    const j = await r.json();
-    const far = j.data || null;
+    const far = await this.remote(sid);
+    const base = this.verifyBase(sid);
+    if (mine && base !== null) {
+      // 대조 대기 중이던 기록: 그 사이 서버가 바뀌었으면 서버를, 아니면 기기 기록을 쓴다
+      this.clearVerify(sid);
+      return far && (far.savedAt || 0) > base ? far : mine;
+    }
     if (mine && (!far || (mine.savedAt || 0) > (far.savedAt || 0))) return mine;
     return far;
   },
@@ -1120,10 +1144,65 @@ function toast(msg, ms) {
 /* 저장 실패는 조용히 넘기지 않는다. 화면에 띄우고 다음 동작 때 자동으로 다시 시도한다. */
 let retryTimer = null, retryCount = 0;
 
+/* 한 번 실패는 조용히 다시 시도하고, 다시 시도해도 안 될 때만 안내한다.
+   (접속이 몰려 잠깐 늦어진 것까지 경고로 띄우면 학생들이 놀란다) */
+const SAVE_BANNER = `<div class="saveerr">
+  서버에 아직 저장하지 못했습니다. 기록은 이 기기에 남아 있고, 자동으로 다시 시도하고 있어요.
+  <button id="retrysave">지금 다시 저장</button>
+</div>`;
+
+function saveBanner(show) {
+  const cur = document.querySelector(".saveerr");
+  if (!show) { if (cur) cur.remove(); return; }
+  if (cur) return;
+  const host = document.querySelector(".wrap.app");
+  if (!host) return;
+  host.insertAdjacentHTML("afterbegin", SAVE_BANNER);
+  const b = document.getElementById("retrysave");
+  if (b) b.onclick = retryNow;
+}
+
+async function retryNow() {
+  const b = document.getElementById("retrysave");
+  if (b) { b.disabled = true; b.innerHTML = '<span class="spin"></span>'; }
+  const ok = await persist(true);
+  toast(ok ? "저장했습니다." : "아직 저장하지 못했습니다. 잠시 후 자동으로 다시 시도합니다.", 2600);
+  if (!ok && b) { b.disabled = false; b.textContent = "지금 다시 저장"; }
+}
+
+/* 서버에 닿지 못해 이 기기의 기록으로 시작한 경우.
+   다음에 서버와 닿으면 저장하기 전에, 그 사이 다른 곳에서 더 최근에 저장된 게 있는지 먼저 본다. */
+function startOffline(baseSavedAt) {
+  V.needVerify = true;
+  V.baseSavedAt = Number(baseSavedAt) || 0;
+  V.saveErr = true;
+  if (S) { store.setVerify(S.sid, V.baseSavedAt); store.keep(S.sid, S); }
+  scheduleRetry();
+}
+
 async function persist(quiet) {
   if (!S) return false;
   const sid = S.sid;
   try {
+    // 이 기기 기록으로 시작했었다면, 덮어쓰기 전에 서버 쪽이 더 최신인지 먼저 확인
+    if (V.needVerify && api) {
+      let far;
+      try { far = normalize(await store.remote(sid)); }
+      catch (e) { store.keep(sid, S); throw e; }        // 아직 못 닿음: 진행 상황은 기기에만 남겨 둔다
+      if (!S || S.sid !== sid) return true;
+      V.needVerify = false;
+      store.clearVerify(sid);
+      if (far && (far.savedAt || 0) > (V.baseSavedAt || 0)) {
+        S = far;
+        try { localStorage.setItem(store.key(sid), JSON.stringify(S)); } catch (e) {}
+        V.saveErr = false; retryCount = 0;
+        if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+        saveBanner(false);
+        toast("다른 기기에서 저장한 최신 기록을 불러왔어요.", 3200);
+        if (!document.getElementById("stage")) render();
+        return true;
+      }
+    }
     const j = await store.save(sid, S, V.needSync);
     if (!S || S.sid !== sid) return true;            // 그 사이 로그아웃했으면 반영하지 않는다
     if (j && j.synced !== false) V.needSync = false;
@@ -1139,10 +1218,7 @@ async function persist(quiet) {
 
     retryCount = 0;
     if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-    if (V.saveErr) {
-      V.saveErr = false;
-      const b = document.querySelector(".saveerr"); if (b) b.remove();
-    }
+    if (V.saveErr) { V.saveErr = false; saveBanner(false); }
     if (!quiet) render();
     return true;
   } catch (e) {
@@ -1162,7 +1238,8 @@ function scheduleRetry() {
     retryTimer = null;
     retryCount++;
     if (!S || !V.saveErr) { retryCount = 0; return; }
-    await persist(true);
+    const ok = await persist(true);
+    if (!ok && !document.getElementById("stage")) saveBanner(true);   // 다시 해도 안 되면 그때 안내
   }, base + Math.floor(Math.random() * 3000));
 }
 
@@ -1248,11 +1325,7 @@ function shell(inner) {
     </div>
 
     <div class="wrap app">
-      ${V.saveErr ? `<div class="saveerr">
-        서버에 저장하지 못했습니다. 기록은 이 기기에 임시로 남아 있습니다.<br>
-        인터넷 연결을 확인한 뒤 다시 저장해 주세요.
-        <button id="retrysave">지금 다시 저장</button>
-      </div>` : ""}
+      ${V.saveErr && retryCount >= 1 ? SAVE_BANNER : ""}
       ${inner}
       <p class="foot">
         연세대학교 미래캠퍼스 미래융합교육혁신원 Lighthouse Team 20기<br>
@@ -2562,8 +2635,36 @@ function bindLogin() {
 
     go.disabled = true; go.innerHTML = '<span class="spin"></span>';
     let msg = "";
+
+    // 접속이 몰려 잠깐 응답이 없을 수 있으니 간격을 두고 몇 번 더 묻는다
+    let loaded, reached = false;
+    const waits = [0, 1500, 3500, 6000];
+    for (let i = 0; i < waits.length && !reached; i++) {
+      if (waits[i]) {
+        go.innerHTML = `<span class="spin"></span> 접속자가 많아 다시 연결하는 중 (${i}/${waits.length - 1})`;
+        await new Promise(r => setTimeout(r, waits[i] + Math.random() * 1000));
+      }
+      try { loaded = await store.load(sid); reached = true; } catch (e) {}
+    }
+
+    if (!reached) {
+      // 서버가 답하지 않았다. '기록 없음'이 아니라 '모름'이다.
+      // 임시 기록으로 시작하되, 서버와 닿으면 저장하기 전에 먼저 대조한다(startOffline).
+      // 서버에 이미 기록이 있으면 그쪽을 따르므로 기존 카드를 덮어쓰지 않는다.
+      const mine = normalize(store.local(sid));
+      S = mine || blank(sid, nm);
+      S.name = nm;
+      startOffline(mine ? mine.savedAt : 0);
+      try { localStorage.setItem(LAST_KEY, JSON.stringify({ sid, name: S.name })); } catch (e) {}
+      V.tab = "get";
+      render();
+      toast(mine ? "서버가 붐벼서 이 기기에 남은 기록으로 시작해요. 연결되면 자동으로 맞춰집니다."
+                 : "서버가 붐벼서 임시로 시작해요. 연결되면 기존 기록이 있는지 확인해 자동으로 맞춰집니다.", 3800);
+      return;
+    }
+
     try {
-      const found = normalize(await store.load(sid));
+      const found = normalize(loaded);
       const isNew = !found;
       S = found || blank(sid, nm);
       if (found && found.name !== nm) S.name = nm;
@@ -2589,12 +2690,10 @@ function bindLogin() {
         else if (welcome)
           msg = `시작 카드 ${welcome}장을 받았어요. 뽑기 탭에서 열어보세요!`;
       }
-      await persist(true);
+      await persist(true);     // 실패해도 기기에 백업되고 알아서 다시 보낸다
     } catch (e) {
-      S = normalize(store.local(sid)) || blank(sid, nm);
-      S.name = nm;
-      V.saveErr = true;
-      toast("서버 연결에 실패해 이 기기에만 저장됩니다.", 3000);
+      // 추천인 확인 등에서 난 오류. 불러오기는 이미 성공했으므로 지금 기록으로 계속한다
+      if (!S) S = normalize(loaded) || blank(sid, nm);
     }
     try { localStorage.setItem(LAST_KEY, JSON.stringify({ sid, name: S.name })); } catch (e) {}
     V.tab = "get";
@@ -2630,13 +2729,7 @@ function bind() {
   });
 
   // 저장 실패 시 다시 시도
-  $("retrysave") && ($("retrysave").onclick = async () => {
-    const b = $("retrysave");
-    b.disabled = true; b.innerHTML = '<span class="spin"></span>';
-    const ok = await persist(true);
-    toast(ok ? "저장했습니다." : "아직 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.", 2600);
-    render();
-  });
+  $("retrysave") && ($("retrysave").onclick = retryNow);
 
   // 보관함 카드 눌러서 크게 보기
   app.querySelectorAll("[data-cid]").forEach(el => el.onclick = () => showCard(el.dataset.cid));
@@ -2871,7 +2964,7 @@ async function boot() {
   try { last = JSON.parse(localStorage.getItem(LAST_KEY)); } catch (e) {}
   if (!last || !last.sid) return render();
 
-  const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 7000));
+  const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 9000));
   try {
     const d = await Promise.race([store.load(last.sid), timeout]);
     if (d) {
@@ -2884,7 +2977,7 @@ async function boot() {
     const mine = normalize(store.local(last.sid));
     if (mine) {
       S = mine;
-      V.saveErr = true;
+      startOffline(mine.savedAt);
       V.tab = "get";
       return render();
     }

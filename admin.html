@@ -203,7 +203,7 @@ const PROGRAMS = [
 ];
 
 const api = CONFIG.API_URL && CONFIG.API_URL.indexOf("http") === 0;
-const ADMIN_PAGE_VERSION = "2026-09-28";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-10-13";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -369,7 +369,7 @@ function srvState() {
   if (SRV.state === "old") return '<span style="color:var(--bad)">서버가 예전 버전입니다' + (SRV.v ? " (" + esc(SRV.v) + ")" : "") +
     '. apps-script.gs를 새 버전으로 배포해 주세요.</span>';
   if (SRV.state === "stale") return '<span style="color:var(--beam)">서버 연결됨 · 버전 ' + esc(SRV.v) +
-    ' · 최신(' + SERVER_EXPECT + ')이 아닙니다. 새 버전으로 배포하면 관리자 페이지 전체 초기화를 쓸 수 있습니다.</span>';
+    ' · 최신(' + SERVER_EXPECT + ')이 아닙니다. Apps Script를 [배포 관리 → 수정 → 새 버전]으로 다시 배포해야 기간 설문 시트가 만들어집니다.</span>';
   return '<span style="color:#7FE9C0">서버 연결됨 · 버전 ' + esc(SRV.v) + ' ✓</span>';
 }
 async function checkServer() {
@@ -389,7 +389,8 @@ async function checkServer() {
       try {
         const pm = t.match(/const POLLS = (\[[\s\S]*?\n\]);/);
         if (pm) { POLL_DEF = {}; (new Function("return " + pm[1])() || []).forEach(x => { POLL_DEF[x.id] = x; }); }
-        if (V.tab === "poll" && authed) render();
+        D._pair = null;                        // 설정을 읽었으니 기간 설문 구분을 다시 계산
+        if ((V.tab === "poll" || V.tab === "survey") && authed) render();
       } catch (eP) {}
       const m = t.match(/API_URL:\s*"([^"]+)"/);
       if (m && m[1].trim() !== CONFIG.API_URL.trim()) {
@@ -574,9 +575,20 @@ function pollOf(s) {
   if (s.poll) return s.poll;
   if (!D._pair) {
     D._pair = {};
+    // 학생 앱 설정(POLLS)에 있는 문항이면, 서버를 새 버전으로 바꾸기 전에 낸 응답이어도 기간 설문으로 본다
+    Object.values(POLL_DEF).forEach(p => {
+      const wk = mondayOf(p.from);
+      (p.questions || []).forEach(q => { D._pair[wk + "|" + q.q] = p.id; });
+    });
     D.surveys.forEach(x => { if (x.poll) D._pair[x.week + "|" + x.q] = x.poll; });
   }
   return D._pair[s.week + "|" + s.q] || "";
+}
+/* "YYYY-MM-DD"가 속한 주의 월요일 (학생 앱의 weekKey와 같은 규칙) */
+function mondayOf(ymd) {
+  const t = new Date(String(ymd) + "T00:00:00");
+  t.setDate(t.getDate() - (t.getDay() + 6) % 7);
+  return t.getFullYear() + "-" + String(t.getMonth() + 1).padStart(2, "0") + "-" + String(t.getDate()).padStart(2, "0");
 }
 
 function viewSurvey() {

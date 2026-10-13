@@ -20,17 +20,19 @@
      나머지는 조용한 어둠으로 둔다.
      ═══════════════════════════════════════════════ */
   :root{
-    --abyss:#060D1C;        /* 가장 깊은 배경 */
-    --hull:#101E3A;         /* 떠 있는 면 (카드·시트) */
-    --hull2:#17274A;        /* 입력창·보조 면 */
-    --sunk:#0A1530;         /* 눌린 면 (빈 슬롯) */
-    --rule:rgba(255,255,255,.07);
+    --abyss:#060B1D;        /* 가장 깊은 밤 */
+    --dawn:#9CC8FF;         /* 수평선 위 새벽빛 (파스텔 하늘색) */
+    --hull:rgba(28,44,90,.52);      /* 떠 있는 유리 면 (카드·시트) — 뒤의 새벽빛이 은은히 비친다 */
+    --hull2:rgba(255,255,255,.07);  /* 입력창·보조 버튼 */
+    --sunk:rgba(3,8,24,.46);        /* 눌린 면 (목록 묶음·빈 슬롯) */
+    --rule:rgba(255,255,255,.08);
     --beam:#FFC94A; --beam2:#FFE6A8;
-    --foam:#EEF3FB; --mist:#93A6C6; --dim:#7387AD;
+    --foam:#F3F6FD; --mist:#A6B5D2; --dim:#7F91B7;
     --cC:#8397B2; --cB:#3FC4B2; --cA:#A87BF0; --cS:#FFC94A;
     --ok:#4ED8A0; --bad:#FF9A8B;
-    --r-sm:10px; --r-md:14px; --r-lg:20px; --r-xl:28px;
-    --lift:0 1px 0 rgba(255,255,255,.055) inset, 0 6px 20px rgba(0,0,0,.34);
+    --r-sm:11px; --r-md:15px; --r-lg:22px; --r-xl:30px;
+    --lift:inset 0 0 0 1px rgba(255,255,255,.07), inset 0 1px 0 rgba(255,255,255,.09),
+      0 14px 34px -14px rgba(0,0,0,.65);
     --press:inset 0 2px 6px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.035);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -39,29 +41,44 @@
   body{
     font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Pretendard",
       "Apple SD Gothic Neo","Malgun Gothic",sans-serif;
-    background:radial-gradient(120% 60% at 50% -4%,#16294D 0%,var(--abyss) 58%) no-repeat,var(--abyss);
-    background-attachment:fixed;
+    background:var(--abyss);
     color:var(--foam);min-height:100vh;-webkit-font-smoothing:antialiased;
     padding:0 14px;font-size:15px;line-height:1.5;
     letter-spacing:-.01em;
   }
+  body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+    background:
+      radial-gradient(1.2px 1.2px at 12% 18%,rgba(255,255,255,.55),transparent 60%),
+      radial-gradient(1px 1px at 78% 9%,rgba(255,255,255,.5),transparent 60%),
+      radial-gradient(1.4px 1.4px at 63% 31%,rgba(255,255,255,.4),transparent 60%),
+      radial-gradient(1px 1px at 30% 44%,rgba(255,255,255,.35),transparent 60%),
+      radial-gradient(1.2px 1.2px at 88% 52%,rgba(255,255,255,.3),transparent 60%),
+      radial-gradient(1px 1px at 7% 68%,rgba(255,255,255,.28),transparent 60%),
+      radial-gradient(110% 46% at 50% -6%,rgba(156,200,255,.30) 0%,rgba(156,200,255,.08) 45%,transparent 72%),
+      radial-gradient(70% 38% at 100% 4%,rgba(142,124,240,.20),transparent 70%),
+      radial-gradient(80% 50% at -10% 40%,rgba(70,120,240,.13),transparent 70%),
+      radial-gradient(90% 40% at 50% 112%,rgba(255,201,74,.07),transparent 70%),
+      linear-gradient(180deg,#101D45 0%,#0A1330 38%,#060B1D 72%,#050916 100%)}
   b,strong{font-variant-numeric:tabular-nums}
   .wrap{max-width:720px;margin:0 auto}
-  .wrap.app{padding:calc(72px + env(safe-area-inset-top,0px)) 0 calc(92px + env(safe-area-inset-bottom,0px))}
+  .wrap.app{padding:calc(76px + env(safe-area-inset-top,0px)) 0 calc(104px + env(safe-area-inset-bottom,0px))}
   button{font-family:inherit;cursor:pointer;color:inherit}
   input{font-family:inherit}
   :focus-visible{outline:2px solid var(--beam);outline-offset:2px}
 
   /* ── 공통 ── */
-  .btn{width:100%;padding:15px;font-size:16px;font-weight:650;background:var(--beam);color:#13203A;
-    border:none;border-radius:var(--r-md);transition:transform .14s ease,opacity .14s ease;
+  .btn{width:100%;padding:15px;font-size:16px;font-weight:650;color:#1A1608;
+    background:linear-gradient(180deg,#FFD873 0%,#FFC23D 100%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 10px 24px -10px rgba(255,194,61,.7);
+    border:none;border-radius:var(--r-md);transition:transform .14s ease,opacity .14s ease,box-shadow .2s ease;
     letter-spacing:-.01em}
   .btn:active{transform:scale(.975);opacity:.9}
-  .btn:disabled{background:#1E3055;color:#6B80A6;transform:none;opacity:1}
-  .btn.ghost{background:var(--hull2);color:var(--foam)}
+  .btn:disabled{background:rgba(255,255,255,.08);color:#7E91B6;box-shadow:inset 0 0 0 1px var(--rule);transform:none;opacity:1}
+  .btn.ghost{background:var(--hull2);color:var(--foam);box-shadow:inset 0 0 0 1px var(--rule)}
   .lnk{background:none;border:none;color:var(--mist);font-size:13px;padding:8px 4px}
   .lnk:active{color:var(--beam)}
-  .lead{font-size:14px;color:var(--mist);line-height:1.62;margin:0 0 16px}
+  .lead{font-size:14px;color:var(--mist);line-height:1.62;margin:0 0 18px}
+  .ltitle{margin:4px 2px 8px;font-size:31px;font-weight:750;letter-spacing:-.035em;line-height:1.15;color:var(--foam)}
   .note{font-size:12px;color:var(--dim);line-height:1.6}
 
   .panel{background:var(--hull);border-radius:var(--r-lg);padding:15px 16px;margin-bottom:16px;
@@ -72,25 +89,27 @@
   /* ── 상단바 (고정·반투명) ── */
   .topbar{position:fixed;top:0;left:0;right:0;z-index:60;
     padding:calc(9px + env(safe-area-inset-top,0px)) 14px 9px;
-    background:rgba(8,16,34,.72);
-    -webkit-backdrop-filter:saturate(180%) blur(22px);backdrop-filter:saturate(180%) blur(22px);
-    border-bottom:1px solid var(--rule)}
+    background:rgba(9,16,40,.55);
+    -webkit-backdrop-filter:saturate(180%) blur(24px);backdrop-filter:saturate(180%) blur(24px);
+    border-bottom:1px solid rgba(255,255,255,.06)}
   .topbar .tb{display:flex;align-items:center;gap:12px}
   .who{min-width:0}
   .who .nm{font-weight:650;font-size:16px;letter-spacing:-.02em;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .who .id{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
   .tickets{margin-left:auto;display:flex;align-items:baseline;gap:5px;
-    background:rgba(255,201,74,.13);padding:7px 14px;border-radius:999px;white-space:nowrap}
+    background:rgba(255,201,74,.12);box-shadow:inset 0 0 0 1px rgba(255,201,74,.22);
+    padding:7px 14px;border-radius:999px;white-space:nowrap}
   .tickets b{font-size:17px;color:var(--beam);font-weight:700;letter-spacing:-.02em}
   .tickets span{font-size:12px;color:var(--beam2);opacity:.85}
 
   /* ── 하단 탭바 ── */
-  .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;
-    padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px));
-    background:rgba(8,16,34,.78);
-    -webkit-backdrop-filter:saturate(180%) blur(22px);backdrop-filter:saturate(180%) blur(22px);
-    border-top:1px solid var(--rule)}
+  .tabbar{position:fixed;left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom,0px));
+    z-index:60;display:flex;max-width:520px;margin:0 auto;padding:5px 6px;border-radius:28px;
+    background:rgba(16,26,58,.8);
+    -webkit-backdrop-filter:saturate(180%) blur(26px);backdrop-filter:saturate(180%) blur(26px);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.09),inset 0 1px 0 rgba(255,255,255,.12),
+      0 18px 40px -12px rgba(0,0,0,.7)}
   .tab{flex:1;background:none;border:none;padding:6px 2px 4px;color:#7387AD;
     display:flex;flex-direction:column;align-items:center;gap:3px;
     font-size:10.5px;font-weight:550;letter-spacing:-.01em;
@@ -100,12 +119,13 @@
   .tab .dot{position:absolute;top:1px;left:50%;margin-left:5px;min-width:17px;height:17px;
     padding:0 5px;border-radius:999px;background:var(--beam);color:#13203A;
     font-size:10.5px;font-weight:800;line-height:17px;text-align:center;
-    box-shadow:0 0 0 2px rgba(8,16,34,.85);font-variant-numeric:tabular-nums;
+    box-shadow:0 0 0 2px rgba(16,26,58,.95);font-variant-numeric:tabular-nums;
     animation:dotIn .3s cubic-bezier(.2,.9,.3,1.5)}
   .tab .dot.sm{min-width:9px;width:9px;height:9px;padding:0;margin-left:8px;top:4px}
   @keyframes dotIn{from{transform:scale(.2);opacity:0}to{transform:none;opacity:1}}
   .tab:active{transform:scale(.92)}
-  .tab.on{color:var(--beam)}
+  .tab{border-radius:22px}
+  .tab.on{color:var(--beam);background:rgba(255,255,255,.07)}
 
   /* ── 로그인 ── */
   .gate{min-height:100vh;display:flex;flex-direction:column;justify-content:center;
@@ -154,6 +174,11 @@
   .gate .stat span{font-size:11px;color:var(--mist)}
   .gate .card-form{background:var(--hull);border-radius:var(--r-lg);padding:18px 16px;
     box-shadow:var(--lift);margin-top:20px}
+  /* 로그인 화면은 뒤에서 금빛 입자가 떠다니므로 면을 거의 불투명하게 */
+  .gate .stat div{background:rgba(22,36,78,.86)}
+  .gate .card-form{background:rgba(20,32,72,.9);
+    -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+  .gate .field input{background:rgba(5,10,28,.7)}
   .field{margin-bottom:12px}
   .field label{display:block;font-size:13px;color:var(--mist);margin-bottom:7px}
   .field input{width:100%;padding:14px;font-size:16px;background:var(--sunk);
@@ -207,6 +232,39 @@
     border:1px solid transparent;border-radius:var(--r-sm);color:var(--foam);outline:none}
   .svetc:focus{border-color:var(--beam)}
   .svetc::placeholder{color:#4E6389}
+  /* 기간 설문 — iOS 설정 화면처럼 묶인 목록, 고른 줄에만 금빛 체크 */
+  .poll{padding:18px 16px 16px}
+  .poll .ttl{font-size:17px}
+  .pbar{display:flex;gap:5px;margin:14px 0 4px}
+  .pbar i{flex:1;height:4px;border-radius:2px;background:var(--sunk);transition:background .25s ease}
+  .pbar i.on{background:var(--beam)}
+  .pq{margin-top:18px}
+  .pqn{margin:0 0 3px;font-size:12px;font-weight:600;color:var(--dim)}
+  .pqt{margin:0 0 10px;font-size:15.5px;font-weight:650;line-height:1.45;letter-spacing:-.02em}
+  .pgroup{background:var(--sunk);border-radius:var(--r-md);overflow:hidden;box-shadow:inset 0 0 0 1px var(--rule)}
+  .prow2{position:relative;display:flex;align-items:center;gap:10px;width:100%;min-height:48px;
+    padding:12px 14px;background:none;border:none;text-align:left;font-size:15px;color:var(--foam);
+    transition:background .15s ease}
+  .prow2 + .prow2::before,.petc::before{content:"";position:absolute;top:0;left:14px;right:0;height:1px;background:var(--rule)}
+  .prow2 span{flex:1;min-width:0}
+  .prow2:active{background:rgba(255,255,255,.04)}
+  .prow2.on{color:var(--beam2);font-weight:600}
+  .pchk{width:20px;height:20px;flex:none;color:var(--beam);opacity:0;transform:scale(.6);
+    transition:opacity .16s ease,transform .2s cubic-bezier(.3,1.5,.6,1)}
+  .prow2.on .pchk{opacity:1;transform:none}
+  .petc{position:relative;display:block}
+  .petc input{width:100%;padding:13px 14px;font-size:16px;background:none;border:none;color:var(--foam);outline:none}
+  .petc input::placeholder{color:#5D729A}
+  .petc:focus-within{background:rgba(255,201,74,.06)}
+  .psend{margin-top:20px}
+  .phint{margin:9px 0 0;text-align:center;font-size:12.5px;color:var(--dim)}
+  .poll.done{padding:15px 16px}
+  .pdone{display:flex;gap:12px;align-items:center}
+  .pdone .meta{margin-top:2px}
+  .pdot{width:34px;height:34px;flex:none;border-radius:50%;display:grid;place-items:center;
+    background:rgba(78,216,160,.16);color:var(--ok)}
+  .pdot .pchk{opacity:1;transform:none;color:var(--ok)}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
   .stars{display:flex;gap:6px;margin-bottom:11px}
   .stars button{flex:1;padding:11px 0;font-size:24px;line-height:1;background:var(--hull2);
     border:none;border-radius:var(--r-sm);color:#33486F;transition:color .12s ease,transform .12s ease}
@@ -303,7 +361,7 @@
   .modal{position:fixed;inset:0;z-index:150;background:rgba(3,8,18,.7);
     -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
     display:flex;align-items:flex-end;justify-content:center;animation:fadein .2s}
-  .sheet{background:#13233F;border-radius:var(--r-xl) var(--r-xl) 0 0;width:100%;
+  .sheet{background:#141F45;border-radius:var(--r-xl) var(--r-xl) 0 0;width:100%;
     max-width:520px;max-height:92vh;overflow-y:auto;
     padding:10px 18px calc(24px + env(safe-area-inset-bottom,0px));
     animation:slideup .3s cubic-bezier(.2,.9,.3,1)}
@@ -708,6 +766,7 @@
       animation:none!important}
     .flip,.bigcard.float,.bigcard.quake{animation:none!important}
     .bigcard{transition:none!important}
+    .pchk,.pbar i,.prow2{transition:none!important}
     *{scroll-behavior:auto!important}
   }
 </style>
@@ -842,6 +901,39 @@ const SURVEY = [
     q: "공부하면서 가장 어려운 점은 무엇인가요?",
     opts: ["집중이 안 됨", "계획을 못 세움", "내용이 어려움", "함께할 사람이 없음"],
     etc: true,
+  },
+];
+
+/* ─────────────────────────────────────────────
+   기간 설문 — 퀴즈와 따로, '카드 얻기' 화면 맨 위에 뜹니다.
+   기간(from~until, 그날 포함) 안에는 기존 참여자와 새로 가입한 학생 모두
+   퀴즈를 기다리지 않고 바로 답할 수 있습니다. 한 사람당 1회.
+   응답은 기존 설문과 같은 surveys 시트 · 관리자 페이지 '설문' 탭에 쌓입니다.
+     id        : 설문 구분용. 운영 중에는 바꾸지 마세요 (바꾸면 이미 답한 학생에게 다시 뜹니다)
+     from/until: 노출 기간 "YYYY-MM-DD"
+     cards     : 답하면 주는 카드 장수 (0이면 지급하지 않음)
+     questions : 문항 — 형식은 위 SURVEY와 같음 (q, opts, etc)
+   다음 설문이 생기면 이 목록에 { ... } 를 하나 더 추가하면 됩니다.
+   ───────────────────────────────────────────── */
+const POLLS = [
+  {
+    id: "2026-10-12",
+    title: "이번 주 설문",
+    from: "2026-10-12",
+    until: "2026-10-18",
+    cards: 5,
+    questions: [
+      {
+        q: "듣고 싶은 특강 주제를 골라 주세요",
+        opts: ["시험 공부법", "AI 활용법", "발표·글쓰기", "진로 설계"],
+        etc: true,
+      },
+      {
+        q: "카드도감 이벤트 경품으로 무엇을 받고 싶나요?",
+        opts: ["말랑이·왁뿌볼", "인형 키링", "맥세이프 카드지갑", "핸드크림·립밤", "2027 다이어리"],
+        etc: true,
+      },
+    ],
   },
 ];
 
@@ -1242,9 +1334,9 @@ async function persist(quiet) {
         else { resetLocal(); return false; }               // 초기화 전 기록 → 버린다
       }
     }
-    const j = await store.save(sid, S, V.needSync);
+    const j = await store.save(sid, S, V.needSync || !!S.syncDue);
     if (!S || S.sid !== sid) return true;            // 그 사이 로그아웃했으면 반영하지 않는다
-    if (j && j.synced !== false) V.needSync = false;
+    if (j && j.synced !== false) { V.needSync = false; if (S.syncDue) S.syncDue = false; }
 
     // 친구 추천 보상이 서버에 쌓여 있었다면 이번 저장에서 함께 받는다
     // 친구 추천 보상·등대팀 지급(또는 회수)이 서버에 쌓여 있었다면 이번 저장에서 반영된다
@@ -1374,6 +1466,7 @@ const ICON = {
               <rect x="3.8" y="13.2" width="7" height="7" rx="1.7"/><rect x="13.2" y="13.2" width="7" height="7" rx="1.7"/>`),
   rank:  SVG(`<path d="M5.5 20v-5.4M12 20V6.6M18.5 20v-8.6"/>`),
 };
+const TAB_TITLE = { get: "카드 얻기", draw: "카드 뽑기", album: "나의 도감", rank: "순위" };
 const TABS = [
   ["get", "얻기"], ["draw", "뽑기"], ["album", "도감"], ["rank", "순위"],
 ];
@@ -1393,6 +1486,7 @@ function shell(inner) {
     <div class="wrap app">
       ${V.saveErr && retryCount >= 1 ? SAVE_BANNER : ""}
       ${noticeHTML()}
+      <h1 class="ltitle">${TAB_TITLE[V.tab] || ""}</h1>
       ${inner}
       <p class="foot">
         연세대학교 미래캠퍼스 미래융합교육혁신원 Lighthouse Team 20기<br>
@@ -1412,6 +1506,8 @@ function shell(inner) {
 
 /* 아직 하지 않은 일이 있는 탭에 표시를 남긴다 */
 function badge(tab) {
+  if (tab === "get" && pollTodo())
+    return `<span class="dot sm" aria-label="아직 답하지 않은 설문 있음"></span>`;
   if (tab === "draw" && S.pending > 0)
     return `<span class="dot" aria-label="미개봉 ${S.pending}장">${S.pending}</span>`;
   if (tab === "album") {
@@ -1528,6 +1624,8 @@ function viewGet() {
       반려 항목이 남아 있으면 굿즈 교환이 제한될 수 있습니다.
     </div>` : ""}
     <p class="lead">학습지원 프로그램에 참여하고 인증하면 카드를 받습니다.<br>실제로 참여할수록 더 많은 카드를 받을 수 있습니다.</p>
+
+    ${pollsHTML()}
 
     <div class="src">
       <div class="hd"><div class="ttl">등대팀 SNS 팔로우</div>${badge("follow")}<div class="amt">${R.follow}장</div></div>
@@ -1891,6 +1989,92 @@ function weekKey(d) {
   return t.getFullYear() + "-" + String(t.getMonth() + 1).padStart(2, "0") + "-" + String(t.getDate()).padStart(2, "0");
 }
 function quizAvailable() { return S.quizWeek !== weekKey(); }
+
+/* ── 기간 설문 ── */
+/* 오늘 날짜(한국 시간). 폰의 시간대 설정이 달라도 설문 기간은 한국 날짜로 판단한다 */
+function todayStr() {
+  return new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+}
+const pollKey  = p => "survey:" + p.id;
+const pollOpen = p => { const t = todayStr(); return (!p.from || t >= p.from) && (!p.until || t <= p.until); };
+const openPolls = () => (typeof POLLS === "undefined" ? [] : POLLS).filter(pollOpen);
+const pollTodo  = () => openPolls().some(p => S && !S.claims[pollKey(p)]);
+function pollState(p) {
+  V.pl = V.pl || {};
+  return V.pl[p.id] || (V.pl[p.id] = { picks: [], etc: [] });
+}
+function mdLabel(ymd) {
+  const d = new Date(ymd + "T00:00:00");
+  return (d.getMonth() + 1) + "월 " + d.getDate() + "일(" + "일월화수목금토"[d.getDay()] + ")";
+}
+
+const CHECK_SVG = `<svg class="pchk" viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 10.4l3.6 3.6 7.4-8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+/* 문항별로 답했는지 (보기를 골랐거나 직접 입력을 썼으면 답한 것) */
+function pollAnswered(p) {
+  const st = pollState(p);
+  return p.questions.map((qq, qi) => typeof st.picks[qi] === "number" || !!String(st.etc[qi] || "").trim());
+}
+
+function pollsHTML() {
+  return openPolls().map(p => {
+    const did = !!S.claims[pollKey(p)];
+    const amt = Math.max(0, Number(p.cards) || 0);
+    if (did) return `
+      <section class="src poll done" id="poll-${p.id}">
+        <div class="pdone">
+          <span class="pdot">${CHECK_SVG}</span>
+          <div><div class="ttl">${p.title} 참여 완료</div>
+            <div class="meta">${amt ? `카드 ${amt}장을 받았어요. ` : ""}남겨 주신 의견은 특강과 경품을 정할 때 참고합니다.</div></div>
+        </div>
+      </section>`;
+    const st = pollState(p);
+    const n = p.questions.length;
+    const ok = pollAnswered(p);
+    const left = ok.filter(x => !x).length;
+    return `
+      <section class="src poll" id="poll-${p.id}" aria-label="${p.title}">
+        <div class="hd"><div class="ttl">${p.title}</div>${amt ? `<div class="amt">${amt}장</div>` : ""}</div>
+        <div class="meta">${n}문항${p.until ? " · " + mdLabel(p.until) + "까지" : ""} · 한 번만 참여할 수 있어요</div>
+        <div class="pbar" aria-hidden="true">${ok.map(x => `<i class="${x ? "on" : ""}"></i>`).join("")}</div>
+        ${p.questions.map((qq, qi) => `
+          <div class="pq">
+            <p class="pqn">질문 ${qi + 1}</p>
+            <p class="pqt" id="pq-${p.id}-${qi}">${qq.q}</p>
+            <div class="pgroup" role="radiogroup" aria-labelledby="pq-${p.id}-${qi}">
+              ${qq.opts.map((o, i) => {
+                const on = st.picks[qi] === i;
+                return `<button class="prow2 ${on ? "on" : ""}" role="radio" aria-checked="${on}"
+                  data-pl="${p.id}" data-plq="${qi}" data-plo="${i}"><span>${o}</span>${CHECK_SVG}</button>`;
+              }).join("")}
+              ${qq.etc ? `<label class="petc"><span class="sr">직접 입력</span>
+                <input data-ple="${p.id}" data-plq="${qi}" maxlength="100" enterkeyhint="done"
+                  placeholder="기타 · 직접 입력" value="${esc(st.etc[qi] || "")}" autocomplete="off"></label>` : ""}
+            </div>
+          </div>`).join("")}
+        <button class="btn psend" data-plsend="${p.id}" ${left ? "disabled" : ""}>${amt ? `제출하고 카드 ${amt}장 받기` : "설문 제출하기"}</button>
+        <p class="phint" data-plhint="${p.id}" aria-live="polite">${left ? `${left}개 문항이 남았어요` : "모두 답했어요"}</p>
+      </section>`;
+  }).join("");
+}
+
+/* 다시 그리지 않고 선택 표시·진행 막대·버튼만 고친다 (스크롤·입력 포커스 유지) */
+function pollSync(p) {
+  const box = document.getElementById("poll-" + p.id);
+  if (!box) return;
+  const st = pollState(p);
+  box.querySelectorAll("[data-pl]").forEach(el => {
+    const on = st.picks[Number(el.dataset.plq)] === Number(el.dataset.plo);
+    el.classList.toggle("on", on);
+    el.setAttribute("aria-checked", on);
+  });
+  const ok = pollAnswered(p), left = ok.filter(x => !x).length;
+  box.querySelectorAll(".pbar i").forEach((el, i) => el.classList.toggle("on", !!ok[i]));
+  const btn = box.querySelector("[data-plsend]"); if (btn) btn.disabled = left > 0;
+  const hint = box.querySelector("[data-plhint]");
+  if (hint) hint.textContent = left ? `${left}개 문항이 남았어요` : "모두 답했어요";
+}
+
 function nextMonday() {
   const d = new Date();
   const add = (8 - ((d.getDay() + 6) % 7 + 1)) % 7 || 7;
@@ -1985,7 +2169,7 @@ const Proof = {
         const pg = PROGRAMS.find(x => x.id === pid);
         S.ratings = S.ratings || {};
         S.ratings[pid] = { program: pg ? pg.name : pid, score: this.rate || null, memo: memo, at: Date.now() };
-        V.needSync = true;   // 다음 저장 때 별점을 시트로 옮긴다
+        V.needSync = true; S.syncDue = true;   // 다음 저장 때 별점을 시트로 옮긴다
       }
 
       if (!already) { S.claims[k] = Date.now(); S.pending += amt; }
@@ -2733,6 +2917,7 @@ function bindLogin() {
       try { localStorage.setItem(LAST_KEY, JSON.stringify({ sid, name: S.name })); } catch (e) {}
       V.tab = "get";
       render();
+      window.scrollTo(0, 0);
       toast(mine ? "서버가 붐벼서 이 기기에 남은 기록으로 시작해요. 연결되면 자동으로 맞춰집니다."
                  : "서버가 붐벼서 임시로 시작해요. 연결되면 기존 기록이 있는지 확인해 자동으로 맞춰집니다.", 3800);
       return;
@@ -2773,6 +2958,7 @@ function bindLogin() {
     try { localStorage.setItem(LAST_KEY, JSON.stringify({ sid, name: S.name })); } catch (e) {}
     V.tab = "get";
     render();
+    window.scrollTo(0, 0);
     if (msg) toast(msg, 3400);
   };
   [$("sid"), $("nm")].forEach(el => el.onkeydown = e => { if (e.key === "Enter") go.click(); });
@@ -2781,9 +2967,11 @@ function bindLogin() {
 function bind() {
   // 탭
   app.querySelectorAll("[data-tab]").forEach(el => el.onclick = () => {
+    const moved = V.tab !== el.dataset.tab;
     V.tab = el.dataset.tab; V.drawn = null; V.codeOpen = null; V.quizOpen = false;
     V.evMsg = null;
     render();
+    if (moved) window.scrollTo(0, 0);     // 다른 탭으로 가면 맨 위부터
     if (V.tab === "rank" && (!V.ranking || Date.now() - (V.rankAt || 0) > 60000)) loadRank();
   });
 
@@ -2823,6 +3011,46 @@ function bind() {
   // 인증 제출
   app.querySelectorAll("[data-proof]").forEach(el => el.onclick = () => Proof.open(el.dataset.proof));
 
+  // 기간 설문
+  const pollOf = id => POLLS.find(x => x.id === id);
+  app.querySelectorAll("[data-ple]").forEach(el => el.oninput = () => {
+    const p = pollOf(el.dataset.ple); if (!p) return;
+    pollState(p).etc[Number(el.dataset.plq)] = el.value;
+    pollSync(p);
+  });
+  app.querySelectorAll("[data-pl]").forEach(el => el.onclick = () => {
+    const p = pollOf(el.dataset.pl); if (!p) return;
+    const st = pollState(p), qi = Number(el.dataset.plq), oi = Number(el.dataset.plo);
+    st.picks[qi] = st.picks[qi] === oi ? null : oi;     // 같은 보기를 다시 누르면 선택 해제
+    pollSync(p);
+  });
+  app.querySelectorAll("[data-plsend]").forEach(el => el.onclick = async () => {
+    const p = pollOf(el.dataset.plsend);
+    if (!p || V.plBusy) return;
+    if (!pollOpen(p) || S.claims[pollKey(p)]) return render();   // 기간이 끝났거나 이미 냄
+    if (pollAnswered(p).some(x => !x)) return pollSync(p);
+    V.plBusy = true; el.disabled = true;
+
+    const st = pollState(p);
+    const week = weekKey(p.from ? p.from + "T00:00:00" : undefined);
+    const now = Date.now();
+    p.questions.forEach((qq, qi) => S.surveys.push({
+      week, q: qq.q,
+      answer: typeof st.picks[qi] === "number" ? qq.opts[st.picks[qi]] : "",
+      etc: String(st.etc[qi] || "").trim().slice(0, 100),
+      at: now,
+    }));
+    S.claims[pollKey(p)] = now;
+    const amt = Math.max(0, Number(p.cards) || 0);
+    if (amt) S.pending += amt;
+    V.needSync = true; S.syncDue = true;   // 시트로 옮길 때까지 기록에 남겨 둔다 (새로고침해도 다시 보냄)
+    delete V.pl[p.id];
+    try { await persist(); } finally { V.plBusy = false; }
+    const box = document.getElementById("poll-" + p.id);   // 화면이 짧아졌으니 완료 표시가 보이게
+    if (box) box.scrollIntoView({ block: "center", behavior: "smooth" });
+    toast(amt ? `설문을 제출했어요. 카드 ${amt}장을 받았습니다!` : "설문을 제출했어요. 고마워요!");
+  });
+
   // 퀴즈
   $("quizstart") && ($("quizstart").onclick = () => {
     if (!quizAvailable()) return;
@@ -2853,7 +3081,7 @@ function bind() {
           etc: etc,
           at: Date.now(),
         });
-        V.needSync = true;   // 다음 저장 때 설문을 시트로 옮긴다
+        V.needSync = true; S.syncDue = true;   // 다음 저장 때 설문을 시트로 옮긴다
       }
       S.quizDone.push(V.quizIdx);
       S.quizWeek = weekKey();

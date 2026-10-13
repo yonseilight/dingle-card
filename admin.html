@@ -63,7 +63,8 @@
   .ph{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
   .ph h2{margin:0;font-size:15px;font-weight:700}
   .ph .sub{font-size:12px;color:var(--mist)}
-  .ph .right{margin-left:auto;display:flex;gap:7px;align-items:center}
+  .ph .right{margin-left:auto;display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+  a.btn{text-decoration:none;display:inline-flex;align-items:center}
   .pb{padding:16px}
   .pb.flush{padding:0}
 
@@ -272,6 +273,7 @@ async function load() {
       }
       D = { students: j.students || [], proofs: j.proofs || [], surveys: j.surveys || [],
             ratings: j.ratings || [], exchanges: j.exchanges || [], grants: j.grants || [],
+            pollSheets: j.pollSheets || [],
             meta: { v: j.v || "", epoch: j.epoch || "", notice: j.notice || null,
                     sheetName: j.sheetName || "", sheetUrl: j.sheetUrl || "" } };
     } else {
@@ -383,6 +385,12 @@ async function checkServer() {
   try {
     if (location.protocol.indexOf("http") === 0) {
       const t = await (await fetch(new URL("index.html", location.href).href)).text();
+      // 학생 앱의 기간 설문 설정(제목·기간·보기)을 읽어 둔다 → 아무도 고르지 않은 보기도 0명으로 보여 준다
+      try {
+        const pm = t.match(/const POLLS = (\[[\s\S]*?\n\]);/);
+        if (pm) { POLL_DEF = {}; (new Function("return " + pm[1])() || []).forEach(x => { POLL_DEF[x.id] = x; }); }
+        if (V.tab === "poll" && authed) render();
+      } catch (eP) {}
       const m = t.match(/API_URL:\s*"([^"]+)"/);
       if (m && m[1].trim() !== CONFIG.API_URL.trim()) {
         MISMATCH = '<br><span style="color:var(--bad)">⚠ 학생 앱(index.html)과 이 관리자 페이지의 서버 주소가 다릅니다. ' +
@@ -396,7 +404,7 @@ async function checkServer() {
 /* ── 화면: 공통 틀 ── */
 function shell(inner) {
   const tabs = [["home", "현황"], ["review", "인증 검토"], ["students", "참여자"],
-                ["referral", "추천"], ["survey", "설문"], ["rating", "만족도"], ["exchange", "교환"], ["ops", "운영"]];
+                ["referral", "추천"], ["poll", "기간 설문"], ["survey", "퀴즈 설문"], ["rating", "만족도"], ["exchange", "교환"], ["ops", "운영"]];
   const w = D.proofs.filter(p => p.status === "wait").length;
   return `
     <div class="top"><div class="topin">
@@ -408,7 +416,7 @@ function shell(inner) {
       <button class="btn gh sm" id="reload">${V.loading ? '<span class="spin"></span>' : "새로고침"}</button>
     </div></div>
     <div class="wrap">${api && D.meta && D.meta.v && D.meta.v < SERVER_EXPECT
-      ? `<div class="vwarn">서버가 예전 버전(${esc(D.meta.v)})입니다. 카드 지급·공지·학생 삭제가 동작하지 않을 수 있으니 apps-script.gs를 새 버전으로 배포해 주세요.</div>` : ""}${inner}</div>`;
+      ? `<div class="vwarn">서버가 예전 버전(${esc(D.meta.v)})입니다. 기간 설문 시트·카드 지급·공지·학생 삭제가 동작하지 않을 수 있으니 apps-script.gs를 새 버전으로 배포해 주세요.</div>` : ""}${inner}</div>`;
 }
 
 /* ── 현황 ── */
@@ -560,9 +568,22 @@ function viewStudents() {
 }
 
 /* ── 설문 ── */
+/* 기간 설문 응답 구분. 서버가 '설문' 칸을 채워 보내지만, 예전 화면에서 낸 응답은 비어 있을 수 있어
+   같은 주차·같은 질문이 기간 설문에 속해 있으면 그 설문으로 본다 */
+function pollOf(s) {
+  if (s.poll) return s.poll;
+  if (!D._pair) {
+    D._pair = {};
+    D.surveys.forEach(x => { if (x.poll) D._pair[x.week + "|" + x.q] = x.poll; });
+  }
+  return D._pair[s.week + "|" + s.q] || "";
+}
+
 function viewSurvey() {
   const byQ = {};
-  D.surveys.forEach(s => {
+  const quiz = D.surveys.filter(s => !pollOf(s));
+  const nPoll = D.surveys.length - quiz.length;
+  quiz.forEach(s => {
     if (!byQ[s.q]) byQ[s.q] = { total: 0, ans: {}, etc: [], weeks: {} };
     const g = byQ[s.q];
     g.total++;
@@ -575,7 +596,7 @@ function viewSurvey() {
   return shell(`
     <div class="panel">
       <div class="ph"><h2>설문 응답</h2>
-        <span class="sub">총 ${D.surveys.length}건 · 문항 ${keys.length}개</span>
+        <span class="sub">퀴즈 뒤 '이번 주 한 마디' 응답 ${quiz.length}건 · 문항 ${keys.length}개${nPoll ? ` · 기간 설문 ${nPoll}건은 '기간 설문' 탭에 따로 모았습니다` : ""}</span>
         <div class="right"><button class="btn gh sm" id="csvsv">CSV 내려받기</button></div>
       </div>
       <div class="pb">
@@ -598,9 +619,111 @@ function viewSurvey() {
               ${g.etc.length > 30 ? `<div class="note">외 ${g.etc.length - 30}건 — CSV에서 전체를 볼 수 있습니다</div>` : ""}
             </div>` : ""}
           </div>`;
-        }).join("") : `<div class="empty">아직 설문 응답이 없습니다.<br>학생이 퀴즈나 기간 설문에 답하면 이곳에 쌓입니다.</div>`}
+        }).join("") : `<div class="empty">아직 퀴즈 설문 응답이 없습니다.<br>학생이 퀴즈를 풀고 '이번 주 한 마디'에 답하면 이곳에 쌓입니다.</div>`}
       </div>
     </div>`);
+}
+
+/* ── 기간 설문 ── */
+let POLL_DEF = {};    // 학생 앱(index.html)의 POLLS 설정. 같은 사이트에 올렸을 때만 읽힌다
+function pollGroups() {
+  const by = {};
+  D.surveys.forEach(s => {
+    const id = pollOf(s);
+    if (!id) return;
+    const g = by[id] || (by[id] = { id, qs: [], ppl: {} });
+    if (g.qs.indexOf(s.q) < 0) g.qs.push(s.q);
+    const p = g.ppl[s.sid] || (g.ppl[s.sid] = { sid: s.sid, name: s.name, at: 0, a: {} });
+    p.a[s.q] = { answer: s.answer || "", etc: s.etc || "" };
+    p.at = Math.max(p.at, Number(s.at) || 0);
+  });
+  return Object.keys(by).sort().reverse().map(id => {
+    const g = by[id], def = POLL_DEF[id];
+    if (def) {   // 설정의 문항 순서를 따르고, 응답에만 있는 예전 문항은 뒤에 둔다
+      const order = def.questions.map(q => q.q);
+      g.qs = order.filter(q => g.qs.indexOf(q) >= 0).concat(g.qs.filter(q => order.indexOf(q) < 0));
+      g.def = def;
+    }
+    g.people = Object.values(g.ppl).sort((a, b) => (b.at || 0) - (a.at || 0));
+    return g;
+  });
+}
+
+function viewPoll() {
+  const groups = pollGroups();
+  if (!groups.length) return shell(`<div class="panel"><div class="ph"><h2>기간 설문</h2></div>
+    <div class="pb"><div class="empty">아직 기간 설문 응답이 없습니다.<br>학생 화면 '카드 얻기' 맨 위 설문에 답하면 이곳에 쌓입니다.</div></div></div>`);
+  const total = D.students.length;
+  return shell(groups.map(g => {
+    const n = g.people.length;
+    const sheet = (D.pollSheets || []).find(x => x.id === g.id);
+    const etcN = g.people.filter(p => g.qs.some(q => (p.a[q] || {}).etc)).length;
+    return `
+    <div class="cards">
+      <div class="kpi hl"><div class="l">참여 인원</div><div class="v">${n}</div>
+        <div class="s">${total ? `전체 참여자 ${total}명 중 ${Math.round(n / total * 100)}%` : ""}</div></div>
+      <div class="kpi"><div class="l">문항</div><div class="v">${g.qs.length}</div><div class="s">설문 ${esc(g.id)}</div></div>
+      <div class="kpi"><div class="l">직접 입력을 남긴 학생</div><div class="v">${etcN}</div></div>
+      <div class="kpi"><div class="l">마지막 응답</div><div class="v" style="font-size:17px;margin-top:5px">
+        ${g.people[0] && g.people[0].at ? new Date(g.people[0].at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "-"}</div></div>
+    </div>
+    <div class="panel">
+      <div class="ph"><h2>${g.def ? esc(g.def.title) + " (" + esc(g.def.from || g.id) + (g.def.until ? " ~ " + esc(g.def.until) : "") + ")" : "기간 설문 " + esc(g.id)} · 문항별 결과</h2>
+        <span class="sub">응답한 학생 ${n}명 기준${g.def && g.def.cards ? " · 참여 보상 카드 " + Number(g.def.cards) + "장" : ""}</span>
+        <div class="right">
+          ${sheet ? `<a class="btn gh sm" href="${esc(sheet.url)}" target="_blank" rel="noopener">스프레드시트에서 보기</a>` : ""}
+          ${sheet && sheet.sumUrl ? `<a class="btn gh sm" href="${esc(sheet.sumUrl)}" target="_blank" rel="noopener">시트 집계표</a>` : ""}
+          <button class="btn gh sm" data-pollcsv="${esc(g.id)}">CSV 내려받기</button>
+        </div>
+      </div>
+      <div class="pb">
+        ${g.qs.map((q, qi) => {
+          const cnt = {}, etc = [];
+          g.people.forEach(p => {
+            const a = p.a[q]; if (!a) return;
+            if (a.answer) cnt[a.answer] = (cnt[a.answer] || 0) + 1;
+            if (a.etc) etc.push({ name: p.name, t: a.etc });
+          });
+          const dq = g.def && g.def.questions.find(x => x.q === q);
+          (dq ? dq.opts : []).forEach(o => { if (!(o in cnt)) cnt[o] = 0; });   // 아무도 안 고른 보기도 0명으로
+          const opts = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a]);
+          const answered = g.people.filter(p => p.a[q]).length || 1;
+          return `<div class="qcard">
+            <h3>질문 ${qi + 1}. ${esc(q)}</h3>
+            <div class="meta">응답 ${g.people.filter(p => p.a[q]).length}명 · 보기 선택 ${opts.reduce((s, o) => s + cnt[o], 0)}명 · 직접 입력 ${etc.length}명</div>
+            ${opts.map((o, i) => {
+              const c = cnt[o], pct = Math.round(c / answered * 100);
+              return `<div class="row"><div class="lb">${esc(o)}</div>
+                <div class="bar"><i style="width:${pct}%;background:${i === 0 && c ? "var(--beam)" : "var(--info)"}"></i></div>
+                <div class="n">${c}명 · ${pct}%</div></div>`;
+            }).join("") || `<div class="note">보기를 고른 응답이 없습니다.</div>`}
+            ${etc.length ? `<div class="memos">
+              <div class="meta" style="margin-bottom:8px">직접 입력 ${etc.length}건</div>
+              ${etc.map(e => `<div class="memo"><b>${esc(e.name)}</b> · ${esc(e.t)}</div>`).join("")}
+            </div>` : ""}
+          </div>`;
+        }).join("")}
+      </div>
+    </div>
+    <div class="panel">
+      <div class="ph"><h2>학생별 응답</h2><span class="sub">${n}명 · 최근 응답 순</span></div>
+      <div class="pb flush"><div class="scroll">
+        <table>
+          <thead><tr><th>이름</th><th>학번</th><th>응답시각</th>
+            ${g.qs.map((q, qi) => `<th>질문 ${qi + 1}</th>`).join("")}</tr></thead>
+          <tbody>
+            ${g.people.map(p => `<tr>
+              <td>${esc(p.name)}</td>
+              <td style="color:var(--mist)">${esc(p.sid)}</td>
+              <td style="color:var(--mist);white-space:nowrap">${p.at ? new Date(p.at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "-"}</td>
+              ${g.qs.map(q => { const a = p.a[q] || {};
+                return `<td>${esc(a.answer || "")}${a.etc ? `${a.answer ? "<br>" : ""}<span style="color:var(--mist)">✎ ${esc(a.etc)}</span>` : ""}${!a.answer && !a.etc ? "-" : ""}</td>`; }).join("")}
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div></div>
+    </div>`;
+  }).join(""));
 }
 
 /* ── 만족도 ── */
@@ -704,7 +827,7 @@ function viewReferral() {
 }
 
 /* ── 운영 ── */
-const SERVER_EXPECT = "2026-09-28";
+const SERVER_EXPECT = "2026-10-13";
 function errMsg(e) {
   const m = e && e.message;
   return m === "auth" ? "담당자 코드가 맞지 않습니다" : m === "not found" ? "학생을 찾지 못했습니다"
@@ -1014,6 +1137,7 @@ function render() {
   if (V.tab === "review") app.innerHTML = viewReview();
   else if (V.tab === "students") app.innerHTML = viewStudents();
   else if (V.tab === "survey") app.innerHTML = viewSurvey();
+  else if (V.tab === "poll") app.innerHTML = viewPoll();
   else if (V.tab === "rating") app.innerHTML = viewRating();
   else if (V.tab === "referral") app.innerHTML = viewReferral();
   else if (V.tab === "exchange") app.innerHTML = viewExchange();
@@ -1162,7 +1286,15 @@ function bind() {
         .concat([s.pending, s.quizDone || 0, s.exchanged || ""]))), "참여자"));
   $("csvsv") && ($("csvsv").onclick = () => csv(
     [["주차", "학번", "이름", "질문", "선택한 답", "직접 입력"]].concat(
-      D.surveys.map(s => [s.week, s.sid, s.name, s.q, s.answer, s.etc])), "설문응답"));
+      D.surveys.filter(s => !pollOf(s)).map(s => [s.week, s.sid, s.name, s.q, s.answer, s.etc])), "퀴즈설문응답"));
+  app.querySelectorAll("[data-pollcsv]").forEach(el => el.onclick = () => {
+    const g = pollGroups().find(x => x.id === el.dataset.pollcsv);
+    if (!g) return;
+    const head = ["학번", "이름", "응답시각"];
+    g.qs.forEach(q => head.push(q, q + " (직접 입력)"));
+    csv([head].concat(g.people.map(p => [p.sid, p.name, p.at ? new Date(p.at).toLocaleString("ko-KR") : ""]
+      .concat(...g.qs.map(q => { const a = p.a[q] || {}; return [a.answer || "", a.etc || ""]; })))), "기간설문_" + g.id);
+  });
   $("csvrt") && ($("csvrt").onclick = () => csv(
     [["학번", "이름", "프로그램", "별점", "한 줄 후기"]].concat(
       D.ratings.map(r => [r.sid, r.name, r.program, r.score, r.memo])), "만족도"));

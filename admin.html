@@ -177,6 +177,9 @@
   .owned span{font-size:12px;padding:4px 9px;border-radius:7px;background:rgba(255,255,255,.05)}
   .owned span b{margin-left:4px;color:var(--beam)}
   .plus{color:#7FE9C0;font-weight:800} .minus{color:var(--bad);font-weight:800}
+  .gbtn{display:inline-flex;gap:8px;margin-left:6px}
+  .gbtn .lnk{background:none;border:none;padding:0;font-size:11.5px;color:var(--mist);cursor:pointer;text-decoration:underline}
+  .gbtn .lnk:hover{color:var(--bad)}
   .vwarn{background:rgba(255,154,139,.12);color:#FFD5CD;border-radius:10px;padding:11px 14px;font-size:13px;margin-bottom:16px}
   @media(max-width:640px){
     .topin{flex-wrap:wrap} .tabs{margin-left:0;width:100%;order:3}
@@ -223,7 +226,7 @@ const api = CONFIG.API_URL && CONFIG.API_URL.indexOf("http") === 0;
 let REWARD = { follow: 5, apply: 5, done: 7 };
 const rewardOf = key => key === "follow" ? REWARD.follow
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-10-25";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-10-26";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -862,7 +865,7 @@ function viewReferral() {
 }
 
 /* ── 운영 ── */
-const SERVER_EXPECT = "2026-10-25";
+const SERVER_EXPECT = "2026-10-26";
 function errMsg(e) {
   const m = e && e.message;
   return m === "auth" ? "담당자 코드가 맞지 않습니다" : m === "not found" ? "학생을 찾지 못했습니다"
@@ -909,13 +912,13 @@ function viewOps() {
         <div class="right"><button class="btn gh sm" id="grcsv">CSV 내려받기</button></div></div>
       <div class="pb flush"><div class="scroll" style="max-height:380px">
         <table>
-          <thead><tr><th>시각</th><th>이름</th><th>학번</th><th class="num">장수</th><th>사유</th></tr></thead>
+          <thead><tr><th>시각</th><th>이름</th><th>학번</th><th class="num">장수</th><th>사유</th><th></th></tr></thead>
           <tbody>${D.grants.length ? D.grants.map(g => `<tr>
             <td style="color:var(--mist)">${when(g.at)}</td><td>${esc(g.name)}</td>
             <td style="color:var(--mist)">${esc(g.sid)}</td>
-            <td class="num ${g.cards > 0 ? "plus" : "minus"}">${g.cards > 0 ? "+" : ""}${g.cards}</td>
-            <td>${esc(g.reason) || "-"}</td></tr>`).join("")
-            : `<tr><td colspan="5"><div class="empty">아직 지급 기록이 없습니다.</div></td></tr>`}</tbody>
+            <td class="num">${grantAmt(g)}</td>
+            <td>${esc(g.reason) || "-"}</td><td style="white-space:nowrap">${grantBtns(g)}</td></tr>`).join("")
+            : `<tr><td colspan="6"><div class="empty">아직 지급 기록이 없습니다.</div></td></tr>`}</tbody>
         </table>
       </div></div>
     </div>
@@ -1000,10 +1003,10 @@ function openStudent(sid) {
         <input id="gr" placeholder="사유 (기록에 남습니다)">
         <button class="btn sm" id="ggo">반영</button>
       </div>
-      <p class="note" style="margin:8px 0 0">학생이 다음에 앱을 열거나 저장할 때 미개봉 카드로 들어갑니다. 회수는 아직 뜯지 않은 카드에서만 빠집니다.</p>
-      ${gr.length ? `<div style="margin-top:10px">${gr.map(g => `<div class="note">${when(g.at)} ·
-        ${g.cards ? `<span class="${g.cards > 0 ? "plus" : "minus"}">${g.cards > 0 ? "+" : ""}${g.cards}</span>` : `<span class="minus">조치</span>`}
-        · ${esc(g.reason) || "사유 없음"}</div>`).join("")}</div>` : ""}
+      <p class="note" style="margin:8px 0 0">학생이 다음에 앱을 열거나 저장할 때 미개봉 카드로 들어갑니다. 회수는 아직 뜯지 않은 카드에서만 빠집니다.
+        잘못 넣었으면 아래 기록의 [취소]로 되돌리거나 [기록 삭제]로 기록만 지울 수 있습니다.</p>
+      ${gr.length ? `<div style="margin-top:10px">${gr.map(g => `<div class="note grow">${when(g.at)} · ${grantAmt(g)}
+        · ${esc(g.reason) || "사유 없음"} ${grantBtns(g)}</div>`).join("")}</div>` : ""}
     </div>
 
     <div class="sec"><h4>기록 삭제</h4>
@@ -1020,6 +1023,7 @@ function openStudent(sid) {
   el.querySelector("#dx").onclick = closeStudent;
 
   bindSanction(el, st);
+  bindGrantBtns(el);
 
   el.querySelector("#ggo").onclick = async e => {
     const n = parseInt(el.querySelector("#gn").value, 10);
@@ -1184,17 +1188,60 @@ function bindSanction(el, st) {
   };
 }
 
+/* 지급 기록 한 줄의 장수 표시 (회수는 미개봉에서만 빠지므로 실제로 빠진 장수가 다를 수 있다) */
+function grantAmt(g) {
+  if (!g.cards) return `<span class="minus">조치</span>`;
+  const main = `<span class="${g.cards > 0 ? "plus" : "minus"}">${g.cards > 0 ? "+" : ""}${g.cards}</span>`;
+  return g.actual != null && g.actual !== g.cards ? `${main} <span class="note">(실제 ${g.actual > 0 ? "+" : ""}${g.actual})</span>` : main;
+}
+function grantBtns(g) {
+  const i = D.grants.indexOf(g);
+  return `<span class="gbtn">${g.cards ? `<button class="lnk" data-gc="${i}">취소</button>` : ""}<button class="lnk" data-gd="${i}">기록 삭제</button></span>`;
+}
+async function grantRowAction(g, kind) {
+  if (!api) return toast("서버에 연결된 상태에서만 쓸 수 있습니다");
+  const label = g.cards > 0 ? `+${g.cards}장 지급` : g.cards < 0 ? `${-g.cards}장 회수` : "조치";
+  if (kind === "delete" && !confirm(`이 ${label} 기록만 지울까요?\n학생의 카드는 바뀌지 않습니다.` + (g.cards ? `\n(카드도 원래대로 돌리려면 [취소]를 누르세요)` : ""))) return;
+  if (kind === "cancel" && !confirm(`이 ${label}을 취소할까요?\n이 지급·회수로 바뀐 카드를 원래대로 돌리고 기록을 지웁니다.`)) return;
+  const body = { action: kind === "delete" ? "grantDelete" : "grantCancel", sid: g.sid, at: g.at, cards: g.cards, reason: g.reason };
+  try {
+    let j;
+    try { j = await adminPost(body); }
+    catch (e) {
+      if (!(e && e.message === "need amount")) throw e;
+      const r = prompt(`예전 기록이라 이 회수로 실제 몇 장이 빠졌는지 남아 있지 않습니다.\n`
+        + `회수는 미개봉 카드에서만 빠지므로 ${Math.abs(g.cards)}장보다 적었을 수 있습니다.\n\n`
+        + `${g.cards < 0 ? "돌려줄" : "다시 뺄"} 장수를 적어 주세요. 0을 넣으면 카드는 그대로 두고 기록만 지웁니다.`, "");
+      if (r === null) return;
+      j = await adminPost(Object.assign(body, { amount: Math.max(0, parseInt(r, 10) || 0) }));
+    }
+    const sid = g.sid, open = !!$("drawer");
+    await load();
+    if (open) openStudent(sid);
+    toast(kind === "delete" ? "기록을 지웠습니다"
+      : j.back ? `취소했습니다 (미개봉 ${j.back > 0 ? "+" : ""}${j.back}장)` : "취소했습니다 (카드 변화 없음)");
+  } catch (e) {
+    toast(e && e.message === "not found" ? "기록을 찾지 못했습니다. [새로고침] 후 다시 해 주세요" : errMsg(e));
+  }
+}
+function bindGrantBtns(root) {
+  root.querySelectorAll("[data-gc]").forEach(b => b.onclick = () => grantRowAction(D.grants[+b.dataset.gc], "cancel"));
+  root.querySelectorAll("[data-gd]").forEach(b => b.onclick = () => grantRowAction(D.grants[+b.dataset.gd], "delete"));
+}
+
 /* 카드 지급·회수 (상세 창과 운영 화면이 같이 씀) */
 async function grantCards(sid, n, reason, btn) {
   if (!api) { toast("서버에 연결된 상태에서만 쓸 수 있습니다"); return false; }
   const label = btn ? btn.textContent : "";
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'; }
   try {
-    await adminPost({ action: "grant", sid, cards: n, reason });
+    const j = await adminPost({ action: "grant", sid, cards: n, reason });
     const st = D.students.find(x => String(x.sid) === String(sid));
-    if (st) st.pending = Math.max(0, (st.pending || 0) + n);
-    D.grants.unshift({ at: Date.now(), sid: String(sid), name: st ? st.name : "", cards: n, reason });
-    toast(`${st ? st.name : sid} 학생에게 ${n > 0 ? n + "장 지급" : -n + "장 회수"}했습니다`);
+    const act = typeof j.actual === "number" ? j.actual : n;
+    if (st) st.pending = Math.max(0, (st.pending || 0) + act);
+    D.grants.unshift({ at: j.at || Date.now(), sid: String(sid), name: st ? st.name : "", cards: n, reason, actual: act });
+    toast(`${st ? st.name : sid} 학생에게 ${n > 0 ? n + "장 지급" : -n + "장 회수"}했습니다`
+      + (n < 0 && act !== n ? ` (미개봉이 ${-act}장뿐이라 실제로는 ${-act}장만 빠졌습니다)` : ""));
     return true;
   } catch (err) {
     toast(errMsg(err));
@@ -1466,9 +1513,10 @@ function bind() {
     }
   });
 
+  bindGrantBtns(app);
   $("grcsv") && ($("grcsv").onclick = () => {
-    const rows = [["시각", "이름", "학번", "장수", "사유"]];
-    D.grants.forEach(g => rows.push([g.at ? new Date(g.at).toLocaleString("ko-KR") : "", g.name, g.sid, g.cards, g.reason]));
+    const rows = [["시각", "이름", "학번", "장수", "실제 반영", "사유"]];
+    D.grants.forEach(g => rows.push([g.at ? new Date(g.at).toLocaleString("ko-KR") : "", g.name, g.sid, g.cards, g.actual == null ? "" : g.actual, g.reason]));
     csv(rows, "카드지급기록");
   });
   app.querySelectorAll("[data-no]").forEach(b => b.onclick = () => rev(+b.dataset.no, "no", b));

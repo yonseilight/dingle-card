@@ -223,7 +223,7 @@ const api = CONFIG.API_URL && CONFIG.API_URL.indexOf("http") === 0;
 let REWARD = { follow: 5, apply: 5, done: 7 };
 const rewardOf = key => key === "follow" ? REWARD.follow
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-10-24";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-10-25";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -537,7 +537,8 @@ function viewReview() {
             ${it.status === "wait"
               ? `<div class="ra"><button class="y" data-ok="${i}">승인</button>
                  <button class="n" data-no="${i}">반려</button></div>`
-              : `<div class="done" style="color:${it.status === "ok" ? "#7FE9C0" : "var(--bad)"}">
+              : `${it.status === "no" && it.reason ? `<div class="note" style="margin:6px 0 0;color:var(--foam)">사유 · ${esc(it.reason)}</div>` : ""}
+                 <div class="done" style="color:${it.status === "ok" ? "#7FE9C0" : "var(--bad)"}">
                  ${it.status === "ok" ? "승인됨" : "반려됨"} · 
                  <button class="btn gh sm" data-re="${i}" style="padding:4px 10px;font-size:11.5px">되돌리기</button></div>`}
           </div>`).join("")}</div>`
@@ -861,7 +862,7 @@ function viewReferral() {
 }
 
 /* ── 운영 ── */
-const SERVER_EXPECT = "2026-10-24";
+const SERVER_EXPECT = "2026-10-25";
 function errMsg(e) {
   const m = e && e.message;
   return m === "auth" ? "담당자 코드가 맞지 않습니다" : m === "not found" ? "학생을 찾지 못했습니다"
@@ -985,7 +986,7 @@ function openStudent(sid) {
 
     <div class="sec"><h4>인증 ${proofs.length}건</h4>
       ${proofs.length ? proofs.map(p => `<div class="note" style="color:var(--foam)">${proofLabel(p.key)} ·
-        <span class="chip ${p.status}">${stLabel[p.status] || p.status}</span> · ${when(p.at)}</div>`).join("") : '<div class="note">없음</div>'}</div>
+        <span class="chip ${p.status}">${stLabel[p.status] || p.status}</span> · ${when(p.at)}${p.status === "no" && p.reason ? ` · 사유: ${esc(p.reason)}` : ""}</div>`).join("") : '<div class="note">없음</div>'}</div>
 
     ${sanctionHTML(st, proofs)}
 
@@ -1069,12 +1070,12 @@ function sanctionHTML(st, proofs) {
   const log = Array.isArray(st.log) ? st.log.slice().reverse() : null;
   return `<div class="sec sanc"><h4>부정 참여 조치</h4>
     <p class="note" style="margin:0 0 10px">허위 인증 등으로 받은 카드를 회수하거나 순위에서 뺍니다. 모든 조치는 지급 기록에 남고,
-      학생 화면에는 '등대팀이 카드 기록을 조정했다'는 안내가 뜹니다. 학생 폰에 옛 기록이 남아 있어도 서버가 다시 적용합니다.</p>
-    <div class="frm"><input id="sreason" placeholder="사유 (모든 조치에 함께 기록됩니다) 예: 허위 인증"></div>
+      <b>여기 적은 사유가 학생 화면에 그대로 보입니다.</b> 학생 폰에 옛 기록이 남아 있어도 서버가 다시 적용합니다.</p>
+    <div class="frm"><input id="sreason" placeholder="사유 — 학생 화면에 그대로 보입니다. 예: 다른 학생의 캡처를 사용했습니다"></div>
 
     <div class="sb">
       <div class="sbh"><b>순위</b>${adm.hide ? `<span class="chip no">제외됨</span>` : `<span class="chip ok">집계 중</span>`}</div>
-      <p class="note">${adm.hide ? `순위 화면에서 빠져 있습니다${adm.hideReason ? " · " + esc(adm.hideReason) : ""}. 학생 본인 화면에는 '집계 제외'로 보입니다.`
+      <p class="note">${adm.hide ? `순위 화면에서 빠져 있습니다${adm.hideReason ? " · " + esc(adm.hideReason) : ""}. 학생 본인 화면에는 '집계 제외 · 사유'로 보입니다.`
                                   : "순위에서 빼도 카드·인증 기록은 그대로입니다."}</p>
       <button class="btn sm ${adm.hide ? "gh" : "danger"}" data-sk="${adm.hide ? "unhide" : "hide"}">${adm.hide ? "순위에 다시 포함" : "순위에서 제외"}</button>
     </div>
@@ -1369,17 +1370,25 @@ function bind() {
     const it = list[i];
     const who = D.students.find(x => String(x.sid) === String(it.sid));
     const n = rewardOf(it.key);
-    if (st === "no" && api && !confirm(`${who ? who.name : it.sid} 학생의 '${proofLabel(it.key)}' 인증을 반려할까요?\n\n`
-        + `· 이 인증으로 받은 카드 ${n}장과, 그 카드로 뽑은 카드만 회수합니다. 그 전에 모은 카드는 그대로 둡니다.\n`
-        + `· 학생 화면에 재인증 요청이 뜨고, 올바른 캡처로 다시 인증하면 카드를 다시 받습니다.`)) return;
+    let reason = "";
+    if (st === "no") {
+      const r = prompt(`${who ? who.name : it.sid} 학생의 '${proofLabel(it.key)}' 인증 반려 사유를 적어 주세요.\n`
+        + `학생 화면에 그대로 보입니다. (예: 신청 완료 화면이 아니라 프로그램 안내 화면입니다)\n\n`
+        + `· 이 인증으로 받은 카드 ${n}장과 그 카드로 뽑은 카드만 회수하고, 그 전에 모은 카드는 그대로 둡니다.\n`
+        + `· 학생에게 재인증 요청이 뜹니다.`, "");
+      if (r === null) return;
+      reason = r.trim();
+      if (!reason) return toast("반려 사유를 적어 주세요 (학생 화면에 보입니다)");
+    }
     if (st !== "ok" && it.status === "no" && api && !confirm(`반려를 취소할까요?\n회수했던 카드만큼 미개봉 카드로 돌려줍니다.`)) return;
     btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
     try {
       const prev = it.status;
-      const j = await review(it.sid, it.key, st);
+      const j = await review(it.sid, it.key, st, reason);
       it.status = st;
       const src = D.proofs.find(p => p.sid === it.sid && p.key === it.key);
-      if (src) src.status = st;
+      if (src) { src.status = st; src.reason = st === "no" ? reason : ""; }
+      it.reason = st === "no" ? reason : "";
       const sc = j && j.sanction;
       if (sc && sc.ok && who) {
         if (sc.adm) who.adm = sc.adm;
@@ -1554,8 +1563,8 @@ async function adminPost(body) {
   return j;
 }
 
-async function review(sid, key, status) {
-  if (api) return await adminPost({ action: "review", sid, key, status, n: rewardOf(key) });
+async function review(sid, key, status, reason) {
+  if (api) return await adminPost({ action: "review", sid, key, status, n: rewardOf(key), reason: reason || "" });
   const raw = localStorage.getItem("dingle:" + sid);
   if (!raw) return;
   const d = JSON.parse(raw);

@@ -811,7 +811,7 @@ const CONFIG = {
   // 카드 지급량
   REWARD: {
     welcome: 5,      // 처음 시작할 때 바로 주는 카드 (0으로 두면 지급하지 않음)
-    follow: 7, quiz: 5, apply: 5, done: 7,
+    follow: 5, quiz: 5, apply: 5, done: 7,
     invited: 5,      // 추천인을 입력하고 가입한 학생이 받는 카드
     referrer: 5,     // 추천한 학생이 받는 카드 (추천받은 사람이 프로그램을 인증해야 지급)
   },
@@ -1113,11 +1113,11 @@ const store = {
     return j.status || "req";
   },
 
-  async review(sid, key, status) {
+  async review(sid, key, status, reason) {
     if (api) {
       const r = await fetch(CONFIG.API_URL, {
         method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "review", sid, key, status, admin: Admin.key || "",
+        body: JSON.stringify({ action: "review", sid, key, status, admin: Admin.key || "", reason: reason || "",
           n: key === "follow" ? CONFIG.REWARD.follow : String(key).indexOf("apply:") === 0 ? CONFIG.REWARD.apply : CONFIG.REWARD.done }),
       });
       const j = await r.json();
@@ -1167,6 +1167,7 @@ const store = {
       const r = await fetch(CONFIG.API_URL + "?action=rank&me=" + encodeURIComponent(S ? S.sid : ""));
       const j = await r.json();
       store.rankMeHidden = !!j.meHidden;      // 등대팀이 순위에서 뺀 경우
+      store.rankMeWhy = String(j.meHideReason || "");
       return j.list || [];
     }
     const out = [];
@@ -1251,6 +1252,18 @@ function logPush(e) {
   if (!Array.isArray(S.log)) S.log = [];
   S.log.push(Object.assign({ t: Date.now() }, e));
   if (S.log.length > 300) S.log.splice(0, S.log.length - 300);
+}
+
+/* 등대팀 조치 안내: 관리자가 적은 사유 + 바뀐 내용 */
+function adminMsgText(m) {
+  if (!m) return "";
+  const n = Number(m.n) || 0;
+  const what = m.via === "revoke" ? `'${proofLabel(m.key)}' 인증이 반려되어 이 인증으로 받은 카드 ${n}장이 회수되었어요.`
+    : m.via === "give" ? `'${proofLabel(m.key)}' 인증 반려가 취소되어 카드 ${n}장을 미개봉으로 돌려받았어요.`
+    : m.via === "wipe" ? "보유 카드가 모두 회수되었어요."
+    : m.via === "rollback" ? "일부 획득 기록이 되돌려졌어요."
+    : n ? `카드 ${n}장이 회수되었어요.` : "카드 기록이 조정되었어요.";
+  return what;
 }
 
 /* 예전 버전에서 만들어진 데이터를 현재 형식으로 맞춘다 */
@@ -1368,7 +1381,7 @@ async function persist(quiet) {
       S = normalize(Object.assign({}, j.fix, { sid }));
       if (keepSync) S.syncDue = true;
       try { localStorage.setItem(store.key(sid), JSON.stringify(S)); } catch (e) {}
-      toast("등대팀이 인증 확인 결과에 따라 카드 기록을 조정했어요.", 3800);
+      toast(adminMsgText(S.adminMsg) || "카드 기록이 조정되었어요.", 3800);
       if (!document.getElementById("stage")) quiet = false;
     }
     // 친구 추천 보상이 서버에 쌓여 있었다면 이번 저장에서 함께 받는다
@@ -1653,12 +1666,14 @@ function viewGet() {
   const rejected = Object.keys(S.proofs || {}).filter(k => S.proofs[k].status === "no");
 
   return shell(`
-    ${S.adminNote && Date.now() - S.adminNote < 14 * 864e5 ? `<div class="warn">
-      등대팀이 인증 확인 결과에 따라 카드 기록을 조정했습니다. 궁금한 점은 등대팀에 문의해 주세요.
+    ${S.adminNote && Date.now() - S.adminNote < 14 * 864e5 && S.adminMsg
+        && !(S.adminMsg.via === "revoke" && rejected.indexOf(S.adminMsg.key) >= 0) ? `<div class="warn">
+      ${esc(adminMsgText(S.adminMsg))}${S.adminMsg.reason ? `<br><b>사유</b> · ${esc(S.adminMsg.reason)}` : ""}
     </div>` : ""}
     ${rejected.length ? `<div class="warn">
-      반려된 인증이 ${rejected.length}건 있습니다. 반려된 인증으로 받은 카드는 회수되었어요.<br>
-      아래에서 <b>재인증</b>을 눌러 올바른 캡처로 다시 인증하면 카드를 다시 받을 수 있습니다.
+      ${rejected.map(k => `<div style="margin-bottom:6px"><b>${esc(proofLabel(k))}</b> 인증이 반려되었어요.
+        ${S.proofs[k].reason ? `<br>사유 · ${esc(S.proofs[k].reason)}` : ""}</div>`).join("")}
+      반려된 인증으로 받은 카드는 회수되었어요. 아래에서 <b>재인증</b>을 눌러 다시 인증하면 카드를 다시 받을 수 있습니다.
     </div>` : ""}
     <p class="lead">학습지원 프로그램에 참여하고 인증하면 카드를 받습니다.<br>실제로 참여할수록 더 많은 카드를 받을 수 있습니다.</p>
 
@@ -1935,7 +1950,7 @@ function viewRank() {
       <p>수집한 카드 종류 수로 순위를 매기며, 같은 종수일 경우 먼저 달성한 순서로 정합니다.</p>
     </div>
     <p class="lead" style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <span>${hiddenMe ? `내 순위 <b style="color:var(--bad)">집계 제외</b> · 등대팀 확인 중`
+      <span>${hiddenMe ? `내 순위 <b style="color:var(--bad)">집계 제외</b>${store.rankMeWhy ? " · " + esc(store.rankMeWhy) : ""}`
                        : `내 순위 <b style="color:var(--beam)">${myRank + 1}위</b> · ${types()}종`}</span>
       <button class="lnk" id="rankrefresh" style="margin-left:auto">새로고침</button>
     </p>
@@ -2315,9 +2330,16 @@ const Admin = {
   },
 
   async review(item, status, btn) {
+    let reason = "";
+    if (status === "no") {
+      const r = prompt("반려 사유를 적어 주세요. 학생 화면에 그대로 보입니다.\n(이 인증으로 받은 카드와 그 카드로 뽑은 카드가 회수됩니다)", "");
+      if (r === null) return;
+      reason = r.trim();
+      if (!reason) return toast("반려 사유를 적어 주세요.");
+    }
     btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
     try {
-      await store.review(item.sid, item.key, status);
+      await store.review(item.sid, item.key, status, reason);
       const card = btn.closest(".adm");
       card.style.opacity = ".45";
       card.querySelector(".row").innerHTML =

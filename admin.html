@@ -158,6 +158,22 @@
   .frm input:focus,.frm textarea:focus{border-color:var(--beam)}
   .btn.danger{background:rgba(255,154,139,.15);color:var(--bad);border:1px solid rgba(255,154,139,.4)}
   .owned{display:flex;flex-wrap:wrap;gap:5px}
+  .sanc .sb{margin-top:12px;padding:12px 13px;border-radius:12px;background:rgba(255,255,255,.035);border:1px solid var(--line)}
+  .sanc .sbh{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13.5px}
+  .sanc .sbh .note{margin-left:auto}
+  .sanc .sb .note{margin:4px 0 8px}
+  .sanc .srow{display:flex;align-items:center;gap:8px;justify-content:space-between;padding:6px 0;font-size:13px;border-bottom:1px solid var(--line)}
+  .sanc .pick{display:flex;flex-wrap:wrap;gap:6px}
+  .sanc .pk{display:flex;align-items:center;gap:6px;padding:4px 6px 4px 9px;border-radius:8px;background:rgba(255,255,255,.05);font-size:12px}
+  .sanc .pk b{margin-left:3px;color:var(--beam)}
+  .sanc .pk input,.sanc #spend{width:46px;padding:4px 6px;font-size:13px;background:rgba(0,0,0,.25);color:var(--foam);
+    border:1px solid var(--line);border-radius:6px}
+  .sanc .logs{max-height:260px;overflow-y:auto;border-radius:8px;border:1px solid var(--line)}
+  .sanc .lr{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;padding:7px 9px;font-size:12.5px;border-bottom:1px solid var(--line)}
+  .sanc .lr:last-child{border-bottom:none}
+  .sanc .lr.rv{opacity:.5}
+  .sanc .lt{color:var(--dim);white-space:nowrap}
+  .sanc .lnk{background:none;border:none;color:var(--bad);font-size:12px;cursor:pointer;white-space:nowrap}
   .owned span{font-size:12px;padding:4px 9px;border-radius:7px;background:rgba(255,255,255,.05)}
   .owned span b{margin-left:4px;color:var(--beam)}
   .plus{color:#7FE9C0;font-weight:800} .minus{color:var(--bad);font-weight:800}
@@ -203,7 +219,11 @@ const PROGRAMS = [
 ];
 
 const api = CONFIG.API_URL && CONFIG.API_URL.indexOf("http") === 0;
-const ADMIN_PAGE_VERSION = "2026-10-13";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+/* 인증 항목별 지급 장수. 같은 사이트의 학생 앱(index.html) 설정을 읽어 덮어쓴다 */
+let REWARD = { follow: 5, apply: 5, done: 7 };
+const rewardOf = key => key === "follow" ? REWARD.follow
+  : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
+const ADMIN_PAGE_VERSION = "2026-10-24";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -389,6 +409,8 @@ async function checkServer() {
       try {
         const pm = t.match(/const POLLS = (\[[\s\S]*?\n\]);/);
         if (pm) { POLL_DEF = {}; (new Function("return " + pm[1])() || []).forEach(x => { POLL_DEF[x.id] = x; }); }
+        const rm = t.match(/REWARD:\s*(\{[\s\S]*?\})/);
+        if (rm) { const r = new Function("return " + rm[1])(); if (r && typeof r === "object") REWARD = Object.assign(REWARD, r); }
         D._pair = null;                        // 설정을 읽었으니 기간 설문 구분을 다시 계산
         if ((V.tab === "poll" || V.tab === "survey") && authed) render();
       } catch (eP) {}
@@ -548,7 +570,7 @@ function viewStudents() {
           </tr></thead>
           <tbody>
             ${list.length ? list.map(s => `<tr>
-              <td>${esc(s.name)}</td>
+              <td>${esc(s.name)}${s.adm && s.adm.hide ? ` <span class="chip no">순위 제외</span>` : ""}</td>
               <td style="color:var(--mist)">${esc(s.sid)}</td>
               <td class="num">${s.types} / ${TOTAL_CARDS}</td>
               ${TIER_KEYS.map(t => {
@@ -839,12 +861,14 @@ function viewReferral() {
 }
 
 /* ── 운영 ── */
-const SERVER_EXPECT = "2026-10-13";
+const SERVER_EXPECT = "2026-10-24";
 function errMsg(e) {
   const m = e && e.message;
   return m === "auth" ? "담당자 코드가 맞지 않습니다" : m === "not found" ? "학생을 찾지 못했습니다"
     : m === "unknown action" ? "서버가 예전 버전입니다. 새 버전으로 배포해 주세요"
-    : m === "bad cards" ? "장수는 -100~100 사이로 넣어 주세요" : "처리하지 못했습니다" + (m ? " (" + m + ")" : "");
+    : m === "bad cards" ? "장수는 -100~100 사이로 넣어 주세요"
+    : m === "nothing" ? "회수할 카드를 골라 주세요" : m === "already" ? "이미 회수했습니다 (학생이 아직 재인증하지 않았어요)" : m === "no data" ? "이 학생의 카드 기록을 읽지 못했습니다"
+    : "처리하지 못했습니다" + (m ? " (" + m + ")" : "");
 }
 const when = ms => ms ? new Date(ms).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "-";
 
@@ -963,6 +987,8 @@ function openStudent(sid) {
       ${proofs.length ? proofs.map(p => `<div class="note" style="color:var(--foam)">${proofLabel(p.key)} ·
         <span class="chip ${p.status}">${stLabel[p.status] || p.status}</span> · ${when(p.at)}</div>`).join("") : '<div class="note">없음</div>'}</div>
 
+    ${sanctionHTML(st, proofs)}
+
     <div class="sec"><h4>굿즈 교환</h4>
       ${ex.length ? ex.map(x => `<div class="note" style="color:var(--foam)"><span class="chip ${x.tier}">${x.tier}</span>
         ${esc(x.goods || "")} · ${x.status === "done" ? "지급 완료" : "신청(연락 예정)"} · ${when(x.doneAt || x.at)}</div>`).join("") : '<div class="note">없음</div>'}</div>
@@ -975,7 +1001,8 @@ function openStudent(sid) {
       </div>
       <p class="note" style="margin:8px 0 0">학생이 다음에 앱을 열거나 저장할 때 미개봉 카드로 들어갑니다. 회수는 아직 뜯지 않은 카드에서만 빠집니다.</p>
       ${gr.length ? `<div style="margin-top:10px">${gr.map(g => `<div class="note">${when(g.at)} ·
-        <span class="${g.cards > 0 ? "plus" : "minus"}">${g.cards > 0 ? "+" : ""}${g.cards}</span> · ${esc(g.reason) || "사유 없음"}</div>`).join("")}</div>` : ""}
+        ${g.cards ? `<span class="${g.cards > 0 ? "plus" : "minus"}">${g.cards > 0 ? "+" : ""}${g.cards}</span>` : `<span class="minus">조치</span>`}
+        · ${esc(g.reason) || "사유 없음"}</div>`).join("")}</div>` : ""}
     </div>
 
     <div class="sec"><h4>기록 삭제</h4>
@@ -990,6 +1017,8 @@ function openStudent(sid) {
   document.body.appendChild(el);
   el.onclick = e => { if (e.target === el) closeStudent(); };
   el.querySelector("#dx").onclick = closeStudent;
+
+  bindSanction(el, st);
 
   el.querySelector("#ggo").onclick = async e => {
     const n = parseInt(el.querySelector("#gn").value, 10);
@@ -1016,6 +1045,143 @@ function openStudent(sid) {
   };
 }
 function closeStudent() { const d = $("drawer"); if (d) d.remove(); }
+
+/* ── 부정 참여 조치 (허위 인증 등) ──
+   서버가 학생 기록에 직접 적용하고, 학생 폰에 남은 옛 기록으로 저장해도 다시 적용하므로 되살아나지 않는다. */
+const OP_LABEL = { hide: "순위 제외", unhide: "순위 복구", revoke: "인증 반려 회수", take: "카드 골라서 회수", give: "반려 취소(돌려줌)",
+                   rollback: "되돌리기", wipe: "카드 전부 회수" };
+function logText(e) {
+  if (e.k === "d") return `카드 ${(e.ids || []).length}장 뽑음 <span class="note">(${(e.ids || []).join(", ")})</span>`;
+  const key = String(e.key || "");
+  const what = key === "welcome" ? "시작 카드" : key === "invited" ? "추천인 입력" : key === "server" ? "추천·등대팀 지급"
+    : key.indexOf("quiz:") === 0 ? "주간 퀴즈" : key.indexOf("event:") === 0 ? "이벤트 코드 " + esc(key.slice(6))
+    : key.indexOf("survey:") === 0 ? "기간 설문" : key === "follow" || key.indexOf(":") > 0 ? proofLabel(key) + " 인증" : esc(key);
+  return `카드 ${e.n}장 받음 · ${what}`;
+}
+function sanctionHTML(st, proofs) {
+  const adm = st.adm || { hide: false, ops: [] };
+  const ops = (adm.ops || []).slice().reverse();
+  const revoked = k => !(st.claims || {})[k];      // 회수하면 인증 인정이 풀린다 → 재인증 대기
+  const rejected = proofs.filter(p => p.status === "no");
+  const owned = st.owned || {};
+  const ids = Object.keys(owned).filter(k => owned[k] > 0)
+    .sort((a, b) => TIER_KEYS.indexOf(a[0]) - TIER_KEYS.indexOf(b[0]) || parseInt(a.slice(1)) - parseInt(b.slice(1)));
+  const log = Array.isArray(st.log) ? st.log.slice().reverse() : null;
+  return `<div class="sec sanc"><h4>부정 참여 조치</h4>
+    <p class="note" style="margin:0 0 10px">허위 인증 등으로 받은 카드를 회수하거나 순위에서 뺍니다. 모든 조치는 지급 기록에 남고,
+      학생 화면에는 '등대팀이 카드 기록을 조정했다'는 안내가 뜹니다. 학생 폰에 옛 기록이 남아 있어도 서버가 다시 적용합니다.</p>
+    <div class="frm"><input id="sreason" placeholder="사유 (모든 조치에 함께 기록됩니다) 예: 허위 인증"></div>
+
+    <div class="sb">
+      <div class="sbh"><b>순위</b>${adm.hide ? `<span class="chip no">제외됨</span>` : `<span class="chip ok">집계 중</span>`}</div>
+      <p class="note">${adm.hide ? `순위 화면에서 빠져 있습니다${adm.hideReason ? " · " + esc(adm.hideReason) : ""}. 학생 본인 화면에는 '집계 제외'로 보입니다.`
+                                  : "순위에서 빼도 카드·인증 기록은 그대로입니다."}</p>
+      <button class="btn sm ${adm.hide ? "gh" : "danger"}" data-sk="${adm.hide ? "unhide" : "hide"}">${adm.hide ? "순위에 다시 포함" : "순위에서 제외"}</button>
+    </div>
+
+    <div class="sb">
+      <div class="sbh"><b>반려된 인증의 보상 회수</b></div>
+      ${rejected.length ? rejected.map(p => `<div class="srow"><span>${proofLabel(p.key)} <span class="chip no">반려</span></span>
+          ${revoked(p.key) ? `<span class="note">회수함 · 재인증 대기</span>`
+            : `<button class="btn sm danger" data-rv="${esc(p.key)}">이 인증으로 받은 카드 회수</button>`}</div>`).join("")
+        : `<p class="note">반려된 인증이 없습니다. 인증 검토 탭에서 반려하면 여기에 나옵니다.</p>`}
+      ${rejected.length ? `<p class="note">이 인증으로 받은 카드와 그 카드로 뽑은 카드만 빼고, 그 전에 모은 카드는 그대로 둡니다.
+        (이 기능 전에 참여해 획득 기록이 없으면 지급 장수만큼 미개봉 → 최근 카드 순으로 뺍니다)</p>` : ""}
+    </div>
+
+    <div class="sb">
+      <div class="sbh"><b>카드 골라서 회수</b><span class="note">보유 ${st.types}종 · 미개봉 ${st.pending}장</span></div>
+      ${ids.length ? `<div class="pick">${ids.map(k => `<label class="pk ${k[0]}"><span>${k}<b>×${owned[k]}</b></span>
+          <input type="number" min="0" max="${owned[k]}" value="0" data-pk="${k}" inputmode="numeric"></label>`).join("")}</div>`
+        : `<p class="note">보유한 카드가 없습니다.</p>`}
+      <div class="frm" style="margin-top:8px">
+        <label class="note" style="display:flex;align-items:center;gap:6px">미개봉에서
+          <input id="spend" type="number" min="0" max="${st.pending}" value="0" style="width:72px" inputmode="numeric">장</label>
+        <button class="btn sm danger" id="stake" style="margin-left:auto">고른 카드 회수</button>
+      </div>
+    </div>
+
+    <div class="sb">
+      <div class="sbh"><b>획득 기록에서 되돌리기</b><span class="note">최근 40건</span></div>
+      ${log && log.length ? `<div class="logs">${log.map(e => `<div class="lr ${e.r ? "rv" : ""}">
+          <span class="lt">${when(e.t)}</span><span class="lx">${logText(e)}${e.r ? ` <span class="note">· 되돌림</span>` : ""}</span>
+          ${e.r ? "" : `<button class="lnk" data-rb="${e.t}">이 시점부터 되돌리기</button>`}</div>`).join("")}</div>
+          <p class="note">고른 시점과 그 이후에 받은 카드·뽑은 카드를 모두 되돌립니다. (인증·퀴즈 참여 기록은 남습니다)</p>`
+        : `<p class="note">획득 기록이 없습니다. 이 기능이 생기기 전에 참여한 학생은 '카드 골라서 회수'나 '전부 회수'를 써 주세요.</p>`}
+    </div>
+
+    <div class="sb">
+      <div class="sbh"><b>카드 전부 회수</b></div>
+      <p class="note">보유 카드와 미개봉 카드를 모두 0으로 만듭니다. 계정과 인증 기록은 남고, 이후 정상 참여하면 다시 모을 수 있습니다.</p>
+      <div class="frm"><input id="wconf" placeholder="확인을 위해 학번 입력" inputmode="numeric">
+        <button class="btn sm danger" id="swipe">전부 회수</button></div>
+    </div>
+
+    ${ops.length ? `<div class="sb"><div class="sbh"><b>조치 기록</b></div>${ops.map(o => `<div class="note">${when(o.at)} ·
+        <b style="color:var(--foam)">${OP_LABEL[o.via || o.type] || o.type}</b>${o.key ? " · " + proofLabel(o.key) : ""}${
+          o.type === "give" ? " 미개봉 " + (o.pending || 0) + "장"
+          : o.cards ? " · 뽑은 카드 " + Object.values(o.cards).reduce((a, b) => a + b, 0) + "장" + (o.pending ? " + 미개봉 " + o.pending + "장" : "") : ""}${o.reason ? " · " + esc(o.reason) : ""}</div>`).join("")}</div>` : ""}
+  </div>`;
+}
+async function sanction(st, body, btn) {
+  if (!api) { toast("서버에 연결된 상태에서만 쓸 수 있습니다"); return false; }
+  const label = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'; }
+  try {
+    const j = await adminPost(Object.assign({ action: "sanction", sid: st.sid }, body));
+    st.adm = j.adm;
+    if (j.student) Object.assign(st, j.student);
+    D.grants.unshift({ at: Date.now(), sid: String(st.sid), name: st.name, cards: 0,
+                       reason: "[조치] " + (OP_LABEL[body.kind] || body.kind) + (body.reason ? " · " + body.reason : "") });
+    render(); openStudent(st.sid);
+    return true;
+  } catch (err) {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+    toast(errMsg(err));
+    return false;
+  }
+}
+function bindSanction(el, st) {
+  const why = () => el.querySelector("#sreason").value.trim();
+  const need = () => { const r = why(); if (!r) { toast("사유를 먼저 적어 주세요"); el.querySelector("#sreason").focus(); } return r; };
+  el.querySelectorAll("[data-sk]").forEach(b => b.onclick = async () => {
+    const r = b.dataset.sk === "hide" ? need() : why();
+    if (b.dataset.sk === "hide" && !r) return;
+    if (await sanction(st, { kind: b.dataset.sk, reason: r }, b))
+      toast(b.dataset.sk === "hide" ? `${st.name} 학생을 순위에서 뺐습니다` : `${st.name} 학생을 순위에 다시 넣었습니다`);
+  });
+  el.querySelectorAll("[data-rv]").forEach(b => b.onclick = async () => {
+    const r = need(); if (!r) return;
+    const k = b.dataset.rv, n = rewardOf(k);
+    if (!confirm(`${st.name} 학생이 '${proofLabel(k)}' 인증으로 받은 카드(그걸로 뽑은 카드 포함)를 회수할까요?`)) return;
+    if (await sanction(st, { kind: "revoke", key: k, n, reason: r }, b)) toast("이 인증으로 받은 카드를 회수했습니다");
+  });
+  const tk = el.querySelector("#stake");
+  if (tk) tk.onclick = async () => {
+    const cards = {}; let cnt = 0;
+    el.querySelectorAll("[data-pk]").forEach(i => {
+      const v = Math.max(0, Math.min(Number(i.max) || 0, parseInt(i.value, 10) || 0));
+      if (v) { cards[i.dataset.pk] = v; cnt += v; }
+    });
+    const pend = Math.max(0, Math.min(st.pending || 0, parseInt(el.querySelector("#spend").value, 10) || 0));
+    if (!cnt && !pend) return toast("회수할 카드 수를 넣어 주세요");
+    const r = need(); if (!r) return;
+    if (!confirm(`${st.name} 학생에게서 카드 ${cnt}장${pend ? ", 미개봉 " + pend + "장" : ""}을 회수할까요?`)) return;
+    if (await sanction(st, { kind: "take", cards, pending: pend, reason: r }, tk)) toast("고른 카드를 회수했습니다");
+  };
+  el.querySelectorAll("[data-rb]").forEach(b => b.onclick = async () => {
+    const r = need(); if (!r) return;
+    const t = Number(b.dataset.rb);
+    if (!confirm(`${when(t)} 이후에 받은 카드와 뽑은 카드를 모두 되돌릴까요?`)) return;
+    if (await sanction(st, { kind: "rollback", after: t - 1, reason: r }, b)) toast("되돌렸습니다");
+  });
+  const wp = el.querySelector("#swipe");
+  if (wp) wp.onclick = async () => {
+    if (el.querySelector("#wconf").value.trim() !== String(st.sid)) return toast("학번을 정확히 입력해야 회수됩니다");
+    const r = need(); if (!r) return;
+    if (await sanction(st, { kind: "wipe", reason: r }, wp)) toast(`${st.name} 학생의 카드를 모두 회수했습니다`);
+  };
+}
 
 /* 카드 지급·회수 (상세 창과 운영 화면이 같이 씀) */
 async function grantCards(sid, n, reason, btn) {
@@ -1201,15 +1367,30 @@ function bind() {
   });
   const rev = async (i, st, btn) => {
     const it = list[i];
+    const who = D.students.find(x => String(x.sid) === String(it.sid));
+    const n = rewardOf(it.key);
+    if (st === "no" && api && !confirm(`${who ? who.name : it.sid} 학생의 '${proofLabel(it.key)}' 인증을 반려할까요?\n\n`
+        + `· 이 인증으로 받은 카드 ${n}장과, 그 카드로 뽑은 카드만 회수합니다. 그 전에 모은 카드는 그대로 둡니다.\n`
+        + `· 학생 화면에 재인증 요청이 뜨고, 올바른 캡처로 다시 인증하면 카드를 다시 받습니다.`)) return;
+    if (st !== "ok" && it.status === "no" && api && !confirm(`반려를 취소할까요?\n회수했던 카드만큼 미개봉 카드로 돌려줍니다.`)) return;
     btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
     try {
-      await review(it.sid, it.key, st);
+      const prev = it.status;
+      const j = await review(it.sid, it.key, st);
       it.status = st;
       const src = D.proofs.find(p => p.sid === it.sid && p.key === it.key);
       if (src) src.status = st;
-      toast(st === "ok" ? "승인했습니다" : "반려했습니다");
+      const sc = j && j.sanction;
+      if (sc && sc.ok && who) {
+        if (sc.adm) who.adm = sc.adm;
+        if (sc.student) Object.assign(who, sc.student);
+        if (sc.desc) D.grants.unshift({ at: Date.now(), sid: String(who.sid), name: who.name, cards: 0, reason: "[조치] " + sc.desc });
+      }
+      toast(st === "ok" && prev !== "no" ? "승인했습니다"
+        : st === "no" ? (sc && sc.ok ? "반려하고 이 인증으로 받은 카드를 회수했습니다" : sc && sc.error === "already" ? "반려했습니다 (이미 회수됨)" : "반려했습니다")
+        : sc && sc.ok && !sc.none ? "반려를 취소하고 카드를 돌려줬습니다" : "되돌렸습니다");
       render();
-    } catch (e) { btn.disabled = false; btn.textContent = st === "ok" ? "승인" : "반려"; toast("처리에 실패했습니다"); }
+    } catch (e) { btn.disabled = false; btn.textContent = st === "ok" ? "승인" : st === "no" ? "반려" : "되돌리기"; toast("처리에 실패했습니다"); }
   };
   app.querySelectorAll("[data-ok]").forEach(b => b.onclick = () => rev(+b.dataset.ok, "ok", b));
 
@@ -1374,7 +1555,7 @@ async function adminPost(body) {
 }
 
 async function review(sid, key, status) {
-  if (api) { await adminPost({ action: "review", sid, key, status }); return; }
+  if (api) return await adminPost({ action: "review", sid, key, status, n: rewardOf(key) });
   const raw = localStorage.getItem("dingle:" + sid);
   if (!raw) return;
   const d = JSON.parse(raw);

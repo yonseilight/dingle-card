@@ -1117,7 +1117,8 @@ const store = {
     if (api) {
       const r = await fetch(CONFIG.API_URL, {
         method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "review", sid, key, status, admin: Admin.key || "" }),
+        body: JSON.stringify({ action: "review", sid, key, status, admin: Admin.key || "",
+          n: key === "follow" ? CONFIG.REWARD.follow : String(key).indexOf("apply:") === 0 ? CONFIG.REWARD.apply : CONFIG.REWARD.done }),
       });
       const j = await r.json();
       if (!j.ok) throw new Error(j.error || "failed");
@@ -1165,6 +1166,7 @@ const store = {
     if (api) {
       const r = await fetch(CONFIG.API_URL + "?action=rank&me=" + encodeURIComponent(S ? S.sid : ""));
       const j = await r.json();
+      store.rankMeHidden = !!j.meHidden;      // 등대팀이 순위에서 뺀 경우
       return j.list || [];
     }
     const out = [];
@@ -1207,6 +1209,7 @@ function blank(sid, name) {
     ref: null,            // 내가 입력한 추천인 학번
     refPaid: false,       // 추천인에게 보상이 지급되었는지
     createdAt: Date.now(),
+    log: (Number(CONFIG.REWARD.welcome) || 0) ? [{ t: Date.now(), k: "g", n: Number(CONFIG.REWARD.welcome), key: "welcome" }] : [],
   };
 }
 
@@ -1241,6 +1244,15 @@ function esc(v) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+/* 카드 획득·뽑기 기록. 등대팀이 허위 인증 등으로 '이 시점 이후 되돌리기'를 할 때 서버가 이 기록을 쓴다.
+   k: "g"(카드를 받음, n장·key) | "d"(카드를 뽑음, ids) | 서버가 되돌린 항목은 r:1 */
+function logPush(e) {
+  if (!S) return;
+  if (!Array.isArray(S.log)) S.log = [];
+  S.log.push(Object.assign({ t: Date.now() }, e));
+  if (S.log.length > 300) S.log.splice(0, S.log.length - 300);
+}
+
 /* 예전 버전에서 만들어진 데이터를 현재 형식으로 맞춘다 */
 function normalize(d) {
   if (!d) return d;
@@ -1258,6 +1270,10 @@ function normalize(d) {
   d.pending = Number(d.pending) || 0;
   d.seenGranted = Number(d.seenGranted) || 0;
   d.epoch = d.epoch ? String(d.epoch) : "";
+  if (!Array.isArray(d.log)) d.log = [];
+  // 등대팀이 카드를 회수해 종류가 줄었으면 '모두 모은 시각'을 지우고, 다시 다 모았으면 채운다
+  const kinds = Object.keys(d.owned).filter(k => d.owned[k] > 0).length;
+  if (d.completedAt && kinds < CARDS.length) delete d.completedAt;
   // 예전 화면에서 낸 기간 설문 응답에는 설문 id가 없다 → 붙이고, 다음 저장 때 시트로 다시 보낸다
   (typeof POLLS === "undefined" ? [] : POLLS).forEach(p => {
     if (!d.claims["survey:" + p.id]) return;
@@ -1346,11 +1362,21 @@ async function persist(quiet) {
     if (!S || S.sid !== sid) return true;            // 그 사이 로그아웃했으면 반영하지 않는다
     if (j && j.synced !== false) { V.needSync = false; if (S.syncDue) S.syncDue = false; }
 
+    // 등대팀이 카드를 회수·되돌렸다면 서버가 고친 기록을 보내온다 → 그대로 바꿔 끼운다
+    if (j && j.fix && typeof j.fix === "object" && String(j.fix.sid || sid) === String(sid)) {
+      const keepSync = !!S.syncDue && j.synced === false;
+      S = normalize(Object.assign({}, j.fix, { sid }));
+      if (keepSync) S.syncDue = true;
+      try { localStorage.setItem(store.key(sid), JSON.stringify(S)); } catch (e) {}
+      toast("등대팀이 인증 확인 결과에 따라 카드 기록을 조정했어요.", 3800);
+      if (!document.getElementById("stage")) quiet = false;
+    }
     // 친구 추천 보상이 서버에 쌓여 있었다면 이번 저장에서 함께 받는다
     // 친구 추천 보상·등대팀 지급(또는 회수)이 서버에 쌓여 있었다면 이번 저장에서 반영된다
-    if (j && j.gained && typeof j.seenGranted === "number" && (Number(S.seenGranted) || 0) !== j.seenGranted) {
+    else if (j && j.gained && typeof j.seenGranted === "number" && (Number(S.seenGranted) || 0) !== j.seenGranted) {
       S.pending = Math.max(0, (Number(S.pending) || 0) + j.gained);
       S.seenGranted = j.seenGranted;
+      if (j.gained > 0) logPush({ k: "g", n: j.gained, key: "server" });
       try { localStorage.setItem(store.key(sid), JSON.stringify(S)); } catch (e) {}
       toast(j.gained > 0 ? `새 카드 ${j.gained}장이 도착했어요!` : `등대팀이 미개봉 카드 ${-j.gained}장을 조정했어요.`, 3400);
       if (!document.getElementById("stage")) quiet = false;   // 숫자가 바뀌었으니 다시 그린다
@@ -1627,9 +1653,12 @@ function viewGet() {
   const rejected = Object.keys(S.proofs || {}).filter(k => S.proofs[k].status === "no");
 
   return shell(`
+    ${S.adminNote && Date.now() - S.adminNote < 14 * 864e5 ? `<div class="warn">
+      등대팀이 인증 확인 결과에 따라 카드 기록을 조정했습니다. 궁금한 점은 등대팀에 문의해 주세요.
+    </div>` : ""}
     ${rejected.length ? `<div class="warn">
-      반려된 인증이 ${rejected.length}건 있습니다. 화면을 다시 확인하고 재제출해 주세요.<br>
-      반려 항목이 남아 있으면 굿즈 교환이 제한될 수 있습니다.
+      반려된 인증이 ${rejected.length}건 있습니다. 반려된 인증으로 받은 카드는 회수되었어요.<br>
+      아래에서 <b>재인증</b>을 눌러 올바른 캡처로 다시 인증하면 카드를 다시 받을 수 있습니다.
     </div>` : ""}
     <p class="lead">학습지원 프로그램에 참여하고 인증하면 카드를 받습니다.<br>실제로 참여할수록 더 많은 카드를 받을 수 있습니다.</p>
 
@@ -1884,7 +1913,8 @@ function viewRank() {
     return shell(`<div style="text-align:center;padding:40px 0"><span class="spin"></span></div>`);
   }
   const me = { name: S.name, sid: S.sid, types: types(), me: true, at: S.completedAt || 0 };
-  const list = V.ranking.filter(r => r.sid !== S.sid).concat([me])
+  const hiddenMe = !!store.rankMeHidden;
+  const list = V.ranking.filter(r => r.sid !== S.sid).concat(hiddenMe ? [] : [me])
     .sort((a, b) => b.types - a.types || (a.at || 0) - (b.at || 0));
 
   const row = (r, i) => `
@@ -1905,7 +1935,8 @@ function viewRank() {
       <p>수집한 카드 종류 수로 순위를 매기며, 같은 종수일 경우 먼저 달성한 순서로 정합니다.</p>
     </div>
     <p class="lead" style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <span>내 순위 <b style="color:var(--beam)">${myRank + 1}위</b> · ${types()}종</span>
+      <span>${hiddenMe ? `내 순위 <b style="color:var(--bad)">집계 제외</b> · 등대팀 확인 중`
+                       : `내 순위 <b style="color:var(--beam)">${myRank + 1}위</b> · ${types()}종`}</span>
       <button class="lnk" id="rankrefresh" style="margin-left:auto">새로고침</button>
     </p>
     ${rows ? `<div class="ranklist">${rows}</div>` : `<p class="lead">아직 참여자가 없습니다.</p>`}`);
@@ -2180,7 +2211,7 @@ const Proof = {
         V.needSync = true; S.syncDue = true;   // 다음 저장 때 별점을 시트로 옮긴다
       }
 
-      if (!already) { S.claims[k] = Date.now(); S.pending += amt; }
+      if (!already) { S.claims[k] = Date.now(); S.pending += amt; logPush({ k: "g", n: amt, key: k }); }
       await persist();
       payReferrer();
       this.close();
@@ -2946,6 +2977,7 @@ function bindLogin() {
         if (chk.ok) {
           S.ref = ref;
           S.pending += CONFIG.REWARD.invited;
+          logPush({ k: "g", n: CONFIG.REWARD.invited, key: "invited" });
           refName = chk.name;
         } else {
           msg = chk.msg;
@@ -3050,7 +3082,7 @@ function bind() {
     }));
     S.claims[pollKey(p)] = now;
     const amt = Math.max(0, Number(p.cards) || 0);
-    if (amt) S.pending += amt;
+    if (amt) { S.pending += amt; logPush({ k: "g", n: amt, key: pollKey(p) }); }
     V.needSync = true; S.syncDue = true;   // 시트로 옮길 때까지 기록에 남겨 둔다 (새로고침해도 다시 보냄)
     delete V.pl[p.id];
     try { await persist(); } finally { V.plBusy = false; }
@@ -3094,6 +3126,7 @@ function bind() {
       S.quizDone.push(V.quizIdx);
       S.quizWeek = weekKey();
       S.pending += CONFIG.REWARD.quiz;
+      logPush({ k: "g", n: CONFIG.REWARD.quiz, key: "quiz:" + S.quizWeek });
       await persist();
     }
     V.quizOpen = false; V.quizPick = null; V.svPick = null; V.svEtc = "";
@@ -3146,6 +3179,7 @@ function bind() {
     }
     S.claims[key] = Date.now();
     S.pending += Number(ev.cards) || 0;
+    logPush({ k: "g", n: Number(ev.cards) || 0, key });
     await persist();
     V.evOk = true; V.evMsg = `${ev.label} 참여 완료! 카드 ${ev.cards}장을 받았습니다.`;
     render();
@@ -3177,6 +3211,7 @@ function bind() {
         used++;
       }
       S.pending -= used;
+      if (got.length) logPush({ k: "d", ids: got.map(c => c.id) });
       if (!got.length) {
         V.busy = false;
         toast("모든 카드를 " + CONFIG.CAP + "장씩 모았습니다!", 2600);

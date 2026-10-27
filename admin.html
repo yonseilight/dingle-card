@@ -181,9 +181,20 @@
   .gbtn .lnk{background:none;border:none;padding:0;font-size:11.5px;color:var(--mist);cursor:pointer;text-decoration:underline}
   .gbtn .lnk:hover{color:var(--bad)}
   .vwarn{background:rgba(255,154,139,.12);color:#FFD5CD;border-radius:10px;padding:11px 14px;font-size:13px;margin-bottom:16px}
+  .ph h2{white-space:nowrap}
+  td:first-child, td.num{white-space:nowrap}
   @media(max-width:640px){
     .topin{flex-wrap:wrap} .tabs{margin-left:0;width:100%;order:3}
+    .tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .tabs::-webkit-scrollbar{display:none}
+    .tab{flex:none}
     .row .lb{width:104px}
+    .ph{flex-wrap:wrap}
+    .ph .sub{flex:1 1 auto}
+    .ph .right{margin-left:0;width:100%}
+    .ph .right .search{flex:1;min-width:0}
+    .scroll table{min-width:620px}
+    .wrap{padding-left:12px;padding-right:12px}
   }
 </style>
 </head>
@@ -223,10 +234,18 @@ const PROGRAMS = [
 
 const api = CONFIG.API_URL && CONFIG.API_URL.indexOf("http") === 0;
 /* 인증 항목별 지급 장수. 같은 사이트의 학생 앱(index.html) 설정을 읽어 덮어쓴다 */
-let REWARD = { follow: 5, apply: 5, done: 7 };
+let REWARD = { follow: 7, apply: 7, done: 10 };
+/* 이 학생이 그 인증으로 실제 받은 장수: 획득 기록에 있으면 그 값, 없으면(10/24 이전 참여) 그때 장수 */
+const OLD_REWARD = { follow: 5, apply: 5, done: 7 };
+function rewardFor(st, key) {
+  const log = st && Array.isArray(st.log) ? st.log : [];
+  for (let i = log.length - 1; i >= 0; i--) if (log[i] && log[i].k === "g" && log[i].key === key && !log[i].x) return Number(log[i].n) || 0;
+  const R0 = (st && st.claims && st.claims[key] && st.claims[key] < Date.parse("2026-10-27T00:00:00+09:00")) || !log.length ? OLD_REWARD : REWARD;
+  return key === "follow" ? R0.follow : String(key).indexOf("apply:") === 0 ? R0.apply : String(key).indexOf("done:") === 0 ? R0.done : 0;
+}
 const rewardOf = key => key === "follow" ? REWARD.follow
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-10-26";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-10-29";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -283,8 +302,8 @@ function proofLabel(key) {
 }
 
 /* ── 데이터 로드 ── */
-async function load() {
-  V.loading = true; render();
+async function load(silent) {
+  if (!silent) { V.loading = true; render(); }
   try {
     if (api) {
       const r = await fetch(CONFIG.API_URL + "?action=admin&admin=" + encodeURIComponent(ADMIN));
@@ -298,16 +317,32 @@ async function load() {
             ratings: j.ratings || [], exchanges: j.exchanges || [], grants: j.grants || [],
             pollSheets: j.pollSheets || [],
             meta: { v: j.v || "", epoch: j.epoch || "", notice: j.notice || null,
-                    sheetName: j.sheetName || "", sheetUrl: j.sheetUrl || "" } };
+                    sheetName: j.sheetName || "", sheetUrl: j.sheetUrl || "",
+                    closed: Number(j.closed) || 0, backup: j.backup || null } };
     } else {
       D = fromLocal();
     }
     V.err = "";
   } catch (e) {
+    if (silent) return;                 // 자동 새로고침 실패는 조용히 넘긴다 (다음 차례에 다시)
     V.err = "데이터를 불러오지 못했습니다. API 주소를 확인해 주세요. (" + String(e && e.message || e) + ")";
   }
   V.loading = false; render();
 }
+
+/* 2분마다 조용히 새로고침 — 다른 팀원이 처리한 내용과 새 인증을 반영한다.
+   상세 창이 열려 있거나 글자를 입력하는 중이거나 탭이 가려져 있으면 건너뛴다. */
+setInterval(async () => {
+  if (!authed || !api || V.loading || document.hidden || $("drawer")) return;
+  const ae = document.activeElement;
+  if (ae && ae.matches && ae.matches("input,textarea,select")) return;
+  const before = D.proofs.filter(p => p.status === "wait").length;
+  const y = window.scrollY;
+  await load(true);
+  window.scrollTo(0, y);
+  const after = D.proofs.filter(p => p.status === "wait").length;
+  if (after > before) toast(`새 인증 ${after - before}건이 들어왔어요`);
+}, 120000);
 
 /* 서버 없이 이 기기에서 테스트할 때 */
 function fromLocal() {
@@ -430,7 +465,7 @@ async function checkServer() {
 /* ── 화면: 공통 틀 ── */
 function shell(inner) {
   const tabs = [["home", "현황"], ["review", "인증 검토"], ["students", "참여자"],
-                ["referral", "추천"], ["poll", "기간 설문"], ["survey", "퀴즈 설문"], ["rating", "만족도"], ["exchange", "교환"], ["ops", "운영"]];
+                ["referral", "추천"], ["poll", "기간 설문"], ["survey", "퀴즈 설문"], ["rating", "만족도"], ["exchange", "교환"], ["report", "보고서"], ["ops", "운영"]];
   const w = D.proofs.filter(p => p.status === "wait").length;
   return `
     <div class="top"><div class="topin">
@@ -446,6 +481,32 @@ function shell(inner) {
 }
 
 /* ── 현황 ── */
+/* 순위 — 학생 화면과 같은 규칙: 종류 수가 많은 순, 같으면 26종을 먼저 모은 순. 순위에서 뺀 학생은 제외 */
+function rankList() {
+  return D.students.filter(x => !(x.adm && x.adm.hide))
+    .slice().sort((a, b) => (b.types || 0) - (a.types || 0) || (a.done || 0) - (b.done || 0) || String(a.sid).localeCompare(String(b.sid)))
+    .map((x, i, arr) => Object.assign({ rank: i > 0 && arr[i - 1].types === x.types && !x.done && !arr[i - 1].done ? null : i + 1 }, x));
+}
+function rankPanel() {
+  const list = rankList();
+  list.forEach((x, i) => { if (x.rank === null) x.rank = list[i - 1].rank; });   // 동점(둘 다 미완성)은 같은 등수
+  const hidden = D.students.filter(x => x.adm && x.adm.hide).length;
+  const top = list.slice(0, 20);
+  return `<div class="panel">
+    <div class="ph"><h2>순위 (경품 확인용)</h2>
+      <span class="sub">지금 기준 상위 ${top.length}명${hidden ? ` · 순위 제외 ${hidden}명 빠짐` : ""} · 같은 종수는 26종을 먼저 모은 순, 둘 다 미완성이면 같은 등수</span>
+      <div class="right"><button class="btn gh sm" id="rankcsv">전체 순위 CSV</button></div></div>
+    <div class="pb flush"><div class="scroll" style="max-height:420px"><table>
+      <thead><tr><th class="num">등수</th><th>이름</th><th>학번</th><th class="num">종수</th><th>26종 완성</th><th>연락처</th><th>교환</th></tr></thead>
+      <tbody>${top.length ? top.map(x => `<tr>
+        <td class="num"><b>${x.rank}</b></td><td>${esc(x.name)}</td><td style="color:var(--mist)">${esc(x.sid)}</td>
+        <td class="num"><b>${x.types}</b></td><td style="color:var(--mist)">${x.done ? when(x.done) : "-"}</td>
+        <td style="color:var(--mist)">${esc(x.contact) || "-"}</td><td style="color:var(--mist)">${esc(x.exchanged) || "-"}</td></tr>`).join("")
+        : `<tr><td colspan="7"><div class="empty">아직 참여자가 없습니다.</div></td></tr>`}</tbody>
+    </table></div></div>
+  </div>`;
+}
+
 function viewHome() {
   const s = stats();
   const avg = s.total ? (s.cards / s.total).toFixed(1) : "0";
@@ -462,6 +523,8 @@ function viewHome() {
       <div class="kpi"><div class="l">교환 완료</div><div class="v">${s.exch}</div>
         <div class="s">전 등급 완성 ${s.full}명</div></div>
     </div>
+
+    ${rankPanel()}
 
     <div class="panel">
       <div class="ph"><h2>등급별 완성자</h2><span class="sub">한 등급을 모두 모은 학생 수</span></div>
@@ -764,6 +827,230 @@ function viewPoll() {
   }).join(""));
 }
 
+
+/* ───────── 운영 보고서 (미래융합교육혁신원 보고용) ─────────
+   지금 불러온 데이터로 바로 만든다. [인쇄 · PDF로 저장]은 보고서 부분만 인쇄하고,
+   [HTML로 저장]은 그래프까지 들어 있는 파일 하나로 내려받는다. */
+const KO = n => Number(n || 0).toLocaleString("ko-KR");
+const PCT = (a, b) => b ? Math.round(a / b * 100) : 0;
+function mondayMs(t) {
+  const d = new Date(Number(t) + 9 * 3600e3);            // 한국 날짜 기준
+  const dow = (d.getUTCDay() + 6) % 7;
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - dow);
+}
+const wkLabel = ms => { const d = new Date(ms); return (d.getUTCMonth() + 1) + "/" + d.getUTCDate(); };
+
+function reportData() {
+  const S = D.students, now = Date.now();
+  const has = (st, pre) => Object.keys(st.claims || {}).some(k => k === pre || k.indexOf(pre) === 0);
+  const firstAt = Math.min.apply(null, S.map(x => x.created || x.at || now).concat([now]));
+  const proofN = { ok: 0, wait: 0, no: 0 };
+  D.proofs.forEach(p => { proofN[p.status] = (proofN[p.status] || 0) + 1; });
+  const ex = D.exchanges || [];
+  const rate = D.ratings.filter(r => r.score > 0);
+  const k = {
+    total: S.length,
+    proofStu: S.filter(x => has(x, "follow") || has(x, "apply:") || has(x, "done:")).length,
+    applyStu: S.filter(x => has(x, "apply:")).length,
+    doneStu: S.filter(x => has(x, "done:")).length,
+    quiz: S.reduce((a, x) => a + (x.quizDone || 0), 0),
+    quizStu: S.filter(x => x.quizDone > 0).length,
+    ref: S.filter(x => x.ref).length,
+    exReq: ex.length, exDone: ex.filter(x => x.status === "done").length,
+    rateAvg: rate.length ? (rate.reduce((a, r) => a + r.score, 0) / rate.length).toFixed(2) : "-", rateN: rate.length,
+    proofN, cards: S.reduce((a, x) => a + Object.values(x.owned || {}).reduce((b, c) => b + c, 0), 0),
+  };
+  // 프로그램별 신청 → 완료
+  const prog = PROGRAMS.map(p => {
+    const a = S.filter(x => (x.claims || {})["apply:" + p.id]).length;
+    const d = S.filter(x => (x.claims || {})["done:" + p.id]).length;
+    const both = S.filter(x => (x.claims || {})["apply:" + p.id] && (x.claims || {})["done:" + p.id]).length;
+    return { name: p.name, apply: a, done: d, both, conv: PCT(both, a) };
+  });
+  // 주차별 추이
+  const w0 = mondayMs(firstAt), w1 = mondayMs(now), weeks = [];
+  for (let w = w0; w <= w1; w += 7 * 864e5) weeks.push({ w, join: 0, proof: 0, quiz: 0 });
+  const at = t => { const w = mondayMs(t); return weeks.find(x => x.w === w); };
+  S.forEach(x => { const r = x.created && at(x.created); if (r) r.join++; });
+  D.proofs.forEach(p => { const r = p.at && at(p.at); if (r) r.proof++; });
+  D.surveys.filter(x => !pollOf(x)).forEach(x => {
+    const t = Date.parse(String(x.week) + "T12:00:00+09:00"); const r = !isNaN(t) && at(t); if (r) r.quiz++;
+  });
+  // 참여 경로
+  const route = [["인스타그램 팔로우", "follow"], ["주간 퀴즈", null], ["프로그램 신청", "apply:"], ["활동 완료", "done:"],
+                 ["이벤트 코드", "event:"], ["기간 설문", "survey:"], ["친구 추천으로 가입", "ref"]]
+    .map(([l, pre]) => [l, pre === null ? k.quizStu : pre === "ref" ? k.ref : S.filter(x => has(x, pre)).length]);
+  // 만족도
+  const rp = {};
+  D.ratings.forEach(r => { const o = rp[r.program] || (rp[r.program] = { n: 0, sum: 0, memo: 0 }); if (r.score) { o.n++; o.sum += r.score; } if (r.memo) o.memo++; });
+  // 설문 (퀴즈 '한 마디' + 기간 설문)
+  const qs = [];
+  const add = (title, list, def) => {
+    const by = {};
+    list.forEach(x => { const o = by[x.q] || (by[x.q] = { q: x.q, cnt: {}, etc: [], n: 0 }); o.n++;
+      if (x.answer) o.cnt[x.answer] = (o.cnt[x.answer] || 0) + 1; if (x.etc) o.etc.push(x.etc); });
+    Object.values(by).forEach(o => {
+      const dq = def && def.questions.find(z => z.q === o.q);
+      (dq ? dq.opts : []).forEach(op => { if (!(op in o.cnt)) o.cnt[op] = 0; });
+      qs.push(Object.assign({ group: title }, o));
+    });
+  };
+  pollGroups().forEach(g => add((g.def ? g.def.title : "기간 설문") + " (" + g.id + ")",
+    D.surveys.filter(x => pollOf(x) === g.id), g.def));
+  add("주간 퀴즈 '이번 주 한 마디'", D.surveys.filter(x => !pollOf(x)));
+  return { k, prog, weeks, route, rp, qs, firstAt, now };
+}
+
+function hbars(rows, color) {           // rows: [[label, n, pctBase]]
+  const max = Math.max(1, ...rows.map(r => r[1]));
+  return `<div class="rb">${rows.map(([l, n, base]) => `<div class="rbr"><span class="rbl">${esc(l)}</span>
+    <span class="rbt"><i style="width:${Math.round(n / max * 100)}%;background:${color || "#2F5BD3"}"></i></span>
+    <span class="rbn">${KO(n)}${base ? ` <small>(${PCT(n, base)}%)</small>` : ""}</span></div>`).join("")}</div>`;
+}
+function weekChart(weeks) {
+  const W = 680, H = 210, P = { l: 34, r: 12, t: 14, b: 30 };
+  const keys = [["join", "신규 가입", "#2F5BD3"], ["proof", "인증 제출", "#E3A008"], ["quiz", "퀴즈 '한 마디' 응답", "#18A36B"]];
+  const max = Math.max(1, ...weeks.map(w => Math.max(w.join, w.proof, w.quiz)));
+  const n = weeks.length, gx = (W - P.l - P.r) / Math.max(1, n), bw = Math.min(16, gx / 4);
+  const y = v => P.t + (H - P.t - P.b) * (1 - v / max);
+  let g = "";
+  for (let i = 0; i <= 4; i++) { const v = Math.round(max * i / 4), yy = y(v);
+    g += `<line x1="${P.l}" x2="${W - P.r}" y1="${yy}" y2="${yy}" stroke="#E3E7EF"/><text x="${P.l - 6}" y="${yy + 3}" text-anchor="end" font-size="9" fill="#7A8599">${v}</text>`; }
+  weeks.forEach((w, i) => {
+    const cx = P.l + gx * i + gx / 2;
+    keys.forEach(([k, , c], j) => { const v = w[k], x = cx + (j - 1) * (bw + 2) - bw / 2;
+      g += `<rect x="${x}" y="${y(v)}" width="${bw}" height="${H - P.b - y(v)}" rx="2" fill="${c}"/>`; });
+    g += `<text x="${cx}" y="${H - P.b + 14}" text-anchor="middle" font-size="9.5" fill="#4A5568">${wkLabel(w.w)}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="주차별 참여 추이">${g}</svg>
+    <div class="rleg">${keys.map(([, l, c]) => `<span><i style="background:${c}"></i>${l}</span>`).join("")}</div>`;
+}
+
+function reportHTML() {
+  const r = reportData(), k = r.k;
+  const day = t => new Date(t).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" });
+  const cl = Number(D.meta.closed) || 0;
+  return `<article class="rep" id="report">
+    <header class="rh">
+      <div class="rk">미래융합교육혁신원 등대팀(Lighthouse Team) 20기</div>
+      <h1>딩글이 카드도감 운영 보고서</h1>
+      <div class="rm">운영 기간 ${day(r.firstAt)} ~ ${cl ? day(cl) + " (마감)" : day(r.now) + " (진행 중)"} · 집계 ${new Date(r.now).toLocaleString("ko-KR")}</div>
+    </header>
+
+    <section><h2>1. 핵심 지표</h2>
+      <div class="rkpi">
+        ${[["참여 학생", KO(k.total) + "명", "카드도감에 가입한 학생"],
+           ["인증 참여", KO(k.proofStu) + "명", PCT(k.proofStu, k.total) + "% · 팔로우·신청·완료 중 1회 이상"],
+           ["프로그램 신청 인증", KO(k.applyStu) + "명", PCT(k.applyStu, k.total) + "% · With Yonsei 신청 완료"],
+           ["활동 완료 인증", KO(k.doneStu) + "명", PCT(k.doneStu, k.applyStu) + "% (신청 인증 학생 대비)"],
+           ["주간 퀴즈 참여", KO(k.quiz) + "회", KO(k.quizStu) + "명 참여"],
+           ["인증 검토", KO(k.proofN.ok + k.proofN.wait + k.proofN.no) + "건", `승인 ${k.proofN.ok} · 대기 ${k.proofN.wait} · 반려 ${k.proofN.no}`],
+           ["굿즈 교환", KO(k.exDone) + "건 지급", "신청 " + KO(k.exReq) + "건"],
+           ["프로그램 만족도", k.rateAvg + (k.rateN ? " / 5" : ""), KO(k.rateN) + "건 응답"]]
+          .map(([l, v, s]) => `<div><span>${l}</span><b>${v}</b><small>${esc(s)}</small></div>`).join("")}
+      </div>
+    </section>
+
+    <section><h2>2. 프로그램별 신청 → 완료 전환</h2>
+      <table class="rt"><thead><tr><th>프로그램</th><th>신청 인증</th><th>활동 완료 인증</th><th>신청 후 완료</th><th>전환율</th></tr></thead>
+        <tbody>${r.prog.map(p => `<tr><td>${esc(p.name)}</td><td>${p.apply}명</td><td>${p.done}명</td><td>${p.both}명</td><td><b>${p.apply ? p.conv + "%" : "-"}</b></td></tr>`).join("")}
+        <tr class="sum"><td>합계</td><td>${r.prog.reduce((a, p) => a + p.apply, 0)}건</td><td>${r.prog.reduce((a, p) => a + p.done, 0)}건</td>
+          <td>${r.prog.reduce((a, p) => a + p.both, 0)}건</td><td><b>${PCT(r.prog.reduce((a, p) => a + p.both, 0), r.prog.reduce((a, p) => a + p.apply, 0))}%</b></td></tr></tbody></table>
+      ${(() => { const mx = Math.max(1, ...r.prog.map(p => p.apply), ...r.prog.map(p => p.done));
+        return `<div class="rb">${r.prog.map(p => `<div class="rbr g2"><span class="rbl">${esc(p.name)}</span>
+          <span><span class="rbt"><i style="width:${Math.round(p.apply / mx * 100)}%;background:#2F5BD3"></i></span>
+                <span class="rbt"><i style="width:${Math.round(p.done / mx * 100)}%;background:#18A36B"></i></span></span>
+          <span class="rbn">${p.apply} → ${p.done}</span></div>`).join("")}</div>
+          <div class="rleg"><span><i style="background:#2F5BD3"></i>신청 인증</span><span><i style="background:#18A36B"></i>활동 완료 인증</span></div>`; })()}
+      <p class="rn">전환율 = 같은 프로그램을 신청 인증한 학생 중 활동 완료까지 인증한 비율. 인증은 카드도감에 올린 캡처 기준이며, 반려된 인증은 빠집니다.</p>
+    </section>
+
+    <section><div class="keep"><h2>3. 주차별 참여 추이</h2>
+      ${weekChart(r.weeks)}</div>
+      <table class="rt"><thead><tr><th>주차 (월요일)</th><th>신규 가입</th><th>인증 제출</th><th>퀴즈 '한 마디' 응답</th></tr></thead>
+        <tbody>${r.weeks.map(w => `<tr><td>${wkLabel(w.w)} 주</td><td>${w.join}</td><td>${w.proof}</td><td>${w.quiz}</td></tr>`).join("")}</tbody></table>
+      <p class="rn">인증 제출은 항목별 마지막 제출 시각 기준(재인증하면 새 주차로 셉니다). 퀴즈는 '한 마디' 설문 응답 수로 셉니다(설문에 답하지 않은 퀴즈 참여는 빠짐).</p>
+    </section>
+
+    <section class="keep"><h2>4. 참여 경로별 인원</h2>
+      ${hbars(r.route.map(([l, n]) => [l, n, k.total]), "#6B5BD3")}
+      <p class="rn">괄호 안은 전체 참여 학생 대비 비율. 한 학생이 여러 경로에 참여할 수 있습니다.</p>
+    </section>
+
+    <section class="keep"><h2>5. 프로그램 만족도</h2>
+      ${Object.keys(r.rp).length ? `<table class="rt"><thead><tr><th>프로그램</th><th>평균 별점</th><th>응답</th><th>의견</th></tr></thead><tbody>
+        ${Object.entries(r.rp).map(([p, o]) => `<tr><td>${esc(p)}</td><td><b>${o.n ? (o.sum / o.n).toFixed(2) : "-"}</b> / 5</td><td>${o.n}건</td><td>${o.memo}건</td></tr>`).join("")}
+      </tbody></table>` : `<p class="rn">아직 만족도 응답이 없습니다.</p>`}
+    </section>
+
+    <section><h2>6. 설문 결과</h2>
+      ${r.qs.length ? r.qs.map((q, i) => {
+        const opts = Object.keys(q.cnt).sort((a, b) => q.cnt[b] - q.cnt[a]);
+        const picked = opts.reduce((a, o) => a + q.cnt[o], 0);
+        return `<div class="rq"><div class="rqg">${esc(q.group)}</div><h3>${i + 1}. ${esc(q.q)}</h3>
+          <div class="rqm">응답 ${q.n}명 · 보기 선택 ${picked}명 · 직접 입력 ${q.etc.length}명</div>
+          ${hbars(opts.map(o => [o, q.cnt[o], picked]), "#E3A008")}
+          ${q.etc.length ? `<div class="retc"><b>직접 입력</b> ${q.etc.slice(0, 12).map(t => `<span>${esc(t)}</span>`).join("")}${q.etc.length > 12 ? ` <em>외 ${q.etc.length - 12}건</em>` : ""}</div>` : ""}
+        </div>`; }).join("") : `<p class="rn">아직 설문 응답이 없습니다.</p>`}
+    </section>
+    <footer class="rf">연세대학교 미래캠퍼스 미래융합교육혁신원 · 등대팀(Lighthouse Team) · 딩글이 카드도감 관리자 페이지에서 자동 생성</footer>
+  </article>`;
+}
+
+const REPORT_CSS = `
+.rep{background:#fff;color:#1D2433;border-radius:14px;padding:34px 38px;font-family:"Pretendard","Apple SD Gothic Neo","Noto Sans KR",sans-serif;line-height:1.6;max-width:880px;margin:0 auto}
+.rep h1{font-size:25px;margin:6px 0 4px;letter-spacing:-.02em;color:#0F1F3D}
+.rep .rk{font-size:12px;color:#B07A00;font-weight:700;letter-spacing:.02em}
+.rep .rm{font-size:12px;color:#6B7486}
+.rep .rh{border-bottom:3px solid #0F1F3D;padding-bottom:14px;margin-bottom:8px}
+.rep section{margin-top:22px;break-inside:auto}
+.rep .keep{break-inside:avoid;page-break-inside:avoid}
+.rep h2{break-after:avoid;page-break-after:avoid;font-size:16px;color:#0F1F3D;margin:0 0 10px;padding-left:9px;border-left:4px solid #E9A91E}
+.rep h3{font-size:13.5px;margin:2px 0 2px;color:#1D2433}
+.rkpi{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.rkpi div{background:#F4F6FA;border:1px solid #E3E7EF;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column}
+.rkpi span{font-size:11px;color:#6B7486}.rkpi b{font-size:20px;color:#0F1F3D;margin:2px 0}.rkpi small{font-size:10.5px;color:#7A8599}
+.rt{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0 10px}
+.rt th{background:#0F1F3D;color:#fff;text-align:left;padding:6px 8px;font-weight:600}
+.rt td{padding:6px 8px;border-bottom:1px solid #E3E7EF}.rt tr:nth-child(even) td{background:#F7F8FB}
+.rt tr.sum td{font-weight:700;background:#EEF2FA}
+.rb{margin:6px 0}.rbr{display:grid;grid-template-columns:190px 1fr 92px;gap:8px;align-items:center;font-size:12px;margin:3px 0}
+.rbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rbt{height:11px;background:#EEF1F6;border-radius:6px;overflow:hidden}
+.rbt i{display:block;height:100%;border-radius:6px}
+.rbr.g2 .rbt{display:block;height:8px;margin:2px 0}.rbn{text-align:right;font-weight:700}.rbn small{font-weight:400;color:#7A8599}
+.rleg{display:flex;gap:14px;justify-content:center;font-size:11px;color:#4A5568;margin:2px 0 8px}
+.rleg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.rn{font-size:11px;color:#7A8599;margin:4px 0 0}
+.rq{border:1px solid #E3E7EF;border-radius:10px;padding:10px 12px;margin:0 0 9px;break-inside:avoid}
+.rqg{font-size:10.5px;color:#B07A00;font-weight:700}.rqm{font-size:11px;color:#7A8599}
+.retc{font-size:11px;color:#4A5568;margin-top:6px;line-height:1.9}.retc span{display:inline-block;background:#F4F6FA;border-radius:6px;padding:0 7px;margin:0 4px 0 0}
+.rf{margin-top:26px;padding-top:10px;border-top:1px solid #E3E7EF;font-size:10.5px;color:#9AA3B5;text-align:center}
+*{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+`;
+
+function viewReport() {
+  return shell(`
+    <div class="panel"><div class="ph"><h2>운영 보고서</h2>
+      <span class="sub">지금 불러온 데이터로 만든 보고서입니다. 최신으로 만들려면 [새로고침] 후 다시 보세요.</span>
+      <div class="right"><button class="btn sm" id="repprint">인쇄 · PDF로 저장</button><button class="btn gh sm" id="rephtml">HTML로 저장</button></div></div></div>
+    <style>${REPORT_CSS}
+      @media print{ body{background:#fff!important} .top,.tabbar,.panel,.toast,.vwarn{display:none!important}
+        .wrap{padding:0!important;max-width:none!important} .rep{border-radius:0;padding:0;max-width:none} @page{size:A4;margin:14mm} }</style>
+    ${reportHTML()}`);
+}
+function bindReport() {
+  $("repprint") && ($("repprint").onclick = () => window.print());
+  $("rephtml") && ($("rephtml").onclick = () => {
+    const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+      <title>딩글이 카드도감 운영 보고서</title><style>body{background:#EEF1F6;margin:0;padding:24px}${REPORT_CSS}@media print{body{background:#fff;padding:0}.rep{padding:0}@page{size:A4;margin:14mm}}</style></head>
+      <body>${$("report").outerHTML}</body></html>`;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+    a.download = "카드도감_운영보고서_" + new Date().toISOString().slice(0, 10) + ".html";
+    document.body.appendChild(a); a.click(); a.remove();
+  });
+}
+
 /* ── 만족도 ── */
 function viewRating() {
   const byP = {};
@@ -865,12 +1152,13 @@ function viewReferral() {
 }
 
 /* ── 운영 ── */
-const SERVER_EXPECT = "2026-10-26";
+const SERVER_EXPECT = "2026-10-29";
 function errMsg(e) {
   const m = e && e.message;
   return m === "auth" ? "담당자 코드가 맞지 않습니다" : m === "not found" ? "학생을 찾지 못했습니다"
     : m === "unknown action" ? "서버가 예전 버전입니다. 새 버전으로 배포해 주세요"
     : m === "bad cards" ? "장수는 -100~100 사이로 넣어 주세요"
+    : String(m || "").indexOf("backup:") === 0 ? "백업하지 못했습니다. Apps Script 편집기에서 '자동백업켜기'를 한 번 실행해 권한을 허용해 주세요"
     : m === "nothing" ? "회수할 카드를 골라 주세요" : m === "already" ? "이미 회수했습니다 (학생이 아직 재인증하지 않았어요)" : m === "no data" ? "이 학생의 카드 기록을 읽지 못했습니다"
     : "처리하지 못했습니다" + (m ? " (" + m + ")" : "");
 }
@@ -879,7 +1167,35 @@ const when = ms => ms ? new Date(ms).toLocaleString("ko-KR", { month: "numeric",
 function viewOps() {
   const nt = D.meta.notice;
   const ep = Number(D.meta.epoch) || 0;
+  const cl = Number(D.meta.closed) || 0;
+  const bk = D.meta.backup;
   return shell(`
+    <div class="panel">
+      <div class="ph"><h2>이벤트 마감</h2>
+        <span class="chip ${cl ? "no" : "ok"}">${cl ? "마감됨 · " + when(cl) : "진행 중"}</span></div>
+      <div class="pb">
+        <p class="note" style="margin:0 0 10px">${cl
+          ? "학생 화면에서 인증·퀴즈·이벤트 코드·설문·시작 카드·추천으로 카드를 더 받을 수 없습니다. 받은 카드 열기와 굿즈 교환 신청은 계속 됩니다."
+          : "마감하면 학생 화면에서 카드를 더 받는 모든 방법이 바로 닫힙니다. 이미 받은 미개봉 카드 열기와 굿즈 교환 신청은 계속 할 수 있습니다. 날짜가 지나도 자동으로 마감되지 않으니, 끝낼 때 이 버튼을 눌러 주세요."}</p>
+        ${api ? (cl ? `<button class="btn gh sm" id="evopen">마감 취소 (다시 열기)</button>`
+                    : `<button class="btn sm danger" id="evclose">이벤트 마감하기</button>`) : `<p class="note">서버에 연결된 상태에서만 쓸 수 있습니다.</p>`}
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h2>백업</h2>
+        ${bk ? `<span class="chip ${bk.on ? "ok" : "wait"}">${bk.on ? "매주 자동 백업 켜짐" : "자동 백업 꺼짐"}</span>` : ""}</div>
+      <div class="pb">
+        <p class="note" style="margin:0 0 10px">스프레드시트 전체를 드라이브 '딩글이 카드도감 백업' 폴더에 사본으로 남깁니다. 자동 백업은 매주 월요일 새벽 4시이고 최근 8개만 남깁니다.<br>
+          마지막 백업: ${bk && bk.last ? `<b style="color:var(--foam)">${when(bk.last)}</b>${bk.url ? ` · <a href="${esc(bk.url)}" target="_blank" rel="noopener">사본 열기</a>` : ""}` : "없음"}</p>
+        ${api ? `<div class="frm">
+          <button class="btn sm" id="bknow">지금 백업</button>
+          ${bk && bk.on ? `<button class="btn gh sm" id="bkoff">자동 백업 끄기</button>` : `<button class="btn gh sm" id="bkon">매주 자동 백업 켜기</button>`}
+        </div>
+        <p class="note" style="margin-top:8px">'자동 백업 켜기'가 실패하면 Apps Script 편집기에서 <code>자동백업켜기</code> 함수를 한 번 실행해 권한을 허용해 주세요.</p>` : ""}
+      </div>
+    </div>
+
     <div class="panel">
       <div class="ph"><h2>학생 화면 공지</h2><span class="sub">학생 앱 맨 위에 뜹니다</span></div>
       <div class="pb">
@@ -1157,7 +1473,7 @@ function bindSanction(el, st) {
   });
   el.querySelectorAll("[data-rv]").forEach(b => b.onclick = async () => {
     const r = need(); if (!r) return;
-    const k = b.dataset.rv, n = rewardOf(k);
+    const k = b.dataset.rv, n = rewardFor(st, k);
     if (!confirm(`${st.name} 학생이 '${proofLabel(k)}' 인증으로 받은 카드(그걸로 뽑은 카드 포함)를 회수할까요?`)) return;
     if (await sanction(st, { kind: "revoke", key: k, n, reason: r }, b)) toast("이 인증으로 받은 카드를 회수했습니다");
   });
@@ -1364,6 +1680,7 @@ function render() {
   else if (V.tab === "students") app.innerHTML = viewStudents();
   else if (V.tab === "survey") app.innerHTML = viewSurvey();
   else if (V.tab === "poll") app.innerHTML = viewPoll();
+  else if (V.tab === "report") app.innerHTML = viewReport();
   else if (V.tab === "rating") app.innerHTML = viewRating();
   else if (V.tab === "referral") app.innerHTML = viewReferral();
   else if (V.tab === "exchange") app.innerHTML = viewExchange();
@@ -1399,7 +1716,38 @@ function bindGate() {
   checkServer();
 }
 
+function bindOps() {
+  const go = async (btn, body, okMsg) => {
+    const label = btn.textContent; btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+    try { const j = await adminPost(body); toast(okMsg); return j; }
+    catch (e) { btn.disabled = false; btn.textContent = label; toast(errMsg(e)); return null; }
+  };
+  $("evclose") && ($("evclose").onclick = async e => {
+    const btn = e.currentTarget;
+    const r = prompt("이벤트를 마감할까요?\n학생 화면에서 카드를 더 받는 모든 방법이 바로 닫힙니다.\n\n확인하려면 '마감'이라고 입력하세요.", "");
+    if (r === null) return;
+    if (r.trim() !== "마감") return toast("'마감'이라고 정확히 입력해야 마감됩니다");
+    const j = await go(btn, { action: "closeEvent", closed: true }, "이벤트를 마감했습니다");
+    if (j) { D.meta.closed = j.closed; render(); }
+  });
+  $("evopen") && ($("evopen").onclick = async e => {
+    const btn = e.currentTarget;
+    if (!confirm("마감을 취소하고 이벤트를 다시 열까요?")) return;
+    const j = await go(btn, { action: "closeEvent", closed: false }, "이벤트를 다시 열었습니다");
+    if (j) { D.meta.closed = 0; render(); }
+  });
+  const bk = (id, mode, msg) => $(id) && ($(id).onclick = async e => {
+    const j = await go(e.currentTarget, { action: "backup", mode }, msg);
+    if (j && j.backup) { D.meta.backup = j.backup; render(); }
+  });
+  bk("bknow", "now", "백업했습니다");
+  bk("bkon", "on", "매주 자동 백업을 켰습니다");
+  bk("bkoff", "off", "자동 백업을 껐습니다");
+}
+
 function bind() {
+  bindOps();
+  if (typeof bindReport === "function") bindReport();
   app.querySelectorAll("[data-tab]").forEach(el => el.onclick = () => { V.tab = el.dataset.tab; render(); });
   $("reload") && ($("reload").onclick = () => load());
 
@@ -1416,7 +1764,7 @@ function bind() {
   const rev = async (i, st, btn) => {
     const it = list[i];
     const who = D.students.find(x => String(x.sid) === String(it.sid));
-    const n = rewardOf(it.key);
+    const n = rewardFor(who, it.key);
     let reason = "";
     if (st === "no") {
       const r = prompt(`${who ? who.name : it.sid} 학생의 '${proofLabel(it.key)}' 인증 반려 사유를 적어 주세요.\n`
@@ -1514,6 +1862,12 @@ function bind() {
   });
 
   bindGrantBtns(app);
+  $("rankcsv") && ($("rankcsv").onclick = () => {
+    const l = rankList(); l.forEach((x, i) => { if (x.rank === null) x.rank = l[i - 1].rank; });
+    csv([["등수", "이름", "학번", "종수", "26종 완성 시각", "연락처", "교환 등급", "미개봉"]].concat(l.map(x =>
+      [x.rank, x.name, x.sid, x.types, x.done ? new Date(x.done).toLocaleString("ko-KR") : "", x.contact, x.exchanged, x.pending])),
+      "순위_" + new Date().toISOString().slice(0, 10));
+  });
   $("grcsv") && ($("grcsv").onclick = () => {
     const rows = [["시각", "이름", "학번", "장수", "실제 반영", "사유"]];
     D.grants.forEach(g => rows.push([g.at ? new Date(g.at).toLocaleString("ko-KR") : "", g.name, g.sid, g.cards, g.actual == null ? "" : g.actual, g.reason]));

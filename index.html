@@ -219,6 +219,15 @@
     background:rgba(255,201,74,.15);color:var(--beam);white-space:nowrap;min-height:40px}
   .prow button:active{transform:scale(.95)}
   .prow button.done{background:none;color:var(--dim);cursor:default}
+  .prow .stp{display:inline-flex;align-items:center;justify-content:center;min-width:76px;min-height:38px;
+    padding:0 11px;font-size:12.5px;font-weight:650;border-radius:999px;white-space:nowrap;border:none}
+  .prow button.stp{background:rgba(255,201,74,.15);color:var(--beam)}
+  .prow button.stp.re{background:rgba(255,154,139,.14);color:var(--bad);box-shadow:inset 0 0 0 1px rgba(255,154,139,.45)}
+  .prow span.stp{color:var(--dim);box-shadow:inset 0 0 0 1px var(--rule)}
+  .prow span.stp.ok{color:var(--ok);box-shadow:inset 0 0 0 1px rgba(78,216,160,.35)}
+  .prow .stp + .stp{margin-left:-3px}
+  .src.ended .endl{margin:12px 0 0;padding-left:18px;color:var(--mist);font-size:14px;line-height:1.75}
+  .src.ended .endl b{color:var(--foam)}
 
   /* ── 설문 · 별점 ── */
   .svbox{margin-top:14px;padding:14px;background:rgba(255,255,255,.045);border-radius:var(--r-md)}
@@ -811,7 +820,7 @@ const CONFIG = {
   // 카드 지급량
   REWARD: {
     welcome: 5,      // 처음 시작할 때 바로 주는 카드 (0으로 두면 지급하지 않음)
-    follow: 7, quiz: 5, apply: 5, done: 7,
+    follow: 7, quiz: 5, apply: 7, done: 10,   // 2026-10-27부터 (이전: 팔로우 5 · 신청 5 · 완료 7)
     invited: 5,      // 추천인을 입력하고 가입한 학생이 받는 카드
     referrer: 5,     // 추천한 학생이 받는 카드 (추천받은 사람이 프로그램을 인증해야 지급)
   },
@@ -893,14 +902,43 @@ const SURVEY = [
     q: "프로그램 신청을 망설이게 하는 이유는 무엇인가요?",
     opts: ["시간이 안 맞아서", "혼자라서 부담돼서", "정보가 부족해서", "부담 없이 신청함"],
   },
+  // ── 5주차 차례부터: 등대팀 운영(홍보·부스·이벤트 개선)에 쓰는 문항 ──
   {
-    q: "학습 활동은 언제가 가장 편한가요?",
-    opts: ["평일 점심", "평일 오후", "평일 저녁", "주말"],
+    q: "카드도감 이벤트를 처음 어떻게 알게 되었나요?",
+    opts: ["인스타그램", "에브리타임", "등대팀 부스", "친구 추천", "디지털 현수막"],
+    etc: true,
   },
   {
-    q: "공부하면서 가장 어려운 점은 무엇인가요?",
-    opts: ["집중이 안 됨", "계획을 못 세움", "내용이 어려움", "함께할 사람이 없음"],
+    q: "카드도감에서 가장 재미있는 것은 무엇인가요?",
+    opts: ["카드 뽑기", "도감 채우기", "순위 경쟁", "주간 퀴즈", "굿즈 교환"],
+  },
+  {
+    q: "카드도감을 쓰면서 불편했던 점이 있나요?",
+    opts: ["인증 사진 올리기", "카드 받는 방법이 헷갈림", "화면이 느림", "불편한 점 없음"],
     etc: true,
+  },
+  {
+    q: "등대팀 소식은 어디서 받으면 좋을까요?",
+    opts: ["인스타그램", "에브리타임", "카카오톡 채널", "학과·RC 공지"],
+    etc: true,
+  },
+  {
+    q: "등대팀 부스에서 해 보고 싶은 활동은 무엇인가요?",
+    opts: ["카드 뽑기 이벤트", "미니게임", "학습 고민 상담", "굿즈 교환"],
+    etc: true,
+  },
+  {
+    q: "시험 기간에 가장 필요한 학습 지원은 무엇인가요?",
+    opts: ["시험 공부법 특강", "스터디 공간 안내", "학습코칭 상담", "간식·응원 이벤트"],
+    etc: true,
+  },
+  {
+    q: "학습지원 프로그램을 친구에게 추천할 생각이 있나요?",
+    opts: ["꼭 추천할래요", "기회가 되면 할래요", "잘 모르겠어요", "추천하지 않을래요"],
+  },
+  {
+    q: "다음 학기에도 카드도감 같은 이벤트가 열리면 참여할까요?",
+    opts: ["꼭 참여할래요", "아마 참여할 것 같아요", "잘 모르겠어요", "참여하지 않을래요"],
   },
 ];
 
@@ -973,11 +1011,54 @@ const QUIZ = [
     a: 1,
     why: "With Yonsei(with.yonsei.ac.kr)에서 비교과 프로그램으로 신청할 수 있습니다.",
   },
+  // ── 5주차 차례부터: 카드도감 이용법·올바른 인증을 알리는 문항 ──
   {
-    q: "미래융합교육혁신원이 운영하지 않는 것은?",
-    opts: ["학습코칭 상담", "의사소통코칭", "학습법 특강", "교내 주차 등록"],
-    a: 3,
-    why: "미래융합교육혁신원은 학습동아리, 학습튜터링, 학습법 특강, 학습코칭 상담, 의사소통코칭 등 학습지원 프로그램을 운영합니다.",
+    q: "카드도감에서 모을 수 있는 딩글이 카드는 모두 몇 종일까요?",
+    opts: ["20종", "24종", "26종", "30종"],
+    a: 2,
+    why: "C 일반 7종 · B 희귀 7종 · A 영웅 7종 · S 전설 5종, 모두 26종이에요.",
+  },
+  {
+    q: "프로그램 '신청' 인증으로 올바른 캡처는 무엇일까요?",
+    opts: ["프로그램 안내 포스터", "With Yonsei에서 내가 신청을 마친 화면", "친구의 신청 완료 화면", "에브리타임 홍보 글"],
+    a: 1,
+    why: "With Yonsei에서 내가 신청을 마친 화면을 올려야 해요. 다른 화면이나 다른 사람의 캡처는 반려되고, 그 인증으로 받은 카드도 회수돼요.",
+  },
+  {
+    q: "프로그램 활동을 마치고 '활동 완료' 인증을 하면 카드를 몇 장 받을까요?",
+    opts: ["5장", "7장", "10장", "12장"],
+    a: 2,
+    why: "활동 완료 인증은 10장으로 가장 많아요. 신청 인증 7장과 합치면 프로그램 하나에 17장! WithYONSEI 참여기록을 캡처해 올려 주세요.",
+  },
+  {
+    q: "인증이 반려되면 어떻게 될까요?",
+    opts: ["아무 일도 없다", "그 인증으로 받은 카드가 회수되고, 다시 인증하면 다시 받는다", "계정이 삭제된다", "모은 카드가 전부 사라진다"],
+    a: 1,
+    why: "반려된 인증으로 받은 카드(그 카드로 뽑은 카드 포함)만 회수돼요. 반려 사유를 확인하고 올바른 캡처로 재인증하면 카드를 다시 받을 수 있어요.",
+  },
+  {
+    q: "카드도감 순위는 무엇으로 정해질까요?",
+    opts: ["가진 카드 장수", "모은 카드 종류 수", "S 카드 개수", "가입한 순서"],
+    a: 1,
+    why: "같은 카드를 여러 장 모아도 1종이에요. 종류 수가 같으면 26종을 먼저 다 모은 사람이 앞서요.",
+  },
+  {
+    q: "친구가 가입할 때 내 학번을 추천인으로 넣으면, 친구는 카드를 몇 장 더 받을까요?",
+    opts: ["0장", "3장", "5장", "7장"],
+    a: 2,
+    why: "친구는 바로 5장을 더 받고, 그 친구가 프로그램을 인증하면 나도 5장을 받아요. (추천 보상은 최대 5명까지)",
+  },
+  {
+    q: "한 등급의 카드를 모두 모으면 무엇을 할 수 있을까요?",
+    opts: ["굿즈 교환 신청", "순위 점수 2배", "학점 인정", "카드 무제한 뽑기"],
+    a: 0,
+    why: "도감에서 [교환 신청]을 누르고 연락처를 남기면 등대팀이 선물을 전해 드려요. 등급마다 한 번씩 신청할 수 있어요.",
+  },
+  {
+    q: "카드도감 이벤트는 언제까지 운영될까요?",
+    opts: ["10월 31일", "11월 20일", "12월 18일", "내년 2월"],
+    a: 1,
+    why: "이벤트는 11월 20일(금)까지 운영되고, 경품은 11월 4주 차에 배부할 예정이에요.",
   },
 ];
 
@@ -997,13 +1078,23 @@ const store = {
      (오류 응답을 '기록 없음'으로 읽으면 새 학생으로 취급해 기존 카드를 덮어쓰게 된다) */
   serverEpoch: null,   // 서버의 초기화 회차 (모르면 null)
   notice: null,        // 등대팀 공지 { t, at }
+  closedAt: (() => { try { return Number(localStorage.getItem("dingle:closed")) || 0; } catch (e) { return 0; } })(),
+                       // 등대팀이 이벤트를 마감한 시각 (0이면 진행 중). 서버에 못 닿아도 지난번 상태를 기억한다
+  takeMeta(j) {        // 서버가 응답마다 실어 보내는 공지·마감 상태
+    if (!j || !j.v) return;
+    this.notice = j.notice || null;          // 새 서버는 공지가 없으면 notice를 싣지 않는다
+    const was = this.closedAt;
+    this.closedAt = Number(j.closed) || 0;
+    try { if (this.closedAt) localStorage.setItem("dingle:closed", String(this.closedAt)); else localStorage.removeItem("dingle:closed"); } catch (e) {}
+    if (!!was !== !!this.closedAt && typeof S !== "undefined" && S && !document.getElementById("stage")) setTimeout(render, 0);
+  },
 
   async remote(sid) {
     const r = await fetch(CONFIG.API_URL + "?action=load&sid=" + encodeURIComponent(sid));
     const j = await r.json();
     if (!j || j.ok !== true) throw new Error((j && j.error) || "load failed");
     if (j.epoch !== undefined) this.serverEpoch = String(j.epoch || "");
-    if (j.v) this.notice = j.notice || null;          // 새 서버는 공지가 없으면 notice를 싣지 않는다
+    this.takeMeta(j);
     const d = j.data || null;
     if (d && this.serverEpoch !== null) d.epoch = this.serverEpoch;
     return d;
@@ -1063,15 +1154,15 @@ const store = {
       if (j && j.error === "reset") err.reset = true;      // 초기화 전 기록이라 서버가 거절함
       throw err;
     }
-    if (j.v) this.notice = j.notice || null;
+    this.takeMeta(j);
     return j;
   },
 
-  async upload(sid, key, img) {
+  async upload(sid, key, img, name) {
     if (!api) return img;
     const r = await fetch(CONFIG.API_URL, {
       method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action: "upload", sid, key, img }),
+      body: JSON.stringify({ action: "upload", sid, key, img, name: name || "" }),
     });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || "upload failed");
@@ -1166,6 +1257,7 @@ const store = {
     if (api) {
       const r = await fetch(CONFIG.API_URL + "?action=rank&me=" + encodeURIComponent(S ? S.sid : ""));
       const j = await r.json();
+      store.takeMeta(j);
       store.rankMeHidden = !!j.meHidden;      // 등대팀이 순위에서 뺀 경우
       store.rankMeWhy = String(j.meHideReason || "");
       return j.list || [];
@@ -1199,7 +1291,7 @@ const $ = id => document.getElementById(id);
 function blank(sid, name) {
   return {
     sid, name,
-    pending: Number(CONFIG.REWARD.welcome) || 0,   // 시작 카드
+    pending: welcomeCards(),   // 시작 카드 (이벤트가 끝난 뒤 가입하면 0)
     seenGranted: 0,                                // 서버가 적립한 추천 보상 중 이미 받은 양
     epoch: store.serverEpoch || "",                // 이 기록이 속한 초기화 회차
     owned: {},                                     // pending = 미개봉 카드 장수
@@ -1210,7 +1302,7 @@ function blank(sid, name) {
     ref: null,            // 내가 입력한 추천인 학번
     refPaid: false,       // 추천인에게 보상이 지급되었는지
     createdAt: Date.now(),
-    log: (Number(CONFIG.REWARD.welcome) || 0) ? [{ t: Date.now(), k: "g", n: Number(CONFIG.REWARD.welcome), key: "welcome" }] : [],
+    log: welcomeCards() ? [{ t: Date.now(), k: "g", n: welcomeCards(), key: "welcome" }] : [],
   };
 }
 
@@ -1609,7 +1701,7 @@ function viewLogin() {
         <input type="checkbox" id="agree">
         <span>중복 참여 및 선물 중복 수령 확인을 위해 학번과 이름을 수집하는 데 동의합니다. 수집한 정보는 활동 종료 후 파기합니다.</span>
       </label>
-      ${CONFIG.REWARD.welcome ? `<div class="welcome">지금 시작하면 카드 ${CONFIG.REWARD.welcome}장을 바로 받아요</div>` : ""}
+      ${welcomeCards() ? `<div class="welcome">지금 시작하면 카드 ${CONFIG.REWARD.welcome}장을 바로 받아요</div>` : ""}
       <button class="btn" id="go">시작하기</button>
       </div>
       <p class="note" style="text-align:center;margin-top:14px">
@@ -1619,7 +1711,28 @@ function viewLogin() {
 }
 
 /* ───────── 8. 화면: 카드 얻기 ───────── */
+/* 이벤트 마감 — 등대팀이 관리자 페이지에서 [이벤트 마감]을 누르면 서버가 알려 준다 (날짜로 자동 마감하지 않음).
+   마감 뒤에는 인증·퀴즈·이벤트 코드·설문·시작 카드·추천으로 카드를 더 받을 수 없고, 받은 카드는 계속 열 수 있다. */
+function welcomeCards() { return eventOver() ? 0 : (Number(CONFIG.REWARD.welcome) || 0); }
+function eventOver() { return !!store.closedAt; }
+function closedLabel() {
+  const d = new Date(Number(store.closedAt) + 9 * 3600e3).toISOString().slice(0, 10);
+  return mdLabel(d);
+}
+const endedToast = () => toast(`이벤트가 ${closedLabel()}에 마감됐어요. 더 이상 카드를 받을 수 없어요.`, 3000);
+
 function viewGet() {
+  if (eventOver()) return shell(`
+    <div class="src ended">
+      <div class="hd"><div class="ttl">이벤트가 끝났어요</div><span class="st wait">${closedLabel()} 마감</span></div>
+      <p class="meta" style="margin-top:8px">참여해 주셔서 고마워요! 이제 인증·퀴즈·이벤트 코드로 카드를 더 받을 수는 없어요.</p>
+      <ul class="endl">
+        <li>${S.pending ? `아직 열지 않은 카드 <b>${S.pending}장</b>은 <b>뽑기</b> 탭에서 계속 열 수 있어요.` : "받은 카드는 모두 열었어요."}</li>
+        <li>등급을 모두 모았다면 <b>도감</b> 탭에서 굿즈 교환을 신청할 수 있어요.</li>
+        <li>최종 순위와 경품은 등대팀이 확인한 뒤 따로 안내해 드려요.</li>
+      </ul>
+      ${S.pending ? `<button class="btn" data-tab="draw" style="margin-top:14px">남은 카드 열러 가기</button>` : ""}
+    </div>`);
   const R = CONFIG.REWARD;
   const followed = !!S.claims.follow;
 
@@ -1649,7 +1762,7 @@ function viewGet() {
               <div class="svtag">이번 주 한 마디</div>
               <p class="svq">${sv.q}</p>
               ${sv.opts.map((o, i) => `<button class="svo ${V.svPick === i ? "on" : ""}" data-sv="${i}">${o}</button>`).join("")}
-              ${sv.etc ? `<input class="svetc" id="svetc" placeholder="직접 입력 (선택)" value="${V.svEtc || ""}" autocomplete="off">` : ""}
+              ${sv.etc ? `<input class="svetc" id="svetc" placeholder="직접 입력 (선택)" value="${esc(V.svEtc || "")}" maxlength="100" autocomplete="off">` : ""}
             </div>
           ` : ""}
           <button class="btn" id="qdone" style="margin-top:12px">카드 ${R.quiz}장 받기</button>
@@ -1667,7 +1780,7 @@ function viewGet() {
 
   return shell(`
     ${S.adminNote && Date.now() - S.adminNote < 14 * 864e5 && S.adminMsg
-        && !(S.adminMsg.via === "revoke" && rejected.indexOf(S.adminMsg.key) >= 0) ? `<div class="warn">
+        && !(S.adminMsg.via === "revoke" && (rejected.indexOf(S.adminMsg.key) >= 0 || S.claims[S.adminMsg.key])) ? `<div class="warn">
       ${esc(adminMsgText(S.adminMsg))}${S.adminMsg.reason ? `<br><b>사유</b> · ${esc(S.adminMsg.reason)}` : ""}
     </div>` : ""}
     ${rejected.length ? `<div class="warn">
@@ -1675,7 +1788,7 @@ function viewGet() {
         ${S.proofs[k].reason ? `<br>사유 · ${esc(S.proofs[k].reason)}` : ""}</div>`).join("")}
       반려된 인증으로 받은 카드는 회수되었어요. 아래에서 <b>재인증</b>을 눌러 다시 인증하면 카드를 다시 받을 수 있습니다.
     </div>` : ""}
-    <p class="lead">학습지원 프로그램에 참여하고 인증하면 카드를 받습니다.<br>실제로 참여할수록 더 많은 카드를 받을 수 있습니다.</p>
+    <p class="lead">학습지원 프로그램에 참여하고 인증하면 카드를 받아요. 많이 참여할수록 더 많이 모을 수 있어요.</p>
 
     ${pollsHTML()}
 
@@ -1685,7 +1798,7 @@ function viewGet() {
       <div class="act">
         <button data-open="ig">인스타그램 열기</button>
         ${followed && proofStatus("follow") !== "no"
-          ? `<button class="done" disabled>인증 완료</button>`
+          ? `<button class="done" disabled>${S.proofs && S.proofs.follow && S.proofs.follow.up ? "사진 올리는 중" : "인증 완료"}</button>`
           : `<button data-proof="follow">${proofStatus("follow") === "no" ? "다시 인증하기" : "팔로우 인증하기"}</button>`}
       </div>
     </div>
@@ -1704,34 +1817,14 @@ function viewGet() {
     </div>
 
     <div class="src">
-      <div class="hd"><div class="ttl">프로그램 신청</div><div class="amt">${R.apply}장</div></div>
-      <div class="meta">With Yonsei 신청 완료 화면을 캡처해 인증 · 프로그램별 1회</div>
+      <div class="hd"><div class="ttl">학습지원 프로그램</div><div class="amt">최대 ${R.apply + R.done}장</div></div>
+      <div class="meta"><b>신청</b> With Yonsei 신청 완료 화면 캡처 · ${R.apply}장<br>
+        <b>완료</b> 활동 후 WithYONSEI 참여기록 캡처 · ${R.done}장 · 프로그램마다 각 1회</div>
       <div class="plist">
-        ${PROGRAMS.map(p => {
-          const k = "apply:" + p.id;
-          return `<div class="prow"><div class="pn">${p.name}</div>${badge(k)}
-            ${done(k) && proofStatus(k) !== "no"
-              ? `<button class="done" disabled>완료</button>`
-              : `<button data-proof="${k}">${proofStatus(k) === "no" ? "재인증" : "인증"}</button>`}
-          </div>`;
-        }).join("")}
+        ${PROGRAMS.map(p => `<div class="prow"><div class="pn">${p.name}</div>
+          ${stepBtn("apply:" + p.id, "신청", R.apply)}${stepBtn("done:" + p.id, "완료", R.done)}</div>`).join("")}
       </div>
-    </div>
-
-    <div class="src">
-      <div class="hd"><div class="ttl">활동 완료</div><div class="amt">${R.done}장</div></div>
-      <div class="meta">WithYONSEI 참여기록을 캡처해 인증 · 프로그램별 1회</div>
-      <div class="plist">
-        ${PROGRAMS.map(p => {
-          const k = "done:" + p.id;
-          return `<div class="prow"><div class="pn">${p.name}</div>${badge(k)}
-            ${done(k) && proofStatus(k) !== "no"
-              ? `<button class="done" disabled>완료</button>`
-              : `<button data-proof="${k}">${proofStatus(k) === "no" ? "재인증" : "인증"}</button>`}
-          </div>`;
-        }).join("")}
-      </div>
-      <p class="note" style="margin-top:10px">카드는 제출 즉시 지급됩니다. 등대팀이 인증을 확인하며, 굿즈 교환 시 실제 참여 여부를 대조합니다.</p>
+      <p class="note" style="margin-top:10px">카드는 제출하자마자 받아요. 등대팀이 캡처를 확인하고, 다른 화면이나 다른 사람의 캡처는 반려되며 그 인증으로 받은 카드는 회수돼요.</p>
     </div>
 
     <div class="src">
@@ -1863,8 +1956,7 @@ function viewAlbum() {
   return shell(`
     <div class="panel">
       <h3>등급을 완성하면 교환할 수 있어요</h3>
-      <p>한 등급을 모두 모으면 교환을 신청할 수 있습니다. 연락처를 남기면<br>
-      등대팀이 확인 후 연락드립니다. 교환은 등급당 1회입니다.</p>
+      <p>한 등급을 모두 모으면 교환을 신청할 수 있어요. 연락처를 남기면 등대팀이 확인 후 연락드려요. 교환은 등급마다 1번이에요.</p>
     </div>
     ${progHTML()}
     ${sections}`);
@@ -1964,30 +2056,88 @@ function mask(n) {
 
 
 /* ───────── 인증 업로드 ───────── */
-function shrinkImage(file, maxW, quality) {
-  maxW = maxW || 1000; quality = quality || 0.72;
-  return new Promise((res, rej) => {
-    if (!file.type || file.type.indexOf("image/") !== 0) return rej(new Error("이미지 파일만 올릴 수 있습니다."));
-    const fr = new FileReader();
-    fr.onload = () => {
+/* 캡처를 검토에 충분한 크기(가로 최대 760px)로 줄여 JPEG로 만든다.
+   createImageBitmap으로 바로 읽어(사진 방향도 반영) FileReader로 큰 파일을 통째로 문자열로 만드는 시간을 없앴다. */
+async function shrinkImage(file, maxW, maxH, quality) {
+  maxW = maxW || 760; maxH = maxH || 2400; quality = quality || 0.7;
+  if (!file || !file.type || file.type.indexOf("image/") !== 0) throw new Error("이미지 파일만 올릴 수 있습니다.");
+  let src = null, w = 0, h = 0, done = () => {};
+  if (window.createImageBitmap) {
+    try {
+      src = await createImageBitmap(file, { imageOrientation: "from-image" });
+      w = src.width; h = src.height; done = () => { try { src.close(); } catch (e) {} };
+    } catch (e) { src = null; }
+  }
+  if (!src) {
+    const url = URL.createObjectURL(file);
+    src = await new Promise((res, rej) => {
       const im = new Image();
-      im.onload = () => {
-        const sc = Math.min(1, maxW / im.width);
-        const cv = document.createElement("canvas");
-        cv.width = Math.round(im.width * sc);
-        cv.height = Math.round(im.height * sc);
-        const cx = cv.getContext("2d");
-        cx.fillStyle = "#fff"; cx.fillRect(0, 0, cv.width, cv.height);
-        cx.drawImage(im, 0, 0, cv.width, cv.height);
-        res(cv.toDataURL("image/jpeg", quality));
-      };
-      im.onerror = () => rej(new Error("이미지를 읽지 못했습니다."));
-      im.src = fr.result;
-    };
-    fr.onerror = () => rej(new Error("파일을 읽지 못했습니다."));
-    fr.readAsDataURL(file);
-  });
+      im.onload = () => res(im);
+      im.onerror = () => rej(new Error("이미지를 읽지 못했습니다. 다른 캡처로 시도해 주세요."));
+      im.src = url;
+    });
+    w = src.naturalWidth; h = src.naturalHeight; done = () => URL.revokeObjectURL(url);
+  }
+  const sc = Math.min(1, maxW / w, maxH / h);
+  const cv = document.createElement("canvas");
+  cv.width = Math.max(1, Math.round(w * sc));
+  cv.height = Math.max(1, Math.round(h * sc));
+  const cx = cv.getContext("2d");
+  cx.fillStyle = "#fff"; cx.fillRect(0, 0, cv.width, cv.height);
+  cx.imageSmoothingQuality = "high";
+  cx.drawImage(src, 0, 0, cv.width, cv.height);
+  done();
+  return cv.toDataURL("image/jpeg", quality);
 }
+
+/* ───────── 인증 사진 올리기 대기열 ─────────
+   제출하면 카드는 바로 주고, 사진은 뒤에서 서버로 올린다(서버 저장에 몇 초 걸리므로).
+   올리는 중에 창을 닫거나 실패하면 이 기기에 보관했다가 다음에 다시 올린다. */
+const UpQ = {
+  mem: {}, busy: false, tries: 0, timer: null,
+  key: sid => "dingle:upq:" + sid,
+  list(sid) {
+    try { const v = JSON.parse(localStorage.getItem(this.key(sid)) || "null"); if (Array.isArray(v)) return v; } catch (e) {}
+    return this.mem[sid] || [];
+  },
+  save(sid, l) {
+    this.mem[sid] = l;
+    try { if (l.length) localStorage.setItem(this.key(sid), JSON.stringify(l)); else localStorage.removeItem(this.key(sid)); } catch (e) {}
+  },
+  add(sid, k, img) {
+    const l = this.list(sid).filter(x => x.k !== k);     // 같은 항목을 다시 내면 새 사진만
+    l.push({ k, img, at: Date.now() });
+    this.save(sid, l);
+    this.tries = 0;
+    this.run();
+  },
+  has(sid, k) { return this.list(sid).some(x => x.k === k); },
+  async run() {
+    if (this.busy || !S || !api) return;
+    const sid = S.sid;
+    if (!this.list(sid).length) return;
+    this.busy = true;
+    clearTimeout(this.timer);
+    try {
+      let l;
+      while (S && S.sid === sid && (l = this.list(sid)).length) {
+        const it = l[0];
+        const url = await store.upload(sid, it.k, it.img, S.name);
+        if (S.proofs && S.proofs[it.k]) { S.proofs[it.k].img = url; delete S.proofs[it.k].up; }
+        // '올리는 중' 표시를 지운다 (연출·인증 창이 떠 있을 때는 건드리지 않음)
+        if (!document.getElementById("stage") && !document.getElementById("proofModal")
+            && !document.activeElement.matches("input,textarea")) render();
+        this.save(sid, this.list(sid).filter(x => !(x.k === it.k && x.at === it.at)));
+        await persist(true);
+      }
+      this.tries = 0;
+    } catch (e) {
+      this.tries++;
+      this.timer = setTimeout(() => this.run(), Math.min(60000, 3000 * Math.pow(2, this.tries - 1)));
+    } finally { this.busy = false; }
+  },
+};
+window.addEventListener("online", () => UpQ.run());
 
 /* ───────── 구글 드라이브 이미지 주소 처리 ─────────
    드라이브에 올라간 캡처는 주소 형식에 따라 <img>에서 안 열릴 수 있다.
@@ -2034,6 +2184,18 @@ function proofStatus(key) {
 }
 const ST_TEXT = { wait: "검토중", ok: "승인", no: "반려" };
 
+/* 프로그램 신청·완료 한 칸: 안 했으면 '+장수', 했으면 상태(올리는 중·검토중·승인), 반려면 재인증 */
+function stepBtn(k, label, amt) {
+  const st = proofStatus(k), pr = (S.proofs || {})[k];
+  const claimed = !!S.claims[k];
+  if (st === "no") return `<button class="stp re" data-proof="${k}" aria-label="${label} 재인증">${label} 재인증</button>`;
+  if (claimed || st) {
+    const txt = pr && pr.up ? "올리는 중" : st === "ok" ? "✓" : "검토중";
+    return `<span class="stp ${st === "ok" ? "ok" : "wt"}">${label} ${txt}</span>`;
+  }
+  return `<button class="stp" data-proof="${k}" aria-label="${label} 인증하고 카드 ${amt}장 받기">${label} +${amt}</button>`;
+}
+
 /* 이번 주 키 (월요일 시작) — 주 1회 퀴즈 판정용 */
 function weekKey(d) {
   d = d ? new Date(d) : new Date();
@@ -2051,7 +2213,7 @@ function todayStr() {
 }
 const pollKey  = p => "survey:" + p.id;
 const pollOpen = p => { const t = todayStr(); return (!p.from || t >= p.from) && (!p.until || t <= p.until); };
-const openPolls = () => (typeof POLLS === "undefined" ? [] : POLLS).filter(pollOpen);
+const openPolls = () => (typeof POLLS === "undefined" || eventOver() ? [] : POLLS).filter(pollOpen);
 const pollTodo  = () => openPolls().some(p => S && !S.claims[pollKey(p)]);
 function pollState(p) {
   V.pl = V.pl || {};
@@ -2140,6 +2302,7 @@ const Proof = {
   key: null, data: null, busy: false,
 
   open(key) {
+    if (eventOver()) return endedToast();
     this.key = key; this.data = null; this.busy = false; this.rate = 0;
     const isDone = key.indexOf("done:") === 0;
     const m = document.createElement("div");
@@ -2210,10 +2373,10 @@ const Proof = {
               : k.indexOf("apply") === 0 ? CONFIG.REWARD.apply
               : CONFIG.REWARD.done;
     try {
-      const url = await store.upload(S.sid, k, this.data);
       S.proofs = S.proofs || {};
       const already = !!S.claims[k];
-      S.proofs[k] = { img: url, at: Date.now(), status: "wait" };
+      S.proofs[k] = { img: "", at: Date.now(), status: "wait", up: 1 };   // 사진은 뒤에서 올린다
+      UpQ.add(S.sid, k, this.data);
 
       // 활동 완료 인증이면 만족도도 함께 저장
       const memoEl = document.getElementById("rateMemo");
@@ -2227,11 +2390,10 @@ const Proof = {
       }
 
       if (!already) { S.claims[k] = Date.now(); S.pending += amt; logPush({ k: "g", n: amt, key: k }); }
-      await persist();
-      payReferrer();
       this.close();
       toast(already ? "다시 제출했습니다" : "카드 " + amt + "장을 받았습니다. 뽑기 탭에서 열어보세요!", 2600);
       render();
+      persist().then(() => payReferrer());     // 저장도 기다리지 않는다 (실패하면 자동 재시도)
     } catch (err) {
       btn.disabled = false; btn.textContent = "제출하고 카드 받기";
       this.busy = false;
@@ -2979,6 +3141,7 @@ function bindLogin() {
       V.tab = "get";
       render();
       window.scrollTo(0, 0);
+      setTimeout(() => UpQ.run(), 3000);
       toast(mine ? "서버가 붐벼서 이 기기에 남은 기록으로 시작해요. 연결되면 자동으로 맞춰집니다."
                  : "서버가 붐벼서 임시로 시작해요. 연결되면 기존 기록이 있는지 확인해 자동으로 맞춰집니다.", 3800);
       return;
@@ -2990,11 +3153,11 @@ function bindLogin() {
       S = found || blank(sid, nm);
       if (found && found.name !== nm) S.name = nm;
 
-      const welcome = isNew ? (Number(CONFIG.REWARD.welcome) || 0) : 0;
+      const welcome = isNew ? welcomeCards() : 0;
 
       // 추천인은 신규 가입 때만 인정
       let refName = "";
-      if (isNew && ref) {
+      if (isNew && ref && !eventOver()) {
         const chk = await store.checkRef(ref, sid);
         if (chk.ok) {
           S.ref = ref;
@@ -3022,6 +3185,7 @@ function bindLogin() {
     render();
     window.scrollTo(0, 0);
     if (msg) toast(msg, 3400);
+    setTimeout(() => UpQ.run(), 1200);      // 지난번에 못 올린 인증 사진이 있으면 이어서 올린다
   };
   [$("sid"), $("nm")].forEach(el => el.onkeydown = e => { if (e.key === "Enter") go.click(); });
 }
@@ -3115,6 +3279,7 @@ function bind() {
 
   // 퀴즈
   $("quizstart") && ($("quizstart").onclick = () => {
+    if (eventOver()) return endedToast();
     if (!quizAvailable()) return;
     V.quizOpen = true; V.quizPick = null;
     V.quizIdx = S.quizDone.length % QUIZ.length;   // 매주 다음 문항
@@ -3183,6 +3348,7 @@ function bind() {
   // 이벤트 코드
   const evGo = $("evok");
   evGo && (evGo.onclick = async () => {
+    if (eventOver()) return endedToast();
     const raw = ($("evcode").value || "").trim().toUpperCase();
     if (!raw) return;
     const ev = (CONFIG.EVENTS || []).find(e => String(e.code).toUpperCase() === raw);
@@ -3343,6 +3509,7 @@ async function boot() {
       S = normalize(d);
       if (last.name) S.name = last.name;
       V.tab = "get";
+      setTimeout(() => UpQ.run(), 1200);
       return render();
     }
   } catch (e) {

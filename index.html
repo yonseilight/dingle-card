@@ -328,6 +328,10 @@
     background:#0C1B36;display:block;box-shadow:0 3px 10px rgba(0,0,0,.4)}
   .card img{width:100%;height:100%;object-fit:cover;display:block}
   .card.t-A{box-shadow:0 0 0 1px rgba(168,123,240,.45),0 4px 14px rgba(168,123,240,.26)}
+  .card .newb{position:absolute;top:6px;left:6px;z-index:2;padding:2px 7px;border-radius:999px;font-size:10px;font-weight:800;
+    letter-spacing:.04em;color:#1A1608;background:linear-gradient(180deg,#FFE08A,#FFC23D);box-shadow:0 2px 8px rgba(255,194,61,.5);
+    animation:newpop .5s cubic-bezier(.3,1.6,.5,1) both}
+  @keyframes newpop{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}
   .card.t-S{box-shadow:0 0 0 1px rgba(255,201,74,.6),0 5px 18px rgba(255,201,74,.35)}
   .card.t-S::after{content:"";position:absolute;inset:0;pointer-events:none;
     background:linear-gradient(115deg,transparent 36%,rgba(255,255,255,.42) 48%,rgba(190,235,255,.3) 54%,transparent 66%);
@@ -1078,6 +1082,7 @@ const store = {
      (오류 응답을 '기록 없음'으로 읽으면 새 학생으로 취급해 기존 카드를 덮어쓰게 된다) */
   serverEpoch: null,   // 서버의 초기화 회차 (모르면 null)
   notice: null,        // 등대팀 공지 { t, at }
+  events: [],
   closedAt: (() => { try { return Number(localStorage.getItem("dingle:closed")) || 0; } catch (e) { return 0; } })(),
                        // 등대팀이 이벤트를 마감한 시각 (0이면 진행 중). 서버에 못 닿아도 지난번 상태를 기억한다
   takeMeta(j) {        // 서버가 응답마다 실어 보내는 공지·마감 상태
@@ -1085,6 +1090,7 @@ const store = {
     this.notice = j.notice || null;          // 새 서버는 공지가 없으면 notice를 싣지 않는다
     const was = this.closedAt;
     this.closedAt = Number(j.closed) || 0;
+    this.events = Array.isArray(j.events) ? j.events : [];      // 등대팀이 만든 현장 이벤트(QR)
     try { if (this.closedAt) localStorage.setItem("dingle:closed", String(this.closedAt)); else localStorage.removeItem("dingle:closed"); } catch (e) {}
     if (!!was !== !!this.closedAt && typeof S !== "undefined" && S && !document.getElementById("stage")) setTimeout(render, 0);
   },
@@ -1582,6 +1588,7 @@ function cardHTML(card, o) {
     <div class="card t-${card.tier} ${o.used ? "used" : ""}"${o.tap ? ` data-cid="${card.id}"` : ""}>
       <img src="${IMG[card.id]}" alt="${card.name}" loading="lazy" decoding="async">
       ${q > 1 ? `<div class="qty ${q >= CONFIG.CAP ? "full" : ""}">×${q}</div>` : ""}
+      ${o.isNew ? `<div class="newb">NEW</div>` : ""}
     </div>`;
 }
 
@@ -1701,6 +1708,8 @@ function viewLogin() {
         <input type="checkbox" id="agree">
         <span>중복 참여 및 선물 중복 수령 확인을 위해 학번과 이름을 수집하는 데 동의합니다. 수집한 정보는 활동 종료 후 파기합니다.</span>
       </label>
+      ${(() => { try { return sessionStorage.getItem("dingle:ev"); } catch (e) { return ""; } })()
+        ? `<div class="welcome" style="background:rgba(78,216,160,.14);color:#9FF0CC">QR 이벤트 카드는 학번·이름을 넣고 시작하면 바로 들어와요</div>` : ""}
       ${welcomeCards() ? `<div class="welcome">지금 시작하면 카드 ${CONFIG.REWARD.welcome}장을 바로 받아요</div>` : ""}
       <button class="btn" id="go">시작하기</button>
       </div>
@@ -1711,6 +1720,49 @@ function viewLogin() {
 }
 
 /* ───────── 8. 화면: 카드 얻기 ───────── */
+/* ───────── 이벤트 코드 · 현장 QR ─────────
+   코드는 index.html의 CONFIG.EVENTS(직접 입력용)와, 관리자 페이지 '현장' 탭에서 만든 QR 이벤트를 함께 쓴다.
+   QR은 사이트 주소 뒤에 ?ev=코드 가 붙은 링크라, 찍으면 사이트가 열리면서 바로 카드를 받는다. */
+function allEvents() {
+  const m = {};
+  (CONFIG.EVENTS || []).concat(store.events || []).forEach(e => { m[String(e.code).toUpperCase()] = e; });
+  return Object.values(m);
+}
+async function claimEvent(raw, fromQR) {
+  raw = String(raw || "").trim().toUpperCase();
+  const say = (ok, msg) => { V.evOk = ok; V.evMsg = msg; if (fromQR) toast(msg, 3200); if (V.tab === "get") render(); };
+  if (eventOver()) return endedToast();
+  const ev = allEvents().find(e => String(e.code).toUpperCase() === raw);
+  if (!ev) return say(false, fromQR ? "QR 이벤트를 찾지 못했어요. 등대팀에 문의해 주세요." : "올바른 이벤트 코드가 아닙니다.");
+  const until = typeof ev.until === "number" ? ev.until : ev.until ? Date.parse(ev.until + "T23:59:59+09:00") : 0;
+  if (until && until < Date.now()) return say(false, "기간이 끝난 이벤트입니다.");
+  const key = "event:" + raw;
+  if (S.claims[key]) return say(false, `이미 참여한 이벤트예요 (${ev.label}).`);
+  S.claims[key] = Date.now();
+  S.pending += Number(ev.cards) || 0;
+  logPush({ k: "g", n: Number(ev.cards) || 0, key });
+  say(true, `${ev.label} 참여 완료! 카드 ${ev.cards}장을 받았습니다.`);
+  await persist();
+}
+/* 주소에 ?ev=코드 가 있으면 기억해 두었다가, 로그인이 끝나고 서버 정보를 받은 뒤 처리한다 */
+(function () {
+  try {
+    const u = new URL(location.href), ev = u.searchParams.get("ev");
+    if (ev) {
+      sessionStorage.setItem("dingle:ev", ev);
+      u.searchParams.delete("ev");
+      history.replaceState(null, "", u.pathname + (u.search || "") + u.hash);
+    }
+  } catch (e) {}
+})();
+function runPendingEvent() {
+  let ev = ""; try { ev = sessionStorage.getItem("dingle:ev") || ""; } catch (e) {}
+  if (!ev || !S) return;
+  try { sessionStorage.removeItem("dingle:ev"); } catch (e) {}
+  V.tab = "get"; render();
+  claimEvent(ev, true);
+}
+
 /* 이벤트 마감 — 등대팀이 관리자 페이지에서 [이벤트 마감]을 누르면 서버가 알려 준다 (날짜로 자동 마감하지 않음).
    마감 뒤에는 인증·퀴즈·이벤트 코드·설문·시작 카드·추천으로 카드를 더 받을 수 없고, 받은 카드는 계속 열 수 있다. */
 function welcomeCards() { return eventOver() ? 0 : (Number(CONFIG.REWARD.welcome) || 0); }
@@ -1773,7 +1825,7 @@ function viewGet() {
 
   const done = k => !!S.claims[k];
   const quizCount = S.quizDone.length;
-  const doneEvents = (CONFIG.EVENTS || []).filter(e => S.claims["event:" + String(e.code).toUpperCase()]);
+  const doneEvents = allEvents().filter(e => S.claims["event:" + String(e.code).toUpperCase()]);
 
   const badge = k => { const st = proofStatus(k); return st ? `<span class="st ${st}">${ST_TEXT[st]}</span>` : ""; };
   const rejected = Object.keys(S.proofs || {}).filter(k => S.proofs[k].status === "no");
@@ -1905,7 +1957,8 @@ function viewDraw() {
     <div class="panel">
       <h3>카드팩 구성</h3>
       <p>C 50% / B 30% / A 15% / S 5% · 한 번에 최대 7장<br>
-      같은 카드를 ${CONFIG.CAP}장 모으면 그 카드는 더 이상 나오지 않습니다.</p>
+      같은 카드를 ${CONFIG.CAP}장 모으면 그 카드는 더 이상 나오지 않고, 한 등급을 모두 ${CONFIG.CAP}장씩 모으면
+      그 등급의 확률은 남은 등급에 같은 비율로 나뉩니다.</p>
     </div>
     ${body}`);
 }
@@ -1918,7 +1971,8 @@ function viewAlbum() {
     const paid = !!(xr && xr.status === "done");
     const sent = !!(xr && xr.status === "req");
     const cards = CARDS.filter(c => c.tier === t)
-      .map(c => cardHTML(c, { locked: owned(c.id) === 0, qty: owned(c.id), used: paid, tap: owned(c.id) > 0 })).join("");
+      .map(c => cardHTML(c, { locked: owned(c.id) === 0, qty: owned(c.id), used: paid, tap: owned(c.id) > 0,
+                              isNew: owned(c.id) > 0 && !(S.seen || {})[c.id] })).join("");
 
     let act = "";
     if (paid) act = `<div class="okd done">지급 완료</div>`;
@@ -3141,7 +3195,7 @@ function bindLogin() {
       V.tab = "get";
       render();
       window.scrollTo(0, 0);
-      setTimeout(() => UpQ.run(), 3000);
+      setTimeout(() => UpQ.run(), 3000); setTimeout(runPendingEvent, 600);
       toast(mine ? "서버가 붐벼서 이 기기에 남은 기록으로 시작해요. 연결되면 자동으로 맞춰집니다."
                  : "서버가 붐벼서 임시로 시작해요. 연결되면 기존 기록이 있는지 확인해 자동으로 맞춰집니다.", 3800);
       return;
@@ -3185,7 +3239,7 @@ function bindLogin() {
     render();
     window.scrollTo(0, 0);
     if (msg) toast(msg, 3400);
-    setTimeout(() => UpQ.run(), 1200);      // 지난번에 못 올린 인증 사진이 있으면 이어서 올린다
+    setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600);      // 지난번에 못 올린 인증 사진이 있으면 이어서 올린다
   };
   [$("sid"), $("nm")].forEach(el => el.onkeydown = e => { if (e.key === "Enter") go.click(); });
 }
@@ -3194,6 +3248,12 @@ function bind() {
   // 탭
   app.querySelectorAll("[data-tab]").forEach(el => el.onclick = () => {
     const moved = V.tab !== el.dataset.tab;
+    // 도감을 보고 나가면 새 카드 표시(NEW)를 지운다
+    if (moved && V.tab === "album") {
+      S.seen = S.seen || {};
+      CARDS.forEach(c => { if (owned(c.id) > 0) S.seen[c.id] = 1; });
+      store.keep && store.keep(S.sid, S);
+    }
     V.tab = el.dataset.tab; V.drawn = null; V.codeOpen = null; V.quizOpen = false;
     V.evMsg = null;
     render();
@@ -3351,26 +3411,7 @@ function bind() {
     if (eventOver()) return endedToast();
     const raw = ($("evcode").value || "").trim().toUpperCase();
     if (!raw) return;
-    const ev = (CONFIG.EVENTS || []).find(e => String(e.code).toUpperCase() === raw);
-    if (!ev) {
-      V.evOk = false; V.evMsg = "올바른 이벤트 코드가 아닙니다.";
-      return render();
-    }
-    if (ev.until && new Date(ev.until + "T23:59:59") < new Date()) {
-      V.evOk = false; V.evMsg = "기간이 끝난 이벤트입니다.";
-      return render();
-    }
-    const key = "event:" + raw;
-    if (S.claims[key]) {
-      V.evOk = false; V.evMsg = "이미 참여한 이벤트입니다.";
-      return render();
-    }
-    S.claims[key] = Date.now();
-    S.pending += Number(ev.cards) || 0;
-    logPush({ k: "g", n: Number(ev.cards) || 0, key });
-    await persist();
-    V.evOk = true; V.evMsg = `${ev.label} 참여 완료! 카드 ${ev.cards}장을 받았습니다.`;
-    render();
+    await claimEvent(raw);
   });
   $("evcode") && ($("evcode").onkeydown = e => { if (e.key === "Enter") evGo.click(); });
 
@@ -3509,7 +3550,7 @@ async function boot() {
       S = normalize(d);
       if (last.name) S.name = last.name;
       V.tab = "get";
-      setTimeout(() => UpQ.run(), 1200);
+      setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600);
       return render();
     }
   } catch (e) {

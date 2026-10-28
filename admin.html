@@ -192,7 +192,9 @@
   .qrfull{position:fixed;inset:0;z-index:300;background:rgba(3,8,18,.85);display:flex;align-items:center;justify-content:center;padding:20px}
   .qrbox{background:#fff;color:#0B1834;border-radius:18px;padding:24px;text-align:center;max-width:600px}
   .qrbox h2{margin:12px 0 4px;font-size:24px}.qrbox p{margin:0 0 6px;font-size:16px}.qrbox .note{color:#5E6A80}
-  @media print{ body *{visibility:hidden} .qrfull,.qrfull *{visibility:visible} .qrfull{background:#fff;position:absolute} .qrbox .frm{display:none} }
+  /* QR 창을 띄웠을 때만 QR만 인쇄 (보고서 인쇄에는 영향 없음) */
+  @media print{ body.qrprint *{visibility:hidden} body.qrprint .qrfull, body.qrprint .qrfull *{visibility:visible}
+    body.qrprint .qrfull{background:#fff;position:absolute} body.qrprint .qrbox .frm{display:none} }
   .gbtn .lnk{background:none;border:none;padding:0;font-size:11.5px;color:var(--mist);cursor:pointer;text-decoration:underline}
   .gbtn .lnk:hover{color:var(--bad)}
   .vwarn{background:rgba(255,154,139,.12);color:#FFD5CD;border-radius:10px;padding:11px 14px;font-size:13px;margin-bottom:16px}
@@ -928,8 +930,10 @@ function showQR(e) {
     <div class="frm" style="justify-content:center;margin-top:12px"><button class="btn sm" id="qrcopy">링크 복사</button>
       <button class="btn gh sm" id="qrprint">인쇄</button><button class="btn gh sm" id="qrx">닫기</button></div></div>`;
   document.body.appendChild(z);
-  z.querySelector("#qrx").onclick = () => z.remove();
-  z.onclick = ev => { if (ev.target === z) z.remove(); };
+  document.body.classList.add("qrprint");
+  const close = () => { z.remove(); document.body.classList.remove("qrprint"); };
+  z.querySelector("#qrx").onclick = close;
+  z.onclick = ev => { if (ev.target === z) close(); };
   z.querySelector("#qrcopy").onclick = () => navigator.clipboard.writeText(qrLink(e.code)).then(() => toast("링크를 복사했습니다"), () => toast("복사하지 못했습니다"));
   z.querySelector("#qrprint").onclick = () => window.print();
 }

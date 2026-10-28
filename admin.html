@@ -186,6 +186,11 @@
   .fev.off{opacity:.55}.fev .fb{display:flex;gap:6px;flex-wrap:wrap}
   .fst{margin-top:14px;padding:14px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--line)}
   .fhd{display:flex;flex-direction:column;gap:4px}
+  .fgifts{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+  .fgift{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;border-radius:10px;
+    background:rgba(255,201,74,.07);border:1px solid rgba(255,201,74,.25)}
+  .fgift.off{background:rgba(0,0,0,.15);border-color:var(--line)}
+  .fgift .lnk{background:none;border:none;color:var(--mist);text-decoration:underline;cursor:pointer;font-size:12px}
   .ftiers{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:12px}
   .ftier{display:flex;flex-direction:column;gap:4px;padding:10px 12px;border-radius:10px;background:rgba(0,0,0,.18)}
   .ftier span{font-size:20px;font-weight:800;color:var(--foam)}
@@ -251,18 +256,18 @@ const PROGRAMS = [
 
 const api = CONFIG.API_URL && CONFIG.API_URL.indexOf("http") === 0;
 /* 인증 항목별 지급 장수. 같은 사이트의 학생 앱(index.html) 설정을 읽어 덮어쓴다 */
-let REWARD = { follow: 7, apply: 7, done: 10 };
+let REWARD = { follow: 7, apply: 7, done: 10, tabs: 7 };
 /* 이 학생이 그 인증으로 실제 받은 장수: 획득 기록에 있으면 그 값, 없으면(10/24 이전 참여) 그때 장수 */
 const OLD_REWARD = { follow: 5, apply: 5, done: 7 };
 function rewardFor(st, key) {
   const log = st && Array.isArray(st.log) ? st.log : [];
   for (let i = log.length - 1; i >= 0; i--) if (log[i] && log[i].k === "g" && log[i].key === key && !log[i].x) return Number(log[i].n) || 0;
   const R0 = (st && st.claims && st.claims[key] && st.claims[key] < Date.parse("2026-10-27T00:00:00+09:00")) || !log.length ? OLD_REWARD : REWARD;
-  return key === "follow" ? R0.follow : String(key).indexOf("apply:") === 0 ? R0.apply : String(key).indexOf("done:") === 0 ? R0.done : 0;
+  return key === "follow" ? R0.follow : key === "tabs" ? (REWARD.tabs || 7) : String(key).indexOf("apply:") === 0 ? R0.apply : String(key).indexOf("done:") === 0 ? R0.done : 0;
 }
-const rewardOf = key => key === "follow" ? REWARD.follow
+const rewardOf = key => key === "follow" ? REWARD.follow : key === "tabs" ? (REWARD.tabs || 7)
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-10-30";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-10-31";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -312,6 +317,7 @@ function admImgFallback(im) {
 
 function proofLabel(key) {
   if (key === "follow") return "인스타 팔로우";
+  if (key === "tabs") return "TABS 설문";
   const a = String(key).split(":");
   const p = PROGRAMS.find(x => x.id === a[1]);
   const nm = p ? p.name : a[1];
@@ -572,6 +578,7 @@ function routeRows() {
   const count = pred => D.students.filter(st => Object.keys(st.claims || {}).some(pred)).length;
 
   rows.push(["인스타 팔로우", count(k => k === "follow")]);
+  rows.push(["TABS 설문 인증", count(k => k === "tabs")]);
   rows.push(["퀴즈 참여", D.students.filter(st => (st.quizDone || 0) > 0).length]);
   PROGRAMS.forEach(p => {
     rows.push([p.name + " 신청", count(k => k === "apply:" + p.id)]);
@@ -890,7 +897,13 @@ function viewField() {
     </div>
 
     <div class="panel">
-      <div class="ph"><h2>학번으로 바로 처리</h2><span class="sub">부스에서 학생 학번을 넣으면 카드 현황·교환 상태를 보고 바로 지급합니다</span></div>
+      <div class="ph"><h2>학번으로 바로 처리</h2>
+        <span class="chip wait">전기손난로 ${D.students.filter(x => x.adm && x.adm.gifts && x.adm.gifts["전기손난로"]).length}개 지급</span>
+        <span class="chip wait">단백질 쉐이크 ${D.students.filter(x => x.adm && x.adm.gifts && x.adm.gifts["단백질 쉐이크"]).length}개 지급</span></div>
+      <div class="pb" style="padding-bottom:0"><p class="note" style="margin:0">TABS 인증·팔로우 인증을 확인하고 경품을 건넨 뒤 [지급]을 눌러 두면, 같은 학생이 다시 와도 '지급함'으로 보입니다.</p></div>
+    </div>
+    <div class="panel">
+      <div class="ph"><h2>학번 조회</h2><span class="sub">부스에서 학생 학번을 넣으면 카드 현황·교환 상태를 보고 바로 지급합니다</span></div>
       <div class="pb">
         <div class="frm"><input id="fsid" placeholder="학번 10자리" inputmode="numeric" maxlength="12" value="${esc(V.fq || "")}" style="font-size:18px;letter-spacing:.05em">
           <button class="btn sm" id="fgo">조회</button></div>
@@ -908,10 +921,21 @@ function fieldStudent(st) {
     return `<div class="ftier"><b>${t} ${TIERS[t].word}</b><span>${have}/${all}</span>${state}</div>`;
   }).join("");
   const rejected = Object.keys(st.proofs || {}).filter(k => (st.proofs[k] || {}).status === "no").length;
+  const gifts = (st.adm && st.adm.gifts) || {};
+  const pst = k => { const pr = (D.proofs || []).find(p => String(p.sid) === String(st.sid) && p.key === k);
+    return pr ? pr.status : (st.claims || {})[k] ? "wait" : ""; };
+  const giftRow = (k, label, item) => {
+    const ps = pst(k), ok = ps === "ok" || ps === "wait", given = gifts[item];
+    return `<div class="fgift ${ok ? "" : "off"}"><div><b>${label}</b>
+        <span class="chip ${ps === "ok" ? "ok" : ps === "no" ? "no" : ps === "wait" ? "wait" : ""}">${ps === "ok" ? "인증 승인" : ps === "wait" ? "인증함 · 검토 전" : ps === "no" ? "반려됨" : "인증 안 함"}</span></div>
+      <div>${given ? `<span class="chip ok">${esc(item)} 지급함 · ${when(given)}</span> <button class="lnk" data-gu="${esc(item)}">취소</button>`
+        : ok ? `<button class="btn sm" data-gv="${esc(item)}">${esc(item)} 지급</button>` : `<span class="note">대상 아님</span>`}</div></div>`;
+  };
   return `<div class="fst">
     <div class="fhd"><div><b style="font-size:18px">${esc(st.name)}</b> <span class="note">${esc(st.sid)}</span>
       ${st.adm && st.adm.hide ? `<span class="chip no">순위 제외</span>` : ""}${rejected ? `<span class="chip no">반려 ${rejected}건</span>` : ""}</div>
       <div class="note">보유 <b style="color:var(--foam)">${st.types}/${TOTAL_CARDS}종</b> · 미개봉 ${st.pending}장 · 연락처 ${esc(st.contact) || "-"}</div></div>
+    <div class="fgifts">${giftRow("tabs", "TABS 설문", "전기손난로")}${giftRow("follow", "인스타 팔로우", "단백질 쉐이크")}</div>
     <div class="ftiers">${tiers}</div>
     ${api ? `<div class="frm" style="margin-top:12px">
       <span class="note">카드 지급</span>
@@ -968,6 +992,15 @@ function bindField() {
     b.disabled = true;
     if (await grantCards(V.fq, n, reason)) render(); else b.disabled = false;
   });
+  const gift = async (item, on, b) => {
+    b.disabled = true;
+    try { const j = await adminPost({ action: "gift", sid: V.fq, item, on });
+      const st = D.students.find(x => String(x.sid) === V.fq); if (st) { st.adm = st.adm || {}; st.adm.gifts = j.gifts; }
+      toast(on ? `${item} 지급으로 표시했습니다` : `${item} 지급 표시를 취소했습니다`); render(); }
+    catch (err) { b.disabled = false; toast(err && err.message === "already gift" ? "이미 지급한 학생입니다 (다른 팀원이 먼저 처리)" : errMsg(err)); }
+  };
+  app.querySelectorAll("[data-gv]").forEach(b => b.onclick = () => gift(b.dataset.gv, true, b));
+  app.querySelectorAll("[data-gu]").forEach(b => b.onclick = () => { if (confirm("경품 지급 표시를 취소할까요?")) gift(b.dataset.gu, false, b); });
   app.querySelectorAll("[data-fex]").forEach(b => b.onclick = async () => {
     const t = b.dataset.fex; b.disabled = true;
     try { await exchangeDone(V.fq, t, "done");
@@ -1026,7 +1059,7 @@ function reportData() {
     const t = Date.parse(String(x.week) + "T12:00:00+09:00"); const r = !isNaN(t) && at(t); if (r) r.quiz++;
   });
   // 참여 경로
-  const route = [["인스타그램 팔로우", "follow"], ["주간 퀴즈", null], ["프로그램 신청", "apply:"], ["활동 완료", "done:"],
+  const route = [["인스타그램 팔로우", "follow"], ["TABS 설문 인증", "tabs"], ["주간 퀴즈", null], ["프로그램 신청", "apply:"], ["활동 완료", "done:"],
                  ["이벤트 코드", "event:"], ["기간 설문", "survey:"], ["친구 추천으로 가입", "ref"]]
     .map(([l, pre]) => [l, pre === null ? k.quizStu : pre === "ref" ? k.ref : S.filter(x => has(x, pre)).length]);
   // 만족도
@@ -1301,7 +1334,7 @@ function viewReferral() {
 }
 
 /* ── 운영 ── */
-const SERVER_EXPECT = "2026-10-30";
+const SERVER_EXPECT = "2026-10-31";
 function errMsg(e) {
   const m = e && e.message;
   return m === "auth" ? "담당자 코드가 맞지 않습니다" : m === "not found" ? "학생을 찾지 못했습니다"

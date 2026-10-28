@@ -226,6 +226,10 @@
   .prow span.stp{color:var(--dim);box-shadow:inset 0 0 0 1px var(--rule)}
   .prow span.stp.ok{color:var(--ok);box-shadow:inset 0 0 0 1px rgba(78,216,160,.35)}
   .prow .stp + .stp{margin-left:-3px}
+  .src.tabs{box-shadow:var(--lift),inset 0 0 0 1px rgba(255,201,74,.35)}
+  .src.tabs .ttag{display:inline-block;margin:6px 0 2px;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:700;
+    color:var(--beam);background:rgba(255,201,74,.12)}
+  .src.tabs .tok{margin-top:10px;padding:10px 12px;border-radius:var(--r-sm);background:rgba(78,216,160,.13);color:#9FF0CC;font-size:14px;font-weight:650}
   .src.ended .endl{margin:12px 0 0;padding-left:18px;color:var(--mist);font-size:14px;line-height:1.75}
   .src.ended .endl b{color:var(--foam)}
 
@@ -802,6 +806,14 @@ const CONFIG = {
   // 담당자 코드 (굿즈 교환 시 부스에서 입력)
   // 담당자 코드는 공개 페이지에 두지 않습니다 (Apps Script 스크립트 속성 ADMIN_CODE)
 
+  // TABS 설문 인증 (더미래페스티벌 등대팀 부스 이벤트, 2026-11-10)
+  //   on: false로 바꾸면 카드 얻기 화면에서 숨겨집니다. url은 [TABS 설문 하러 가기] 버튼이 여는 주소입니다.
+  //   until: 이 날짜(한국 날짜, 그날 포함)까지만 인증할 수 있고, 다음 날부터 칸이 사라집니다.
+  TABS: { on: true, until: "2026-11-11", url: "https://with.yonsei.ac.kr/with/curriculum.htm?ch=1",
+          title: "TABS 설문 참여 인증", tag: "더미래페스티벌 이벤트 · 11월 11일(수)까지",
+          desc: "교내 학습지원 프로그램을 둘러보고 TABS 설문을 완료한 뒤, 완료 화면을 캡처해 인증해 주세요.",
+          gift: "11월 10일(화) 더미래페스티벌 등대팀 부스에서 인증 화면을 보여 주면 전기손난로를 드려요 (선착순)" },
+
   // 이벤트 목록. 새 이벤트가 생기면 여기에 한 줄만 추가하면 됩니다.
   //   code  : 학생에게 안내할 참여 코드 (추측하기 어렵게)
   //   label : 화면에 표시될 이벤트 이름
@@ -824,7 +836,8 @@ const CONFIG = {
   // 카드 지급량
   REWARD: {
     welcome: 5,      // 처음 시작할 때 바로 주는 카드 (0으로 두면 지급하지 않음)
-    follow: 7, quiz: 5, apply: 7, done: 10,   // 2026-10-27부터 (이전: 팔로우 5 · 신청 5 · 완료 7)
+    follow: 7, quiz: 5, apply: 7, done: 10,
+    tabs: 7,         // TABS 설문 완료 인증 (더미래페스티벌 부스 이벤트)   // 2026-10-27부터 (이전: 팔로우 5 · 신청 5 · 완료 7)
     invited: 5,      // 추천인을 입력하고 가입한 학생이 받는 카드
     referrer: 5,     // 추천한 학생이 받는 카드 (추천받은 사람이 프로그램을 인증해야 지급)
   },
@@ -1215,7 +1228,8 @@ const store = {
       const r = await fetch(CONFIG.API_URL, {
         method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({ action: "review", sid, key, status, admin: Admin.key || "", reason: reason || "",
-          n: key === "follow" ? CONFIG.REWARD.follow : String(key).indexOf("apply:") === 0 ? CONFIG.REWARD.apply : CONFIG.REWARD.done }),
+          n: key === "follow" ? CONFIG.REWARD.follow : key === "tabs" ? CONFIG.REWARD.tabs
+             : String(key).indexOf("apply:") === 0 ? CONFIG.REWARD.apply : CONFIG.REWARD.done }),
       });
       const j = await r.json();
       if (!j.ok) throw new Error(j.error || "failed");
@@ -1844,6 +1858,8 @@ function viewGet() {
 
     ${pollsHTML()}
 
+    ${tabsHTML()}
+
     <div class="src">
       <div class="hd"><div class="ttl">등대팀 SNS 팔로우</div>${badge("follow")}<div class="amt">${R.follow}장</div></div>
       <div class="meta">인스타그램 @yonsei_lighthouse · 팔로우 화면을 캡처해 인증 · 1회 한정</div>
@@ -2227,6 +2243,7 @@ function admImgFallback(im) {
 
 function proofLabel(key) {
   if (key === "follow") return "인스타그램 팔로우 화면";
+  if (key === "tabs") return "TABS 설문 완료 화면";
   const parts = key.split(":");
   const p = PROGRAMS.find(x => x.id === parts[1]);
   const nm = p ? p.name : "프로그램";
@@ -2237,6 +2254,31 @@ function proofStatus(key) {
   return pr ? (pr.status || "wait") : null;
 }
 const ST_TEXT = { wait: "검토중", ok: "승인", no: "반려" };
+
+/* TABS 설문 인증 칸 — 인증 상태가 부스에서 전기손난로를 받는 조건이라 크게 보여 준다 */
+function tabsOpen() {
+  const T = CONFIG.TABS;
+  return !!(T && T.on && (!T.until || todayStr() <= T.until));
+}
+function tabsHTML() {
+  const T = CONFIG.TABS;
+  if (!tabsOpen()) return "";
+  const st = proofStatus("tabs"), pr = (S.proofs || {}).tabs, done = !!S.claims.tabs && st !== "no";
+  const state = st === "no" ? `<span class="st no">반려</span>` : pr && pr.up ? `<span class="st wait">올리는 중</span>`
+    : st === "ok" ? `<span class="st ok">승인</span>` : done ? `<span class="st wait">검토중</span>` : "";
+  return `<div class="src tabs">
+    <div class="hd"><div class="ttl">${esc(T.title)}</div>${state}<div class="amt">${CONFIG.REWARD.tabs}장</div></div>
+    ${T.tag ? `<div class="ttag">${esc(T.tag)}</div>` : ""}
+    <div class="meta">${esc(T.desc)} · 1회 한정</div>
+    ${done ? `<div class="tok">✓ TABS 인증 완료 — 부스에서 이 화면을 보여 주세요</div>` : ""}
+    <div class="act">
+      ${T.url ? `<button data-open="tabs">TABS 설문 하러 가기</button>` : ""}
+      ${done ? `<button class="done" disabled>${pr && pr.up ? "사진 올리는 중" : "인증 완료"}</button>`
+             : `<button data-proof="tabs">${st === "no" ? "다시 인증하기" : "완료 화면 인증하기"}</button>`}
+    </div>
+    ${T.gift ? `<p class="note" style="margin-top:10px">🎁 ${esc(T.gift)}</p>` : ""}
+  </div>`;
+}
 
 /* 프로그램 신청·완료 한 칸: 안 했으면 '+장수', 했으면 상태(올리는 중·검토중·승인), 반려면 재인증 */
 function stepBtn(k, label, amt) {
@@ -2357,6 +2399,7 @@ const Proof = {
 
   open(key) {
     if (eventOver()) return endedToast();
+    if (key === "tabs" && !tabsOpen()) return toast("TABS 설문 인증 기간이 끝났어요.", 2600);
     this.key = key; this.data = null; this.busy = false; this.rate = 0;
     const isDone = key.indexOf("done:") === 0;
     const m = document.createElement("div");
@@ -2424,6 +2467,7 @@ const Proof = {
 
     const k = this.key;
     const amt = k === "follow" ? CONFIG.REWARD.follow
+              : k === "tabs" ? CONFIG.REWARD.tabs
               : k.indexOf("apply") === 0 ? CONFIG.REWARD.apply
               : CONFIG.REWARD.done;
     try {
@@ -3290,7 +3334,7 @@ function bind() {
   // 외부 링크
   app.querySelectorAll("[data-open]").forEach(el => el.onclick = () => {
     const t = el.dataset.open;
-    const url = t === "ig" ? CONFIG.INSTAGRAM : CONFIG.FORM_URL;
+    const url = t === "ig" ? CONFIG.INSTAGRAM : t === "tabs" ? (CONFIG.TABS || {}).url : CONFIG.FORM_URL;
     if (url) window.open(url, "_blank", "noopener");
   });
 

@@ -186,6 +186,10 @@
   .fev.off{opacity:.55}.fev .fb{display:flex;gap:6px;flex-wrap:wrap}
   .fst{margin-top:14px;padding:14px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--line)}
   .fhd{display:flex;flex-direction:column;gap:4px}
+  .fpick{display:flex;flex-direction:column;gap:6px}
+  .fpk{display:flex;gap:12px;align-items:center;flex-wrap:wrap;text-align:left;padding:12px 14px;border-radius:10px;cursor:pointer;
+    background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--foam);font-size:15px}
+  .fpk:hover{border-color:var(--beam)} .fpk .note{margin-left:auto}
   .fgifts{display:flex;flex-direction:column;gap:8px;margin-top:12px}
   .fgift{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;border-radius:10px;
     background:rgba(255,201,74,.07);border:1px solid rgba(255,201,74,.25)}
@@ -875,7 +879,23 @@ const evCount = code => D.students.filter(x => (x.claims || {})["event:" + Strin
 
 function viewField() {
   const evs = (D.events || []).slice().reverse();
-  const st = V.fq ? D.students.find(x => String(x.sid) === V.fq) : null;
+  // 학번(숫자) 또는 이름으로 찾는다. 이름이 같은 학생이 여럿이면 고르는 목록을 보여 준다
+  const q = String(V.fq || "").trim(), isNum = /^\d+$/.test(q);
+  let matches = [];
+  if (q) {
+    if (isNum) matches = D.students.filter(x => String(x.sid) === q);
+    else {
+      const nq = q.replace(/\s/g, "");
+      matches = D.students.filter(x => String(x.name || "").replace(/\s/g, "") === nq);
+      if (!matches.length) matches = D.students.filter(x => String(x.name || "").replace(/\s/g, "").indexOf(nq) >= 0);
+    }
+  }
+  const st = V.fsel ? D.students.find(x => String(x.sid) === V.fsel) : matches.length === 1 ? matches[0] : null;
+  V.fsid = st ? String(st.sid) : "";
+  const tail = c => { const d = String(c || "").replace(/\D/g, ""); return d.length >= 4 ? "연락처 끝 " + d.slice(-4) : "연락처 없음"; };
+  const pick = !st && matches.length > 1 ? `<div class="fpick"><p class="note" style="margin:10px 0 6px">'${esc(q)}' 학생이 ${matches.length}명입니다. 학번을 확인하고 골라 주세요.</p>
+    ${matches.map(x => `<button class="fpk" data-fpick="${esc(x.sid)}"><b>${esc(x.name)}</b><span>${esc(x.sid)}</span>
+      <span class="note">보유 ${x.types}종 · 미개봉 ${x.pending}장 · ${tail(x.contact)}</span></button>`).join("")}</div>` : "";
   return shell(`
     <div class="panel">
       <div class="ph"><h2>현장 이벤트 QR</h2><span class="sub">학생이 폰 카메라로 QR을 찍으면 사이트가 열리면서 카드가 바로 들어갑니다 (로그인 전이면 로그인 직후)</span></div>
@@ -897,17 +917,18 @@ function viewField() {
     </div>
 
     <div class="panel">
-      <div class="ph"><h2>학번으로 바로 처리</h2>
+      <div class="ph"><h2>부스 경품 지급 현황</h2>
         <span class="chip wait">전기손난로 ${D.students.filter(x => x.adm && x.adm.gifts && x.adm.gifts["전기손난로"]).length}개 지급</span>
         <span class="chip wait">단백질 쉐이크 ${D.students.filter(x => x.adm && x.adm.gifts && x.adm.gifts["단백질 쉐이크"]).length}개 지급</span></div>
       <div class="pb" style="padding-bottom:0"><p class="note" style="margin:0">TABS 인증·팔로우 인증을 확인하고 경품을 건넨 뒤 [지급]을 눌러 두면, 같은 학생이 다시 와도 '지급함'으로 보입니다.</p></div>
     </div>
     <div class="panel">
-      <div class="ph"><h2>학번 조회</h2><span class="sub">부스에서 학생 학번을 넣으면 카드 현황·교환 상태를 보고 바로 지급합니다</span></div>
+      <div class="ph"><h2>학생 조회</h2><span class="sub">학번 또는 이름을 넣으면 카드 현황·인증·교환 상태를 보고 바로 지급합니다</span></div>
       <div class="pb">
-        <div class="frm"><input id="fsid" placeholder="학번 10자리" inputmode="numeric" maxlength="12" value="${esc(V.fq || "")}" style="font-size:18px;letter-spacing:.05em">
+        <div class="frm"><input id="fsid" placeholder="학번 또는 이름" maxlength="20" value="${esc(V.fq || "")}" autocomplete="off" style="font-size:18px;letter-spacing:.03em">
           <button class="btn sm" id="fgo">조회</button></div>
-        ${V.fq ? (st ? fieldStudent(st) : `<p class="note" style="margin-top:10px">${esc(V.fq)} 학번의 참여 기록이 없습니다. [새로고침] 후 다시 조회해 보세요.</p>`) : ""}
+        ${q ? (st ? (matches.length > 1 || V.fsel ? `<p class="note" style="margin:10px 0 0">${V.fsel && matches.length > 1 ? `<button class="lnk" id="fback">← 동명이인 목록으로</button>` : ""}</p>` : "") + fieldStudent(st)
+              : pick || `<p class="note" style="margin-top:10px">'${esc(q)}'(으)로 찾은 참여 기록이 없습니다. 학번·이름을 확인하거나 [새로고침] 후 다시 조회해 보세요.</p>`) : ""}
       </div>
     </div>`);
 }
@@ -984,18 +1005,20 @@ function bindField() {
   act("[data-fend]", "end", "이 QR 이벤트를 지금 끝낼까요? 이미 받은 카드는 그대로입니다.", "이벤트를 끝냈습니다");
   act("[data-fdel]", "del", "이 QR 이벤트를 목록에서 지울까요? 이미 받은 카드는 그대로이며, QR은 더 이상 동작하지 않습니다.", "삭제했습니다");
   app.querySelectorAll("[data-fqr]").forEach(b => b.onclick = () => showQR(D.events.find(x => x.code === b.dataset.fqr)));
-  const look = () => { V.fq = ($("fsid").value || "").replace(/\D/g, ""); render(); setTimeout(() => $("fsid") && $("fsid").focus(), 0); };
+  const look = () => { V.fq = ($("fsid").value || "").trim(); V.fsel = null; render(); setTimeout(() => $("fsid") && $("fsid").focus(), 0); };
+  app.querySelectorAll("[data-fpick]").forEach(b => b.onclick = () => { V.fsel = b.dataset.fpick; render(); });
+  $("fback") && ($("fback").onclick = () => { V.fsel = null; render(); });
   $("fgo") && ($("fgo").onclick = look);
   $("fsid") && ($("fsid").onkeydown = e => { if (e.key === "Enter") look(); });
   app.querySelectorAll("[data-fg]").forEach(b => b.onclick = async () => {
     const n = +b.dataset.fg, reason = ($("fgr").value || "").trim() || "현장 지급";
     b.disabled = true;
-    if (await grantCards(V.fq, n, reason)) render(); else b.disabled = false;
+    if (await grantCards(V.fsid, n, reason)) render(); else b.disabled = false;
   });
   const gift = async (item, on, b) => {
     b.disabled = true;
-    try { const j = await adminPost({ action: "gift", sid: V.fq, item, on });
-      const st = D.students.find(x => String(x.sid) === V.fq); if (st) { st.adm = st.adm || {}; st.adm.gifts = j.gifts; }
+    try { const j = await adminPost({ action: "gift", sid: V.fsid, item, on });
+      const st = D.students.find(x => String(x.sid) === V.fsid); if (st) { st.adm = st.adm || {}; st.adm.gifts = j.gifts; }
       toast(on ? `${item} 지급으로 표시했습니다` : `${item} 지급 표시를 취소했습니다`); render(); }
     catch (err) { b.disabled = false; toast(err && err.message === "already gift" ? "이미 지급한 학생입니다 (다른 팀원이 먼저 처리)" : errMsg(err)); }
   };
@@ -1003,8 +1026,8 @@ function bindField() {
   app.querySelectorAll("[data-gu]").forEach(b => b.onclick = () => { if (confirm("경품 지급 표시를 취소할까요?")) gift(b.dataset.gu, false, b); });
   app.querySelectorAll("[data-fex]").forEach(b => b.onclick = async () => {
     const t = b.dataset.fex; b.disabled = true;
-    try { await exchangeDone(V.fq, t, "done");
-      const x = (D.exchanges || []).find(y => String(y.sid) === V.fq && y.tier === t); if (x) x.status = "done";
+    try { await exchangeDone(V.fsid, t, "done");
+      const x = (D.exchanges || []).find(y => String(y.sid) === V.fsid && y.tier === t); if (x) x.status = "done";
       toast(`${t}등급 선물 지급 완료로 바꿨습니다`); render(); }
     catch (err) { b.disabled = false; toast(errMsg(err)); }
   });

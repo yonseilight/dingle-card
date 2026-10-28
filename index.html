@@ -1396,6 +1396,11 @@ function normalize(d) {
   d.seenGranted = Number(d.seenGranted) || 0;
   d.epoch = d.epoch ? String(d.epoch) : "";
   if (!Array.isArray(d.log)) d.log = [];
+  // NEW 표시 기준: 이 기능이 생기기 전부터 가진 카드는 '이미 본 카드'로 친다 (처음 한 번만)
+  if (!d.seen || typeof d.seen !== "object") {
+    d.seen = {};
+    Object.keys(d.owned || {}).forEach(k => { if (d.owned[k] > 0) d.seen[k] = 1; });
+  }
   // 등대팀이 카드를 회수해 종류가 줄었으면 '모두 모은 시각'을 지우고, 다시 다 모았으면 채운다
   const kinds = Object.keys(d.owned).filter(k => d.owned[k] > 0).length;
   if (d.completedAt && kinds < CARDS.length) delete d.completedAt;
@@ -1988,7 +1993,7 @@ function viewAlbum() {
     const sent = !!(xr && xr.status === "req");
     const cards = CARDS.filter(c => c.tier === t)
       .map(c => cardHTML(c, { locked: owned(c.id) === 0, qty: owned(c.id), used: paid, tap: owned(c.id) > 0,
-                              isNew: owned(c.id) > 0 && !(S.seen || {})[c.id] })).join("");
+                              isNew: !!(V.albumNew && V.albumNew[c.id]) })).join("");
 
     let act = "";
     if (paid) act = `<div class="okd done">지급 완료</div>`;
@@ -2062,6 +2067,17 @@ function progHTML() {
       <div class="tiers">${tiers}</div>
       ${next}
     </div>`;
+}
+
+/* 아직 안 본 카드를 '본 카드'로 바꾸고, 이번에 새로 본 카드 목록을 돌려준다.
+   도감에 들어오는 순간 저장하므로(서버까지), 새로고침하거나 다른 기기에서 열어도 다시 NEW로 뜨지 않는다. */
+function markSeen() {
+  if (!S) return null;
+  S.seen = S.seen || {};
+  const fresh = {};
+  CARDS.forEach(c => { if (owned(c.id) > 0 && !S.seen[c.id]) { S.seen[c.id] = 1; fresh[c.id] = 1; } });
+  if (Object.keys(fresh).length) persist(true);
+  return fresh;
 }
 
 /* 카드 한 장을 크게 보여준다 */
@@ -3293,11 +3309,8 @@ function bind() {
   app.querySelectorAll("[data-tab]").forEach(el => el.onclick = () => {
     const moved = V.tab !== el.dataset.tab;
     // 도감을 보고 나가면 새 카드 표시(NEW)를 지운다
-    if (moved && V.tab === "album") {
-      S.seen = S.seen || {};
-      CARDS.forEach(c => { if (owned(c.id) > 0) S.seen[c.id] = 1; });
-      store.keep && store.keep(S.sid, S);
-    }
+    // 도감에 들어올 때 새로 얻은 카드를 이번에 보는 동안만 NEW로 보여 준다
+    V.albumNew = moved && el.dataset.tab === "album" ? markSeen() : moved ? null : V.albumNew;
     V.tab = el.dataset.tab; V.drawn = null; V.codeOpen = null; V.quizOpen = false;
     V.evMsg = null;
     render();

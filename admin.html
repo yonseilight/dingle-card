@@ -486,6 +486,8 @@ async function checkServer() {
       try {
         const pm = t.match(/const POLLS = (\[[\s\S]*?\n\]);/);
         if (pm) { POLL_DEF = {}; (new Function("return " + pm[1])() || []).forEach(x => { POLL_DEF[x.id] = x; }); }
+        const em = t.match(/EVENTS:\s*(\[[\s\S]*?\n  \]),/);
+        if (em) { try { const ev = new Function("return " + em[1])(); if (Array.isArray(ev)) CODE_EVENTS = ev; } catch (eE) {} }
         const rm = t.match(/REWARD:\s*(\{[\s\S]*?\})/);
         if (rm) { const r = new Function("return " + rm[1])(); if (r && typeof r === "object") REWARD = Object.assign(REWARD, r); }
         D._pair = null;                        // 설정을 읽었으니 기간 설문 구분을 다시 계산
@@ -767,6 +769,7 @@ function viewSurvey() {
 
 /* ── 기간 설문 ── */
 let POLL_DEF = {};    // 학생 앱(index.html)의 POLLS 설정. 같은 사이트에 올렸을 때만 읽힌다
+let CODE_EVENTS = []; // 학생 앱의 이벤트 코드 설정 (보고서에 이름을 붙이는 데 쓴다)
 function pollGroups() {
   const by = {};
   D.surveys.forEach(s => {
@@ -1232,20 +1235,58 @@ function reportData() {
   D.ratings.forEach(r => { const o = rp[r.program] || (rp[r.program] = { n: 0, sum: 0, memo: 0 }); if (r.score) { o.n++; o.sum += r.score; } if (r.memo) o.memo++; });
   // 설문 (퀴즈 '한 마디' + 기간 설문)
   const qs = [];
-  const add = (title, list, def) => {
+  const add = (title, list, def, kind, meta) => {
     const by = {};
     list.forEach(x => { const o = by[x.q] || (by[x.q] = { q: x.q, cnt: {}, etc: [], n: 0 }); o.n++;
       if (x.answer) o.cnt[x.answer] = (o.cnt[x.answer] || 0) + 1; if (x.etc) o.etc.push(x.etc); });
     Object.values(by).forEach(o => {
       const dq = def && def.questions.find(z => z.q === o.q);
       (dq ? dq.opts : []).forEach(op => { if (!(op in o.cnt)) o.cnt[op] = 0; });
-      qs.push(Object.assign({ group: title }, o));
+      qs.push(Object.assign({ group: title, kind: kind || "weekly", meta: meta || null }, o));
     });
   };
-  pollGroups().forEach(g => add((g.def ? g.def.title : "기간 설문") + " (" + g.id + ")",
-    D.surveys.filter(x => pollOf(x) === g.id), g.def));
-  add("주간 퀴즈 '이번 주 한 마디'", D.surveys.filter(x => !pollOf(x)));
-  return { k, prog, weeks, route, rp, qs, firstAt, now };
+  pollGroups().forEach(g => add((g.def ? g.def.title : "이벤트 설문") + " (" + g.id + ")",
+    D.surveys.filter(x => pollOf(x) === g.id), g.def, "poll",
+    { id: g.id, title: g.def ? g.def.title : "이벤트 설문", from: g.def && g.def.from, until: g.def && g.def.until,
+      cards: g.def && g.def.cards, people: g.people.length }));
+  add("주간 퀴즈 '이번 주 한 마디'", D.surveys.filter(x => !pollOf(x)), null, "weekly");
+  // ── 더 자세한 항목 ──
+  const tiers = TIER_KEYS.map(t => ({ t, word: TIERS[t].word, all: PER_TIER[t], done: S.filter(x => tierDone(x, t) === PER_TIER[t]).length }));
+  const dist = [[0, 0], [1, 5], [6, 10], [11, 15], [16, 20], [21, 25], [26, 26]].map(([lo, hi]) =>
+    [lo === hi ? `${lo}종` : `${lo}~${hi}종`, S.filter(x => (x.types || 0) >= lo && (x.types || 0) <= hi).length]);
+  const own = {};
+  S.forEach(x => Object.keys(x.owned || {}).forEach(id => { if (x.owned[id] > 0) own[id] = (own[id] || 0) + 1; }));
+  const avgTypes = S.length ? (S.reduce((a, x) => a + (x.types || 0), 0) / S.length).toFixed(1) : "0";
+  const full = S.filter(x => (x.types || 0) >= TOTAL_CARDS).length;
+  // 인증 항목별 검토 결과
+  const keys = [["follow", "인스타그램 팔로우"], ["tabs", "TABS 설문"]].concat(
+    PROGRAMS.map(p => ["apply:" + p.id, p.name + " · 신청"]), PROGRAMS.map(p => ["done:" + p.id, p.name + " · 완료"]));
+  const pr = keys.map(([key, label]) => {
+    const l = D.proofs.filter(p => p.key === key);
+    return { label, n: l.length, ok: l.filter(p => p.status === "ok").length, wait: l.filter(p => p.status === "wait").length, no: l.filter(p => p.status === "no").length };
+  }).filter(r => r.n);
+  // 이벤트 코드·현장 QR
+  const evName = {};
+  CODE_EVENTS.forEach(e => { evName[String(e.code).toUpperCase()] = e.label + " (코드)"; });
+  (D.events || []).forEach(e => { evName[String(e.code).toUpperCase()] = e.label + " (현장 QR)"; });
+  const evc = {};
+  S.forEach(x => Object.keys(x.claims || {}).forEach(c => { if (c.indexOf("event:") === 0) { const k2 = c.slice(6); evc[k2] = (evc[k2] || 0) + 1; } }));
+  const evs = Object.keys(evc).map(c => [evName[c] || c, evc[c]]).sort((a, b) => b[1] - a[1]);
+  // 부스 이벤트(TABS)
+  const tabsP = D.proofs.filter(p => p.key === "tabs"), dayT = Date.parse("2026-11-10T00:00:00+09:00");
+  const gifts = it => S.filter(x => x.adm && x.adm.gifts && x.adm.gifts[it]).length;
+  const booth = { tabs: tabsP.length, pre: tabsP.filter(p => p.at && p.at < dayT).length, ok: tabsP.filter(p => p.status === "ok").length,
+                  no: tabsP.filter(p => p.status === "no").length, hand: gifts("전기손난로"), shake: gifts("단백질 쉐이크") };
+  // 교환
+  const exT = TIER_KEYS.map(t => ({ t, word: TIERS[t].word, req: ex.filter(x => x.tier === t).length, done: ex.filter(x => x.tier === t && x.status === "done").length, ready: tiers.find(z => z.t === t).done }));
+  // 상위 10명 (이름 가림)
+  const mask = n => { n = String(n || ""); return n.length <= 1 ? n : n.length === 2 ? n[0] + "*" : n[0] + "*".repeat(n.length - 2) + n[n.length - 1]; };
+  const top = S.filter(x => !(x.adm && x.adm.hide)).slice().sort((a, b) => (b.types || 0) - (a.types || 0) || (a.done || 0) - (b.done || 0)).slice(0, 10)
+    .map((x, i) => ({ r: i + 1, name: mask(x.name), types: x.types || 0, done: x.done || 0 }));
+  // 누적 참여 학생 (주차별)
+  let cum = 0; weeks.forEach(w => { cum += w.join; w.cum = cum; });
+  const last7 = S.filter(x => x.created && x.created > now - 7 * 864e5).length;
+  return { k, prog, weeks, route, rp, qs, firstAt, now, tiers, dist, own, avgTypes, full, pr, evs, booth, exT, top, last7 };
 }
 
 function hbars(rows, color) {           // rows: [[label, n, pctBase]]
@@ -1277,70 +1318,122 @@ function reportHTML() {
   const r = reportData(), k = r.k;
   const day = t => new Date(t).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" });
   const cl = Number(D.meta.closed) || 0;
+  const sumP = f => r.prog.reduce((a, p) => a + p[f], 0);
+  const convAll = PCT(sumP("both"), sumP("apply"));
+  const bestProg = r.prog.slice().sort((a, b) => b.apply - a.apply)[0];
+  const bestQ = r.qs.find(q => q.kind === "poll") || r.qs[0];
+  const sec = (no, title, inner, cls) => `<section class="${cls || ""}"><h2><span>${no}</span>${title}</h2>${inner}</section>`;
+  const tbl = (head, rows, sum) => `<table class="rt"><thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>
+    ${rows.map(rw => `<tr>${rw.map(c => `<td>${c}</td>`).join("")}</tr>`).join("")}${sum ? `<tr class="sum">${sum.map(c => `<td>${c}</td>`).join("")}</tr>` : ""}</tbody></table>`;
+  const cardGrid = TIER_KEYS.map(t => `<div class="cg"><div class="cgh">${t} ${TIERS[t].word}</div><div class="cgr">${
+    Array.from({ length: PER_TIER[t] }, (_, i) => { const id = t + (i + 1), n = r.own[id] || 0, pc = PCT(n, k.total);
+      return `<div class="cgc" title="${id}"><b>${id}</b><i style="height:${Math.max(4, pc)}%"></i><span>${pc}%</span></div>`; }).join("")}</div></div>`).join("");
+
   return `<article class="rep" id="report">
     <header class="rh">
       <div class="rk">미래융합교육혁신원 등대팀(Lighthouse Team) 20기</div>
       <h1>딩글이 카드도감 운영 보고서</h1>
-      <div class="rm">운영 기간 ${day(r.firstAt)} ~ ${cl ? day(cl) + " (마감)" : day(r.now) + " (진행 중)"} · 집계 ${new Date(r.now).toLocaleString("ko-KR")}</div>
+      <div class="rm">운영 기간 ${day(r.firstAt)} ~ ${cl ? day(cl) + " (마감)" : day(r.now) + " (진행 중)"} · 집계 ${new Date(r.now).toLocaleString("ko-KR")}<br>
+        딩글이 카드도감 관리자 페이지에서 자동 생성 · 인증 수치는 카드도감에 올린 캡처 기준</div>
     </header>
 
-    <section><h2>1. 핵심 지표</h2>
-      <div class="rkpi">
-        ${[["참여 학생", KO(k.total) + "명", "카드도감에 가입한 학생"],
-           ["인증 참여", KO(k.proofStu) + "명", PCT(k.proofStu, k.total) + "% · 팔로우·신청·완료 중 1회 이상"],
-           ["프로그램 신청 인증", KO(k.applyStu) + "명", PCT(k.applyStu, k.total) + "% · With Yonsei 신청 완료"],
-           ["활동 완료 인증", KO(k.doneStu) + "명", PCT(k.doneStu, k.applyStu) + "% (신청 인증 학생 대비)"],
-           ["주간 퀴즈 참여", KO(k.quiz) + "회", KO(k.quizStu) + "명 참여"],
-           ["인증 검토", KO(k.proofN.ok + k.proofN.wait + k.proofN.no) + "건", `승인 ${k.proofN.ok} · 대기 ${k.proofN.wait} · 반려 ${k.proofN.no}`],
-           ["굿즈 교환", KO(k.exDone) + "건 지급", "신청 " + KO(k.exReq) + "건"],
-           ["프로그램 만족도", k.rateAvg + (k.rateN ? " / 5" : ""), KO(k.rateN) + "건 응답"]]
-          .map(([l, v, s]) => `<div><span>${l}</span><b>${v}</b><small>${esc(s)}</small></div>`).join("")}
-      </div>
-    </section>
+    <div class="rsum">
+      <div class="rst">한눈에 보는 요약</div>
+      <ul>
+        <li>카드도감에 <b>${KO(k.total)}명</b>이 참여했고, 이 중 <b>${KO(k.proofStu)}명(${PCT(k.proofStu, k.total)}%)</b>이 팔로우·TABS·프로그램 인증을 1회 이상 했습니다. 최근 7일 신규 참여 ${KO(r.last7)}명.</li>
+        <li>학습지원 프로그램 <b>신청 인증 ${KO(sumP("apply"))}건</b>, <b>활동 완료 인증 ${KO(sumP("done"))}건</b> · 신청 후 완료까지 이어진 비율 <b>${convAll}%</b>${bestProg && bestProg.apply ? ` · 신청이 가장 많은 프로그램은 <b>${esc(bestProg.name)}</b>(${bestProg.apply}명)` : ""}.</li>
+        <li>주간 퀴즈 참여 <b>${KO(k.quiz)}회</b>(${KO(k.quizStu)}명) · 26종 모두 모은 학생 <b>${KO(r.full)}명</b> · 1인 평균 보유 ${r.avgTypes}종.</li>
+        ${r.booth.tabs ? `<li>더미래페스티벌 부스: TABS 인증 <b>${r.booth.tabs}명</b>(사전 ${r.booth.pre}명) · 전기손난로 ${r.booth.hand}개 · 단백질 쉐이크 ${r.booth.shake}개 지급.</li>` : ""}
+        ${bestQ ? `<li>설문 '${esc(bestQ.q)}' 1위 응답: <b>${esc(Object.keys(bestQ.cnt).sort((a, b) => bestQ.cnt[b] - bestQ.cnt[a])[0] || "-")}</b> (응답 ${bestQ.n}명).</li>` : ""}
+      </ul>
+    </div>
 
-    <section><h2>2. 프로그램별 신청 → 완료 전환</h2>
-      <table class="rt"><thead><tr><th>프로그램</th><th>신청 인증</th><th>활동 완료 인증</th><th>신청 후 완료</th><th>전환율</th></tr></thead>
-        <tbody>${r.prog.map(p => `<tr><td>${esc(p.name)}</td><td>${p.apply}명</td><td>${p.done}명</td><td>${p.both}명</td><td><b>${p.apply ? p.conv + "%" : "-"}</b></td></tr>`).join("")}
-        <tr class="sum"><td>합계</td><td>${r.prog.reduce((a, p) => a + p.apply, 0)}건</td><td>${r.prog.reduce((a, p) => a + p.done, 0)}건</td>
-          <td>${r.prog.reduce((a, p) => a + p.both, 0)}건</td><td><b>${PCT(r.prog.reduce((a, p) => a + p.both, 0), r.prog.reduce((a, p) => a + p.apply, 0))}%</b></td></tr></tbody></table>
-      ${(() => { const mx = Math.max(1, ...r.prog.map(p => p.apply), ...r.prog.map(p => p.done));
+    ${sec("1", "핵심 지표", `<div class="rkpi">
+      ${[["참여 학생", KO(k.total) + "명", "최근 7일 +" + KO(r.last7) + "명"],
+         ["인증 참여", KO(k.proofStu) + "명", PCT(k.proofStu, k.total) + "% · 인증 1회 이상"],
+         ["프로그램 신청 인증", KO(k.applyStu) + "명", PCT(k.applyStu, k.total) + "% · With Yonsei 신청"],
+         ["활동 완료 인증", KO(k.doneStu) + "명", PCT(k.doneStu, k.applyStu) + "% (신청 인증 학생 대비)"],
+         ["주간 퀴즈 참여", KO(k.quiz) + "회", KO(k.quizStu) + "명 참여"],
+         ["지급된 카드", KO(k.cards) + "장", "1인 평균 보유 " + r.avgTypes + "종"],
+         ["굿즈 교환", KO(k.exDone) + "건 지급", "신청 " + KO(k.exReq) + "건"],
+         ["프로그램 만족도", k.rateAvg + (k.rateN ? " / 5" : ""), KO(k.rateN) + "건 응답"]]
+        .map(([l, v, sm]) => `<div><span>${l}</span><b>${v}</b><small>${esc(sm)}</small></div>`).join("")}</div>`)}
+
+    ${sec("2", "프로그램별 신청 → 완료 전환", tbl(["프로그램", "신청 인증", "활동 완료 인증", "신청 후 완료", "전환율"],
+        r.prog.map(p => [esc(p.name), p.apply + "명", p.done + "명", p.both + "명", `<b>${p.apply ? p.conv + "%" : "-"}</b>`]),
+        ["<b>합계</b>", sumP("apply") + "건", sumP("done") + "건", sumP("both") + "건", `<b>${convAll}%</b>`]) +
+      (() => { const mx = Math.max(1, ...r.prog.map(p => p.apply), ...r.prog.map(p => p.done));
         return `<div class="rb">${r.prog.map(p => `<div class="rbr g2"><span class="rbl">${esc(p.name)}</span>
           <span><span class="rbt"><i style="width:${Math.round(p.apply / mx * 100)}%;background:#2F5BD3"></i></span>
                 <span class="rbt"><i style="width:${Math.round(p.done / mx * 100)}%;background:#18A36B"></i></span></span>
           <span class="rbn">${p.apply} → ${p.done}</span></div>`).join("")}</div>
-          <div class="rleg"><span><i style="background:#2F5BD3"></i>신청 인증</span><span><i style="background:#18A36B"></i>활동 완료 인증</span></div>`; })()}
-      <p class="rn">전환율 = 같은 프로그램을 신청 인증한 학생 중 활동 완료까지 인증한 비율. 인증은 카드도감에 올린 캡처 기준이며, 반려된 인증은 빠집니다.</p>
-    </section>
+          <div class="rleg"><span><i style="background:#2F5BD3"></i>신청 인증</span><span><i style="background:#18A36B"></i>활동 완료 인증</span></div>`; })() +
+      `<p class="rn">전환율 = 같은 프로그램을 신청 인증한 학생 중 활동 완료까지 인증한 비율. 반려된 인증은 빠집니다.</p>`)}
 
-    <section><div class="keep"><h2>3. 주차별 참여 추이</h2>
-      ${weekChart(r.weeks)}</div>
-      <table class="rt"><thead><tr><th>주차 (월요일)</th><th>신규 가입</th><th>인증 제출</th><th>퀴즈 '한 마디' 응답</th></tr></thead>
-        <tbody>${r.weeks.map(w => `<tr><td>${wkLabel(w.w)} 주</td><td>${w.join}</td><td>${w.proof}</td><td>${w.quiz}</td></tr>`).join("")}</tbody></table>
-      <p class="rn">인증 제출은 항목별 마지막 제출 시각 기준(재인증하면 새 주차로 셉니다). 퀴즈는 '한 마디' 설문 응답 수로 셉니다(설문에 답하지 않은 퀴즈 참여는 빠짐).</p>
-    </section>
+    ${sec("3", "주차별 참여 추이", `<div class="keep">${weekChart(r.weeks)}</div>` +
+      tbl(["주차 (월요일)", "신규 가입", "누적 참여 학생", "인증 제출", "퀴즈 '한 마디' 응답"],
+        r.weeks.map(w => [wkLabel(w.w) + " 주", w.join, w.cum, w.proof, w.quiz])) +
+      `<p class="rn">인증 제출은 항목별 마지막 제출 시각 기준(재인증하면 새 주차로 셉니다). 퀴즈는 '한 마디' 설문 응답 수로 셉니다.</p>`)}
 
-    <section class="keep"><h2>4. 참여 경로별 인원</h2>
-      ${hbars(r.route.map(([l, n]) => [l, n, k.total]), "#6B5BD3")}
-      <p class="rn">괄호 안은 전체 참여 학생 대비 비율. 한 학생이 여러 경로에 참여할 수 있습니다.</p>
-    </section>
+    ${sec("4", "참여 경로별 인원", hbars(r.route.map(([l, n]) => [l, n, k.total]), "#6B5BD3") +
+      (r.evs.length ? `<h3>이벤트 코드 · 현장 QR 참여</h3>` + tbl(["이벤트", "참여 학생"], r.evs.map(([l, n]) => [esc(l), n + "명"])) : "") +
+      `<p class="rn">괄호 안은 전체 참여 학생 대비 비율. 한 학생이 여러 경로에 참여할 수 있습니다.</p>`)}
 
-    <section class="keep"><h2>5. 프로그램 만족도</h2>
-      ${Object.keys(r.rp).length ? `<table class="rt"><thead><tr><th>프로그램</th><th>평균 별점</th><th>응답</th><th>의견</th></tr></thead><tbody>
-        ${Object.entries(r.rp).map(([p, o]) => `<tr><td>${esc(p)}</td><td><b>${o.n ? (o.sum / o.n).toFixed(2) : "-"}</b> / 5</td><td>${o.n}건</td><td>${o.memo}건</td></tr>`).join("")}
-      </tbody></table>` : `<p class="rn">아직 만족도 응답이 없습니다.</p>`}
-    </section>
+    ${r.pr.length ? sec("5", "인증 항목별 검토 결과", tbl(["인증 항목", "제출", "승인", "검토 전", "반려", "반려율"],
+        r.pr.map(x => [esc(x.label), x.n, x.ok, x.wait, x.no, PCT(x.no, x.n) + "%"]),
+        ["<b>합계</b>", ...["n", "ok", "wait", "no"].map(f => r.pr.reduce((a, x) => a + x[f], 0)),
+         PCT(r.pr.reduce((a, x) => a + x.no, 0), r.pr.reduce((a, x) => a + x.n, 0)) + "%"])) : ""}
 
-    <section><h2>6. 설문 결과</h2>
-      ${r.qs.length ? r.qs.map((q, i) => {
+    ${sec("6", "카드 수집 현황",
+      `<div class="r2"><div><h3>등급별 완성 학생</h3>${tbl(["등급", "카드 수", "완성 학생", "비율"],
+          r.tiers.map(t => [`<b>${t.t}</b> ${t.word}`, t.all + "종", t.done + "명", PCT(t.done, k.total) + "%"]))}</div>
+        <div><h3>보유 종수 분포</h3>${hbars(r.dist.map(([l, n]) => [l, n, k.total]), "#E3A008")}</div></div>
+       <h3>카드별 보유 학생 비율</h3><div class="cgs">${cardGrid}</div>
+       <p class="rn">막대 높이 = 그 카드를 1장 이상 가진 학생 비율. 뽑기 확률은 C 50% · B 30% · A 15% · S 5%이며, 한 등급을 모두 3장씩 모으면 그 등급 확률이 남은 등급에 나뉩니다.</p>`)}
+
+    ${r.booth.tabs ? sec("7", "더미래페스티벌 부스 이벤트", `<div class="rkpi">
+      ${[["TABS 설문 인증", r.booth.tabs + "명", "사전 인증 " + r.booth.pre + "명 · 당일 " + (r.booth.tabs - r.booth.pre) + "명"],
+         ["TABS 검토", "승인 " + r.booth.ok, "반려 " + r.booth.no + "명"],
+         ["전기손난로 지급", r.booth.hand + "개", "준비 30개"],
+         ["단백질 쉐이크 지급", r.booth.shake + "개", "팔로우 인증자 대상"]]
+        .map(([l, v, sm]) => `<div><span>${l}</span><b>${v}</b><small>${esc(sm)}</small></div>`).join("")}</div>
+      <p class="rn">'사전 인증' = 부스 운영일(11월 10일) 0시 전에 TABS 인증을 마친 학생.</p>`, "keep") : ""}
+
+    ${sec(r.booth.tabs ? "8" : "7", "굿즈 교환과 순위", `<div class="r2"><div><h3>등급별 굿즈 교환</h3>${tbl(["등급", "완성 학생", "교환 신청", "지급 완료"],
+        r.exT.map(t => [`<b>${t.t}</b> ${t.word}`, t.ready + "명", t.req + "건", t.done + "건"]))}</div>
+      <div><h3>순위 상위 10명</h3>${tbl(["순위", "이름", "보유", "26종 완성"], r.top.map(x => [x.r, x.name, x.types + "종", x.done ? new Date(x.done).toLocaleDateString("ko-KR") : "-"]))}</div></div>
+      <p class="rn">순위는 보유 종류 수 → 26종을 먼저 모은 순. 등대팀이 순위에서 제외한 학생은 빠집니다. 이름은 가운데를 가렸습니다.</p>`)}
+
+    ${sec(r.booth.tabs ? "9" : "8", "프로그램 만족도", Object.keys(r.rp).length ? tbl(["프로그램", "평균 별점", "응답", "의견"],
+        Object.entries(r.rp).map(([p, o]) => [esc(p), `<b>${o.n ? (o.sum / o.n).toFixed(2) : "-"}</b> / 5`, o.n + "건", o.memo + "건"]))
+      : `<p class="rn">아직 만족도 응답이 없습니다.</p>`, "keep")}
+
+    ${(() => {
+      const qhtml = (q, i) => {
         const opts = Object.keys(q.cnt).sort((a, b) => q.cnt[b] - q.cnt[a]);
         const picked = opts.reduce((a, o) => a + q.cnt[o], 0);
-        return `<div class="rq"><div class="rqg">${esc(q.group)}</div><h3>${i + 1}. ${esc(q.q)}</h3>
-          <div class="rqm">응답 ${q.n}명 · 보기 선택 ${picked}명 · 직접 입력 ${q.etc.length}명</div>
-          ${hbars(opts.map(o => [o, q.cnt[o], picked]), "#E3A008")}
+        return `<div class="rq"><h3>${i + 1}. ${esc(q.q)}</h3>
+          <div class="rqm">응답 ${q.n}명 · 보기 선택 ${picked}명 · 직접 입력 ${q.etc.length}명${opts[0] && q.cnt[opts[0]] ? ` · 1위 <b>${esc(opts[0])}</b>` : ""}</div>
+          ${hbars(opts.map(o => [o, q.cnt[o], picked]), q.kind === "poll" ? "#E3A008" : "#18A36B")}
           ${q.etc.length ? `<div class="retc"><b>직접 입력</b> ${q.etc.slice(0, 12).map(t => `<span>${esc(t)}</span>`).join("")}${q.etc.length > 12 ? ` <em>외 ${q.etc.length - 12}건</em>` : ""}</div>` : ""}
-        </div>`; }).join("") : `<p class="rn">아직 설문 응답이 없습니다.</p>`}
-    </section>
-    <footer class="rf">연세대학교 미래캠퍼스 미래융합교육혁신원 · 등대팀(Lighthouse Team) · 딩글이 카드도감 관리자 페이지에서 자동 생성</footer>
+        </div>`; };
+      const n0 = r.booth.tabs ? 10 : 9;
+      const polls = r.qs.filter(q => q.kind === "poll"), weekly = r.qs.filter(q => q.kind !== "poll");
+      // 이벤트 설문은 설문별로 묶는다
+      const byPoll = {};
+      polls.forEach(q => { const id = q.meta ? q.meta.id : q.group; (byPoll[id] = byPoll[id] || { meta: q.meta, list: [] }).list.push(q); });
+      const md = ymd => { if (!ymd) return ""; const d = new Date(ymd + "T00:00:00+09:00"); return (d.getMonth() + 1) + "월 " + d.getDate() + "일"; };
+      const pollPart = Object.keys(byPoll).length ? Object.values(byPoll).map(g => `
+        <div class="rpg"><div class="rpgh"><b>${esc(g.meta ? g.meta.title : "이벤트 설문")}</b>
+          <span>${g.meta && g.meta.from ? md(g.meta.from) + (g.meta.until ? " ~ " + md(g.meta.until) : "") + " · " : ""}참여 ${g.meta ? g.meta.people : "-"}명${g.meta && g.meta.cards ? " · 참여 보상 카드 " + g.meta.cards + "장" : ""}</span></div>
+          ${g.list.map(qhtml).join("")}</div>`).join("")
+        : `<p class="rn">진행한 이벤트 설문이 없습니다.</p>`;
+      const weeklyPart = weekly.length ? weekly.map(qhtml).join("")
+        : `<p class="rn">아직 주간 설문 응답이 없습니다.</p>`;
+      return sec(String(n0), "이벤트 설문 결과", `<p class="rn" style="margin:-4px 0 8px">카드 얻기 화면에서 기간을 정해 연 설문(참여하면 카드 지급). 학생 1명당 1회 응답.</p>` + pollPart)
+        + sec(String(n0 + 1), "주간 퀴즈 설문 결과 ('이번 주 한 마디')", `<p class="rn" style="margin:-4px 0 8px">주간 퀴즈를 푼 뒤 받는 한 문항 설문. 학생마다 참여 순서대로 다른 문항이 나오므로 문항별 응답 수가 다릅니다.</p>` + weeklyPart);
+    })()}
+
   </article>`;
 }
 
@@ -1359,7 +1452,7 @@ const REPORT_CSS = `
 .rkpi span{font-size:11px;color:#6B7486}.rkpi b{font-size:20px;color:#0F1F3D;margin:2px 0}.rkpi small{font-size:10.5px;color:#7A8599}
 .rt{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0 10px}
 .rt th{background:#0F1F3D;color:#fff;text-align:left;padding:6px 8px;font-weight:600}
-.rt td{padding:6px 8px;border-bottom:1px solid #E3E7EF}.rt tr:nth-child(even) td{background:#F7F8FB}
+.rt td{padding:6px 8px;border-bottom:1px solid #E3E7EF}.rt tr{break-inside:avoid}.r2>div,.cg,.rbr{break-inside:avoid}.rt tr:nth-child(even) td{background:#F7F8FB}
 .rt tr.sum td{font-weight:700;background:#EEF2FA}
 .rb{margin:6px 0}.rbr{display:grid;grid-template-columns:190px 1fr 92px;gap:8px;align-items:center;font-size:12px;margin:3px 0}
 .rbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rbt{height:11px;background:#EEF1F6;border-radius:6px;overflow:hidden}
@@ -1369,11 +1462,25 @@ const REPORT_CSS = `
 .rleg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
 .rn{font-size:11px;color:#7A8599;margin:4px 0 0}
 .rq{border:1px solid #E3E7EF;border-radius:10px;padding:10px 12px;margin:0 0 9px;break-inside:avoid}
-.rqg{font-size:10.5px;color:#B07A00;font-weight:700}.rqm{font-size:11px;color:#7A8599}
+.rqg{font-size:10.5px;color:#B07A00;font-weight:700}
+.rpg{border:1.5px solid #F2D58C;border-radius:12px;padding:10px 12px 2px;margin:0 0 12px;background:#FFFCF3}
+.rpgh{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px}.rpgh b{font-size:13.5px;color:#0F1F3D}.rpgh span{font-size:11px;color:#7A8599}
+.rpg .rq{background:#fff}.rqm{font-size:11px;color:#7A8599}
 .retc{font-size:11px;color:#4A5568;margin-top:6px;line-height:1.9}.retc span{display:inline-block;background:#F4F6FA;border-radius:6px;padding:0 7px;margin:0 4px 0 0}
-.rf{margin-top:26px;padding-top:10px;border-top:1px solid #E3E7EF;font-size:10.5px;color:#9AA3B5;text-align:center}
+.rsum{margin:14px 0 4px;padding:12px 16px;border-radius:10px;background:#F4F6FA;border:1px solid #E3E7EF;font-size:12.5px}
+.rsum .rst{font-weight:800;color:#0F1F3D;margin-bottom:4px}.rsum b{color:#0F1F3D}.rsum ul{margin:0;padding-left:18px}.rsum li{margin:3px 0}
+.rep h2 span{display:inline-block;min-width:22px;height:22px;line-height:22px;text-align:center;border-radius:6px;background:#0F1F3D;color:#fff;font-size:12px;margin-right:8px}
+.rep h2{border-left:none;padding-left:0}
+.rep h3{font-size:12.5px;color:#0F1F3D;margin:12px 0 4px;break-after:avoid;page-break-after:avoid}
+.r2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.cgs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.cg{border:1px solid #E3E7EF;border-radius:8px;padding:6px 8px}.cgh{font-size:11px;font-weight:700;color:#0F1F3D;margin-bottom:4px}
+.cgr{display:flex;gap:3px;align-items:flex-end;height:74px}
+.cgc{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;font-size:8px;color:#7A8599}
+.cgc i{display:block;width:70%;background:#2F5BD3;border-radius:2px 2px 0 0;margin:2px 0}.cgc b{font-size:8px;color:#4A5568;order:3}.cgc span{order:1}
+.rf{break-before:avoid;page-break-before:avoid;margin-top:14px;padding-top:10px;border-top:1px solid #E3E7EF;font-size:10.5px;color:#9AA3B5;text-align:center}
 *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-@media (max-width:640px){ .rep{padding:18px 14px;border-radius:10px} .rep h1{font-size:20px}
+@media (max-width:640px){ .rep{padding:18px 14px;border-radius:10px} .rep h1{font-size:20px} .r2{grid-template-columns:1fr} .cgs{grid-template-columns:1fr 1fr}
   .rkpi{grid-template-columns:repeat(2,1fr)} .rbr{grid-template-columns:96px 1fr 70px}
   .rep .rt{display:block;overflow-x:auto;white-space:nowrap} .rep svg{max-width:100%} }
 `;

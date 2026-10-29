@@ -190,6 +190,17 @@
   .fpk{display:flex;gap:12px;align-items:center;flex-wrap:wrap;text-align:left;padding:12px 14px;border-radius:10px;cursor:pointer;
     background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--foam);font-size:15px}
   .fpk:hover{border-color:var(--beam)} .fpk .note{margin-left:auto}
+  .rsn{position:fixed;inset:0;z-index:320;background:rgba(3,8,18,.72);display:flex;align-items:center;justify-content:center;padding:16px}
+  .rsnb{width:min(520px,100%);background:var(--sea);border:1px solid var(--line);border-radius:16px;padding:18px}
+  .rsnb h3{margin:0 0 4px;font-size:16px}.rsnb .note{margin:0 0 12px}
+  .rsnl{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+  .rsnp{text-align:left;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--foam);font-size:13.5px;cursor:pointer}
+  .rsnp.on,.rsnp:hover{border-color:var(--bad);background:rgba(255,154,139,.1)}
+  .rsnb textarea{width:100%;min-height:64px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:rgba(0,0,0,.25);color:var(--foam);font:inherit;resize:vertical}
+  .ttab .tth{width:46px;height:62px;object-fit:cover;border-radius:6px;border:1px solid var(--line);display:block;background:#0B1834}
+  .ttab td{vertical-align:middle}
+  .ttab .lnk{background:none;border:none;color:var(--info);font-size:12px;cursor:pointer;padding:0 4px;text-decoration:underline}
+  .ttab .lnk.bad{color:var(--bad)}
   .fgifts{display:flex;flex-direction:column;gap:8px;margin-top:12px}
   .fgift{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;border-radius:10px;
     background:rgba(255,201,74,.07);border:1px solid rgba(255,201,74,.25)}
@@ -271,7 +282,7 @@ function rewardFor(st, key) {
 }
 const rewardOf = key => key === "follow" ? REWARD.follow : key === "tabs" ? (REWARD.tabs || 7)
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-10-31";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-11-01";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -492,7 +503,7 @@ async function checkServer() {
 
 /* ── 화면: 공통 틀 ── */
 function shell(inner) {
-  const tabs = [["home", "현황"], ["field", "현장"], ["review", "인증 검토"], ["students", "참여자"],
+  const tabs = [["home", "현황"], ["field", "현장"], ["tabs", "TABS"], ["review", "인증 검토"], ["students", "참여자"],
                 ["referral", "추천"], ["poll", "기간 설문"], ["survey", "퀴즈 설문"], ["rating", "만족도"], ["exchange", "교환"], ["report", "보고서"], ["ops", "운영"]];
   const w = D.proofs.filter(p => p.status === "wait").length;
   return `
@@ -502,7 +513,7 @@ function shell(inner) {
         ${tabs.map(([k, l]) => `<button class="tab ${V.tab === k ? "on" : ""}" data-tab="${k}">
           ${l}${k === "review" && w ? " " + w : ""}</button>`).join("")}
       </div>
-      <button class="btn gh sm" id="reload">${V.loading ? '<span class="spin"></span>' : "새로고침"}</button>
+      <button class="btn gh sm" id="reload" style="white-space:nowrap;flex:none">${V.loading ? '<span class="spin"></span>' : "새로고침"}</button>
     </div></div>
     <div class="wrap">${api && D.meta && D.meta.v && D.meta.v < SERVER_EXPECT
       ? `<div class="vwarn">서버가 예전 버전(${esc(D.meta.v)})입니다. 기간 설문 시트·카드 지급·공지·학생 삭제가 동작하지 않을 수 있으니 apps-script.gs를 새 버전으로 배포해 주세요.</div>` : ""}${inner}</div>`;
@@ -609,7 +620,7 @@ function viewReview() {
     <div class="panel">
       <div class="ph">
         <h2>인증 검토</h2>
-        <span class="sub">캡처를 확인하고 승인 또는 반려해 주세요</span>
+        <span class="sub">캡처를 확인하고 승인 또는 반려해 주세요 · 단축키 <b>A</b> 승인 · <b>R</b> 반려 (맨 위 카드)</span>
         <div class="right">
           ${V.revFilter === "wait" && list.length ? `<button class="btn sm" id="okall">대기 ${list.length}건 모두 승인</button>` : ""}
           <select class="sel" id="rf">
@@ -1033,6 +1044,137 @@ function bindField() {
   });
 }
 
+
+/* ───────── 반려 사유 고르기 ─────────
+   자주 쓰는 사유를 눌러 고르거나 직접 적는다. 학생 화면에 그대로 보이므로 문장으로 둔다. 취소하면 null */
+const REJECT_PRESETS = [
+  "인증 항목과 다른 화면입니다",
+  "신청 완료 화면이 아닙니다 (프로그램 안내·목록 화면)",
+  "다른 프로그램의 참여 기록입니다",
+  "다른 사람의 캡처로 보입니다",
+  "화면이 잘리거나 흐려서 확인할 수 없습니다",
+];
+function askReason(title, note, extra) {
+  return new Promise(done => {
+    const list = (extra || []).concat(REJECT_PRESETS);
+    const z = document.createElement("div");
+    z.className = "rsn";
+    z.innerHTML = `<div class="rsnb" role="dialog" aria-modal="true" aria-label="반려 사유">
+      <h3>${esc(title)}</h3>${note ? `<p class="note">${esc(note)}</p>` : ""}
+      <div class="rsnl">${list.map((t, i) => `<button class="rsnp" data-i="${i}">${esc(t)}</button>`).join("")}</div>
+      <textarea id="rsnt" maxlength="100" placeholder="직접 적기 (학생 화면에 그대로 보입니다)"></textarea>
+      <div class="frm" style="justify-content:flex-end;margin-top:10px">
+        <button class="btn gh sm" id="rsnx">취소</button><button class="btn sm danger" id="rsno">반려하기</button></div></div>`;
+    document.body.appendChild(z);
+    const ta = z.querySelector("#rsnt");
+    const close = v => { z.remove(); document.removeEventListener("keydown", key); done(v); };
+    const key = e => { if (e.key === "Escape") close(null); };
+    document.addEventListener("keydown", key);
+    z.querySelectorAll(".rsnp").forEach(b => b.onclick = () => {
+      z.querySelectorAll(".rsnp").forEach(x => x.classList.toggle("on", x === b)); ta.value = list[+b.dataset.i]; ta.focus(); });
+    z.querySelector("#rsnx").onclick = () => close(null);
+    z.onclick = e => { if (e.target === z) close(null); };
+    z.querySelector("#rsno").onclick = () => { const v = ta.value.trim(); if (!v) { toast("사유를 고르거나 적어 주세요"); ta.focus(); return; } close(v); };
+    setTimeout(() => ta.focus(), 0);
+  });
+}
+
+/* ───────── TABS 현황 (더미래페스티벌 부스 이벤트) ─────────
+   TABS 설문 인증을 한 학생 목록. 캡처를 보고 바로 승인·반려하고, 전기손난로 수령 완료를 표시한다. */
+const HAND = "전기손난로", HAND_TOTAL = 30;          // 준비 수량 (기획안)
+const BOOTH_DAY = Date.parse("2026-11-10T00:00:00+09:00");   // 이보다 먼저 인증했으면 '사전 인증'
+function tabsRows() {
+  return (D.proofs || []).filter(p => p.key === "tabs").map(p => {
+    const st = D.students.find(x => String(x.sid) === String(p.sid)) || {};
+    const g = (st.adm && st.adm.gifts) || {};
+    return { p, st, sid: String(p.sid), name: p.name || st.name || "", at: p.at || 0, status: p.status || "wait",
+             hand: g[HAND] || 0, shake: g["단백질 쉐이크"] || 0, follow: !!(st.claims || {}).follow, contact: st.contact || "" };
+  }).sort((a, b) => (b.at || 0) - (a.at || 0));
+}
+function viewTabs() {
+  const all = tabsRows();
+  const n = k => all.filter(k).length;
+  const given = D.students.filter(x => x.adm && x.adm.gifts && x.adm.gifts[HAND]).length;
+  const f = V.tf || "all";
+  const flt = { all: () => true, ready: r => r.status !== "no" && !r.hand, done: r => !!r.hand, wait: r => r.status === "wait", no: r => r.status === "no" }[f];
+  const rows = all.filter(flt);
+  const chip = r => r.status === "ok" ? `<span class="chip ok">승인</span>` : r.status === "no" ? `<span class="chip no">반려</span>` : `<span class="chip wait">검토 전</span>`;
+  const pre = r => r.at && r.at < BOOTH_DAY ? `<span class="chip ok" title="부스 운영일 전에 인증">사전</span>` : `<span class="chip wait" title="부스 운영일 당일·이후 인증">당일</span>`;
+  return shell(`
+    <div class="cards">
+      <div class="kpi hl"><div class="l">TABS 인증</div><div class="v">${all.length}</div><div class="s">사전 인증 ${n(r => r.at && r.at < BOOTH_DAY)}명</div></div>
+      <div class="kpi"><div class="l">검토</div><div class="v">${n(r => r.status === "wait")}</div><div class="s">승인 ${n(r => r.status === "ok")} · 반려 ${n(r => r.status === "no")}</div></div>
+      <div class="kpi"><div class="l">${HAND} 지급</div><div class="v">${given} <span style="font-size:15px;color:var(--mist)">/ ${HAND_TOTAL}</span></div>
+        <div class="s">${given >= HAND_TOTAL ? "모두 소진" : "남은 수량 " + (HAND_TOTAL - given) + "개"}</div></div>
+      <div class="kpi"><div class="l">받을 수 있는 학생</div><div class="v">${n(r => r.status !== "no" && !r.hand)}</div><div class="s">인증했고 아직 안 받음</div></div>
+    </div>
+    <div class="panel">
+      <div class="ph"><h2>TABS 인증 학생</h2><span class="sub">${rows.length}명 표시 · 최근 인증 순 · '사전'은 11월 10일 전에 인증</span>
+        <div class="right"><input class="search" id="tq" placeholder="이름 또는 학번" value="${esc(V.tq || "")}">
+          <select id="tf">${[["all", "전체"], ["ready", HAND + " 미수령"], ["done", "수령 완료"], ["wait", "검토 전"], ["no", "반려"]]
+            .map(([k, l]) => `<option value="${k}" ${f === k ? "selected" : ""}>${l}</option>`).join("")}</select>
+          <button class="btn gh sm" id="tcsv">CSV</button></div></div>
+      <div class="pb flush"><div class="scroll" style="max-height:none"><table class="ttab">
+        <thead><tr><th>캡처</th><th>이름</th><th>학번</th><th>인증 시각</th><th>검토</th><th>${HAND}</th><th>팔로우·쉐이크</th></tr></thead>
+        <tbody>${rows.length ? rows.map(r => `<tr data-q="${esc((String(r.name) + r.sid).replace(/\s/g, ""))}">
+          <td>${r.p.img ? `<a href="${esc(origUrl(r.p.img))}" target="_blank" rel="noopener"><img class="tth" loading="lazy" referrerpolicy="no-referrer" src="${esc(imgUrl(r.p.img))}" alt="TABS 캡처"></a>` : `<span class="note">올리는 중</span>`}</td>
+          <td><b>${esc(r.name)}</b>${r.contact ? `<div class="note">${esc(String(r.contact).replace(/\D/g, "").slice(-4) ? "연락처 끝 " + String(r.contact).replace(/\D/g, "").slice(-4) : "")}</div>` : ""}</td>
+          <td style="color:var(--mist)">${esc(r.sid)}</td>
+          <td style="white-space:nowrap">${when(r.at)} ${pre(r)}</td>
+          <td style="white-space:nowrap">${chip(r)}${r.status === "no" && r.p.reason ? `<div class="note">${esc(r.p.reason)}</div>` : ""}
+            ${api && r.status !== "ok" ? `<button class="lnk" data-tok="${esc(r.sid)}">승인</button>` : ""}
+            ${api && r.status !== "no" ? `<button class="lnk bad" data-tno="${esc(r.sid)}">반려</button>` : ""}</td>
+          <td style="white-space:nowrap">${r.hand ? `<span class="chip ok">수령 완료</span><div class="note">${when(r.hand)} <button class="lnk" data-thu="${esc(r.sid)}">취소</button></div>`
+            : r.status === "no" ? `<span class="note">대상 아님</span>`
+            : api ? `<button class="btn sm" data-thg="${esc(r.sid)}" ${given >= HAND_TOTAL ? "disabled" : ""}>수령 완료</button>` : ""}</td>
+          <td style="white-space:nowrap">${!r.follow ? `<span class="note">팔로우 인증 없음</span>`
+            : r.shake ? `<span class="chip ok">쉐이크 수령</span>` : api ? `<button class="btn gh sm" data-tsg="${esc(r.sid)}">쉐이크 수령 완료</button>` : ""}</td>
+        </tr>`).join("") : `<tr><td colspan="7"><div class="empty">${all.length ? "조건에 맞는 학생이 없습니다." : "아직 TABS 인증이 없습니다."}</div></td></tr>`}</tbody>
+      </table></div></div>
+    </div>`);
+}
+function bindTabs() {
+  if (V.tab !== "tabs") return;
+  const q = $("tq");
+  // 검색은 다시 그리지 않고 줄만 숨긴다 (한글 입력이 끊기지 않도록)
+  const apply = () => { const v = String(q.value || "").replace(/\s/g, ""); V.tq = q.value;
+    app.querySelectorAll(".ttab tr[data-q]").forEach(tr => { tr.style.display = !v || tr.dataset.q.indexOf(v) >= 0 ? "" : "none"; }); };
+  if (q) { q.oninput = apply; apply(); }
+  $("tf") && ($("tf").onchange = e => { V.tf = e.target.value; render(); });
+  const giftSet = async (sid, item, on, b) => {
+    b.disabled = true;
+    try { const j = await adminPost({ action: "gift", sid, item, on });
+      const st = D.students.find(x => String(x.sid) === sid); if (st) { st.adm = st.adm || {}; st.adm.gifts = j.gifts; }
+      toast(on ? `${item} 수령 완료로 표시했습니다` : `${item} 수령 표시를 취소했습니다`); render(); }
+    catch (err) { b.disabled = false; toast(err && err.message === "already gift" ? "이미 받은 학생입니다 (다른 팀원이 먼저 처리)" : errMsg(err)); }
+  };
+  app.querySelectorAll("[data-thg]").forEach(b => b.onclick = () => giftSet(b.dataset.thg, HAND, true, b));
+  app.querySelectorAll("[data-thu]").forEach(b => b.onclick = () => { if (confirm(`${HAND} 수령 표시를 취소할까요?`)) giftSet(b.dataset.thu, HAND, false, b); });
+  app.querySelectorAll("[data-tsg]").forEach(b => b.onclick = () => giftSet(b.dataset.tsg, "단백질 쉐이크", true, b));
+  const setStatus = async (sid, status, b) => {
+    let reason = "";
+    if (status === "no") {
+      const r = await askReason("TABS 인증 반려", "이 인증으로 받은 카드 7장과 그 카드로 뽑은 카드가 회수되고, 학생에게 사유와 재인증 요청이 뜹니다.",
+        ["TABS 설문 완료 화면이 아닙니다"]);
+      if (r === null) return; reason = r;
+    }
+    b.disabled = true;
+    try {
+      const j = await review(sid, "tabs", status, reason);
+      const p = D.proofs.find(x => String(x.sid) === sid && x.key === "tabs"); if (p) { p.status = status; p.reason = reason; }
+      const sc = j && j.sanction, st = D.students.find(x => String(x.sid) === sid);
+      if (sc && sc.ok && st) { if (sc.adm) st.adm = sc.adm; if (sc.student) Object.assign(st, sc.student); }
+      toast(status === "ok" ? "승인했습니다" : "반려하고 TABS 카드를 회수했습니다"); render();
+    } catch (err) { b.disabled = false; toast(errMsg(err)); }
+  };
+  app.querySelectorAll("[data-tok]").forEach(b => b.onclick = () => setStatus(b.dataset.tok, "ok", b));
+  app.querySelectorAll("[data-tno]").forEach(b => b.onclick = () => setStatus(b.dataset.tno, "no", b));
+  $("tcsv") && ($("tcsv").onclick = () => csv([["이름", "학번", "인증 시각", "사전/당일", "검토", "반려 사유", HAND + " 수령", "팔로우 인증", "쉐이크 수령", "연락처"]]
+    .concat(tabsRows().map(r => [r.name, r.sid, r.at ? new Date(r.at).toLocaleString("ko-KR") : "", r.at && r.at < BOOTH_DAY ? "사전" : "당일",
+      { ok: "승인", wait: "검토 전", no: "반려" }[r.status], r.p.reason || "", r.hand ? new Date(r.hand).toLocaleString("ko-KR") : "",
+      r.follow ? "O" : "", r.shake ? new Date(r.shake).toLocaleString("ko-KR") : "", r.contact])), "TABS현황_" + new Date().toISOString().slice(0, 10)));
+}
+
 /* ───────── 운영 보고서 (미래융합교육혁신원 보고용) ─────────
    지금 불러온 데이터로 바로 만든다. [인쇄 · PDF로 저장]은 보고서 부분만 인쇄하고,
    [HTML로 저장]은 그래프까지 들어 있는 파일 하나로 내려받는다. */
@@ -1231,6 +1373,9 @@ const REPORT_CSS = `
 .retc{font-size:11px;color:#4A5568;margin-top:6px;line-height:1.9}.retc span{display:inline-block;background:#F4F6FA;border-radius:6px;padding:0 7px;margin:0 4px 0 0}
 .rf{margin-top:26px;padding-top:10px;border-top:1px solid #E3E7EF;font-size:10.5px;color:#9AA3B5;text-align:center}
 *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+@media (max-width:640px){ .rep{padding:18px 14px;border-radius:10px} .rep h1{font-size:20px}
+  .rkpi{grid-template-columns:repeat(2,1fr)} .rbr{grid-template-columns:96px 1fr 70px}
+  .rep .rt{display:block;overflow-x:auto;white-space:nowrap} .rep svg{max-width:100%} }
 `;
 
 function viewReport() {
@@ -1357,7 +1502,7 @@ function viewReferral() {
 }
 
 /* ── 운영 ── */
-const SERVER_EXPECT = "2026-10-31";
+const SERVER_EXPECT = "2026-11-01";
 function errMsg(e) {
   const m = e && e.message;
   return m === "auth" ? "담당자 코드가 맞지 않습니다" : m === "not found" ? "학생을 찾지 못했습니다"
@@ -1887,6 +2032,7 @@ function render() {
   else if (V.tab === "poll") app.innerHTML = viewPoll();
   else if (V.tab === "report") app.innerHTML = viewReport();
   else if (V.tab === "field") app.innerHTML = viewField();
+  else if (V.tab === "tabs") app.innerHTML = viewTabs();
   else if (V.tab === "rating") app.innerHTML = viewRating();
   else if (V.tab === "referral") app.innerHTML = viewReferral();
   else if (V.tab === "exchange") app.innerHTML = viewExchange();
@@ -1951,9 +2097,22 @@ function bindOps() {
   bk("bkoff", "off", "자동 백업을 껐습니다");
 }
 
+/* 인증 검토 단축키: 글자 입력 중이 아닐 때 A=맨 위 카드 승인, R=맨 위 카드 반려 */
+document.addEventListener("keydown", e => {
+  if (!authed || V.tab !== "review" || e.ctrlKey || e.metaKey || e.altKey) return;
+  const ae = document.activeElement;
+  if (ae && ae.matches && ae.matches("input,textarea,select") || document.querySelector(".rsn,.qrfull,#drawer,.zoom")) return;
+  const k = e.key.toLowerCase();
+  const sel = k === "a" ? "[data-ok]" : k === "r" ? "[data-no]" : "";
+  if (!sel) return;
+  const b = app.querySelector(sel + ":not([disabled])");
+  if (b) { e.preventDefault(); b.click(); }
+});
+
 function bind() {
   bindOps();
   bindField();
+  bindTabs();
   if (typeof bindReport === "function") bindReport();
   app.querySelectorAll("[data-tab]").forEach(el => el.onclick = () => { V.tab = el.dataset.tab; render(); });
   $("reload") && ($("reload").onclick = () => load());
@@ -1974,13 +2133,11 @@ function bind() {
     const n = rewardFor(who, it.key);
     let reason = "";
     if (st === "no") {
-      const r = prompt(`${who ? who.name : it.sid} 학생의 '${proofLabel(it.key)}' 인증 반려 사유를 적어 주세요.\n`
-        + `학생 화면에 그대로 보입니다. (예: 신청 완료 화면이 아니라 프로그램 안내 화면입니다)\n\n`
-        + `· 이 인증으로 받은 카드 ${n}장과 그 카드로 뽑은 카드만 회수하고, 그 전에 모은 카드는 그대로 둡니다.\n`
-        + `· 학생에게 재인증 요청이 뜹니다.`, "");
+      const r = await askReason(`${who ? who.name : it.sid} · ${proofLabel(it.key)} 반려`,
+        `이 인증으로 받은 카드 ${n}장과 그 카드로 뽑은 카드만 회수하고, 학생에게 사유와 재인증 요청이 뜹니다.`,
+        it.key === "tabs" ? ["TABS 설문 완료 화면이 아닙니다"] : []);
       if (r === null) return;
-      reason = r.trim();
-      if (!reason) return toast("반려 사유를 적어 주세요 (학생 화면에 보입니다)");
+      reason = r;
     }
     if (st !== "ok" && it.status === "no" && api && !confirm(`반려를 취소할까요?\n회수했던 카드만큼 미개봉 카드로 돌려줍니다.`)) return;
     btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';

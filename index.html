@@ -226,6 +226,12 @@
   .prow span.stp{color:var(--dim);box-shadow:inset 0 0 0 1px var(--rule)}
   .prow span.stp.ok{color:var(--ok);box-shadow:inset 0 0 0 1px rgba(78,216,160,.35)}
   .prow .stp + .stp{margin-left:-3px}
+  .warn.amsg{display:flex;gap:12px;align-items:center}
+  .warn.amsg>div{flex:1}
+  .warn.amsg .aok{flex:none;padding:8px 14px;border:none;border-radius:999px;font-size:13px;font-weight:700;
+    color:#1A1608;background:linear-gradient(180deg,#FFD873,#FFC23D)}
+  .ptip{margin:6px 0 0;padding-left:18px;color:var(--mist);font-size:13px;line-height:1.7}
+  .ptip b{color:var(--foam)}
   .src.tabs{box-shadow:var(--lift),inset 0 0 0 1px rgba(255,201,74,.35)}
   .src.tabs .ttag{display:inline-block;margin:6px 0 2px;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:700;
     color:var(--beam);background:rgba(255,201,74,.12)}
@@ -1461,7 +1467,30 @@ function startOffline(baseSavedAt) {
   scheduleRetry();
 }
 
-async function persist(quiet) {
+/* 저장은 한 번에 하나씩: 앞 저장이 끝나기 전에 또 저장하면(가입 직후 QR·인증·뽑기가 겹칠 때)
+   서버에 같은 학생 요청이 동시에 들어가 줄이 겹치거나 순서가 뒤바뀔 수 있다.
+   기다리는 동안 들어온 요청은 하나로 합쳐 마지막 상태만 보낸다. */
+let saveChain = null, savePending = null;
+function persist(quiet) {
+  if (!S) return Promise.resolve(false);
+  store.keep(S.sid, S);             // 기기에는 바로 남긴다 → 화면은 서버 응답을 기다리지 않고 진행해도 안전
+  if (saveChain) {
+    if (!savePending) {
+      let q = true;
+      savePending = { set quiet(v) { q = q && v; }, get quiet() { return q; } };
+      savePending.p = saveChain.then(() => { const pq = savePending.quiet; savePending = null; return runPersist(pq); });
+    }
+    savePending.quiet = !!quiet;
+    return savePending.p;
+  }
+  return runPersist(quiet);
+}
+function runPersist(quiet) {
+  const p = persistNow(quiet).finally(() => { if (saveChain === p) saveChain = null; });
+  saveChain = p;
+  return p;
+}
+async function persistNow(quiet) {
   if (!S) return false;
   const sid = S.sid;
   try {
@@ -1850,9 +1879,10 @@ function viewGet() {
   const rejected = Object.keys(S.proofs || {}).filter(k => S.proofs[k].status === "no");
 
   return shell(`
-    ${S.adminNote && Date.now() - S.adminNote < 14 * 864e5 && S.adminMsg
-        && !(S.adminMsg.via === "revoke" && (rejected.indexOf(S.adminMsg.key) >= 0 || S.claims[S.adminMsg.key])) ? `<div class="warn">
-      ${esc(adminMsgText(S.adminMsg))}${S.adminMsg.reason ? `<br><b>사유</b> · ${esc(S.adminMsg.reason)}` : ""}
+    ${S.adminNote && Date.now() - S.adminNote < 14 * 864e5 && S.adminMsg && S.adminNoteSeen !== S.adminNote
+        && !(S.adminMsg.via === "revoke" && (rejected.indexOf(S.adminMsg.key) >= 0 || S.claims[S.adminMsg.key])) ? `<div class="warn amsg">
+      <div>${esc(adminMsgText(S.adminMsg))}${S.adminMsg.reason ? `<br><b>사유</b> · ${esc(S.adminMsg.reason)}` : ""}</div>
+      <button class="aok" id="amsgok">확인</button>
     </div>` : ""}
     ${rejected.length ? `<div class="warn">
       ${rejected.map(k => `<div style="margin-bottom:6px"><b>${esc(proofLabel(k))}</b> 인증이 반려되었어요.
@@ -2271,6 +2301,16 @@ function proofStatus(key) {
 }
 const ST_TEXT = { wait: "검토중", ok: "승인", no: "반려" };
 
+/* 인증 창의 '이런 화면을 올려 주세요' 안내 — 반려를 줄이려고 항목마다 확인할 점을 적는다 */
+function proofTips(key) {
+  const name = (PROGRAMS.find(p => p.id === String(key).split(":")[1]) || {}).name || "";
+  if (key === "follow") return ["@yonsei_lighthouse 프로필에서 <b>'팔로잉'</b> 버튼이 보이는 화면", "내 계정에서 찍은 화면이면 충분해요"];
+  if (key === "tabs") return ["TABS 설문을 끝까지 마친 뒤의 <b>'완료'</b> 화면", "설문 시작 화면이나 중간 화면은 반려돼요"];
+  if (String(key).indexOf("apply:") === 0) return [`With Yonsei에서 <b>${esc(name)}</b> 신청을 마친 <b>신청 완료·신청 내역</b> 화면`, "프로그램 이름이 보이게 찍어 주세요 · 안내·목록 화면은 반려돼요"];
+  if (String(key).indexOf("done:") === 0) return [`WithYONSEI <b>참여기록</b>에서 <b>${esc(name)}</b> 활동이 보이는 화면`, "다른 프로그램의 참여 기록은 반려돼요"];
+  return [];
+}
+
 /* TABS 설문 인증 칸 — 인증 상태가 부스에서 전기손난로를 받는 조건이라 크게 보여 준다 */
 function tabsOpen() {
   const T = CONFIG.TABS;
@@ -2423,8 +2463,9 @@ const Proof = {
     m.innerHTML = `
       <div class="sheet">
         <h3>인증 제출</h3>
-        <p class="desc">${proofLabel(key)}을(를) 캡처해서 올려주세요.<br>
-        등대팀이 확인하며, 허위 제출 시 굿즈 교환이 제한됩니다.</p>
+        <p class="desc">${proofLabel(key)}을(를) 캡처해서 올려주세요.</p>
+        <ul class="ptip">${proofTips(key).map(t => `<li>${t}</li>`).join("")}</ul>
+        <p class="desc" style="margin-top:6px">등대팀이 확인하며, 다른 화면이나 다른 사람의 캡처는 반려되고 그 인증으로 받은 카드는 회수돼요.</p>
         <div class="up" id="upBox">
           <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#8FA3C4" stroke-width="1.6">
             <path d="M12 16V4M12 4L7 9M12 4l5 5"/><path d="M4 17v2a1 1 0 001 1h14a1 1 0 001-1v-2"/>
@@ -3289,7 +3330,7 @@ function bindLogin() {
         else if (welcome)
           msg = `시작 카드 ${welcome}장을 받았어요. 뽑기 탭에서 열어보세요!`;
       }
-      await persist(true);     // 실패해도 기기에 백업되고 알아서 다시 보낸다
+      persist(true);           // 기다리지 않는다: 기기에 바로 백업되고, 서버 저장은 뒤에서 (실패하면 알아서 다시 보냄)
     } catch (e) {
       // 추천인 확인 등에서 난 오류. 불러오기는 이미 성공했으므로 지금 기록으로 계속한다
       if (!S) S = normalize(loaded) || blank(sid, nm);
@@ -3343,6 +3384,9 @@ function bind() {
 
   // 보관함 카드 눌러서 크게 보기
   app.querySelectorAll("[data-cid]").forEach(el => el.onclick = () => showCard(el.dataset.cid));
+
+  // 등대팀 안내 확인 → 다시 띄우지 않음 (다른 기기에서도 사라지도록 기록에 남긴다)
+  $("amsgok") && ($("amsgok").onclick = () => { S.adminNoteSeen = S.adminNote; render(); persist(true); });
 
   // 외부 링크
   app.querySelectorAll("[data-open]").forEach(el => el.onclick = () => {
@@ -3431,7 +3475,7 @@ function bind() {
       S.quizWeek = weekKey();
       S.pending += CONFIG.REWARD.quiz;
       logPush({ k: "g", n: CONFIG.REWARD.quiz, key: "quiz:" + S.quizWeek });
-      await persist();
+      persist(true);
     }
     V.quizOpen = false; V.quizPick = null; V.svPick = null; V.svEtc = "";
     toast(gained ? `카드 ${CONFIG.REWARD.quiz}장을 받았습니다!` : "이번 주 퀴즈는 이미 참여했어요.");
@@ -3507,7 +3551,7 @@ function bind() {
       if (types() === CARDS.length && !S.completedAt) S.completedAt = Date.now();
       V.newDone = doneTiers().filter(t => before.indexOf(t) < 0);
       V.drawn = got; V.busy = false;
-      await persist();
+      persist(true);           // 기다리지 않는다: 뽑은 결과는 기기에 바로 저장되고, 서버 저장은 연출 중에 뒤에서
       Stage.start(got);
     }, 620);
   };

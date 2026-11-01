@@ -201,6 +201,17 @@
   .ttab td{vertical-align:middle}
   .ttab .lnk{background:none;border:none;color:var(--info);font-size:12px;cursor:pointer;padding:0 4px;text-decoration:underline}
   .ttab .lnk.bad{color:var(--bad)}
+  .fbar{position:sticky;top:64px;z-index:5;margin:0 0 14px;padding:10px 12px;border-radius:14px;background:rgba(10,20,40,.92);
+    border:1px solid var(--line);backdrop-filter:blur(8px)}
+  .fsum{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--mist);margin-bottom:8px}.fsum b{color:var(--beam);font-size:14px}
+  .fsub{display:flex;gap:6px;overflow-x:auto}
+  .fsub button{flex:none;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:none;color:var(--mist);font-size:13px;font-weight:700;cursor:pointer}
+  .fsub button.on{background:var(--beam);color:#13203A;border-color:var(--beam)}
+  .fsub button i{font-style:normal;display:inline-block;min-width:18px;padding:0 5px;margin-left:4px;border-radius:999px;background:var(--bad);color:#fff;font-size:11px}
+  .fsub button.on i{background:#13203A;color:var(--beam)}
+  input.mini{width:54px;padding:3px 6px;margin:0 3px;border-radius:6px;border:1px solid var(--line);background:rgba(0,0,0,.25);color:var(--foam);font-size:13px}
+  tr.dim td{opacity:.6}
+  .rcn{padding:6px 0;border-bottom:1px solid var(--line);font-size:13px}.rcn:last-child{border-bottom:none}
   .fgifts{display:flex;flex-direction:column;gap:8px;margin-top:12px}
   .fgift{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;border-radius:10px;
     background:rgba(255,201,74,.07);border:1px solid rgba(255,201,74,.25)}
@@ -505,7 +516,7 @@ async function checkServer() {
 
 /* ── 화면: 공통 틀 ── */
 function shell(inner) {
-  const tabs = [["home", "현황"], ["field", "현장"], ["tabs", "TABS"], ["review", "인증 검토"], ["students", "참여자"],
+  const tabs = [["home", "현황"], ["field", "현장·경품"], ["review", "인증 검토"], ["students", "참여자"],
                 ["referral", "추천"], ["poll", "기간 설문"], ["survey", "퀴즈 설문"], ["rating", "만족도"], ["exchange", "교환"], ["report", "보고서"], ["ops", "운영"]];
   const w = D.proofs.filter(p => p.status === "wait").length;
   return `
@@ -910,7 +921,14 @@ function viewField() {
   const pick = !st && matches.length > 1 ? `<div class="fpick"><p class="note" style="margin:10px 0 6px">'${esc(q)}' 학생이 ${matches.length}명입니다. 학번을 확인하고 골라 주세요.</p>
     ${matches.map(x => `<button class="fpk" data-fpick="${esc(x.sid)}"><b>${esc(x.name)}</b><span>${esc(x.sid)}</span>
       <span class="note">보유 ${x.types}종 · 미개봉 ${x.pending}장 · ${tail(x.contact)}</span></button>`).join("")}</div>` : "";
-  return shell(`
+  const sub = V.fsub || "lookup";
+  const gcount = it => D.students.filter(x => x.adm && x.adm.gifts && x.adm.gifts[it]).length;
+  const fin = finalRows(), finDone = fin.filter(r => r.got).length;
+  const exWait = (D.exchanges || []).filter(x => x.status !== "done").length;
+  const live = evs.filter(evLive).length;
+  const subs = [["lookup", "학생 조회"], ["qr", "현장 QR" + (live ? ` <i>${live}</i>` : "")], ["tabs", "TABS 명단"],
+                ["final", "최종 경품" + (exWait ? ` <i>${exWait}</i>` : "")]];
+  const body = sub === "qr" ? `
     <div class="panel">
       <div class="ph"><h2>현장 이벤트 QR</h2><span class="sub">학생이 폰 카메라로 QR을 찍으면 사이트가 열리면서 카드가 바로 들어갑니다 (로그인 전이면 로그인 직후)</span></div>
       <div class="pb">
@@ -930,12 +948,7 @@ function viewField() {
       </div>
     </div>
 
-    <div class="panel">
-      <div class="ph"><h2>부스 경품 지급 현황</h2>
-        <span class="chip wait">전기손난로 ${D.students.filter(x => x.adm && x.adm.gifts && x.adm.gifts["전기손난로"]).length}개 지급</span>
-        <span class="chip wait">단백질 쉐이크 ${D.students.filter(x => x.adm && x.adm.gifts && x.adm.gifts["단백질 쉐이크"]).length}개 지급</span></div>
-      <div class="pb" style="padding-bottom:0"><p class="note" style="margin:0">TABS 인증·팔로우 인증을 확인하고 경품을 건넨 뒤 [지급]을 눌러 두면, 같은 학생이 다시 와도 '지급함'으로 보입니다.</p></div>
-    </div>
+` : sub === "tabs" ? tabsInner() : sub === "final" ? finalHTML(fin) : `
     <div class="panel">
       <div class="ph"><h2>학생 조회</h2><span class="sub">학번 또는 이름을 넣으면 카드 현황·인증·교환 상태를 보고 바로 지급합니다</span></div>
       <div class="pb">
@@ -944,8 +957,59 @@ function viewField() {
         ${q ? (st ? (matches.length > 1 || V.fsel ? `<p class="note" style="margin:10px 0 0">${V.fsel && matches.length > 1 ? `<button class="lnk" id="fback">← 동명이인 목록으로</button>` : ""}</p>` : "") + fieldStudent(st)
               : pick || `<p class="note" style="margin-top:10px">'${esc(q)}'(으)로 찾은 참여 기록이 없습니다. 학번·이름을 확인하거나 [새로고침] 후 다시 조회해 보세요.</p>`) : ""}
       </div>
-    </div>`);
+    </div>
+    ${recentHTML()}`;
+  return shell(`
+    <div class="fbar">
+      <div class="fsum">
+        <span>전기손난로 <b>${gcount(HAND)}</b>/${HAND_TOTAL}</span><span>단백질 쉐이크 <b>${gcount("단백질 쉐이크")}</b></span>
+        <span>진행 중 QR <b>${live}</b></span><span>최종 경품 <b>${finDone}</b>/${fin.length}</span><span>굿즈 교환 대기 <b>${exWait}</b></span>
+      </div>
+      <div class="fsub" role="tablist">${subs.map(([k, l]) => `<button class="${sub === k ? "on" : ""}" data-fsub="${k}" role="tab" aria-selected="${sub === k}">${l}</button>`).join("")}</div>
+    </div>
+    ${body}`);
 }
+
+/* 최종 경품: 순위 상위 N명(학기 말 실물 S급 카드·경품) + 아직 안 준 굿즈 교환 */
+const FINAL_ITEM = "최종 순위 경품";
+function finalN() { try { return Math.max(1, Math.min(50, parseInt(localStorage.getItem("dingle:finalN"), 10) || 10)); } catch (e) { return 10; } }
+function finalRows() {
+  const l = rankList(); l.forEach((x, i) => { if (x.rank === null) x.rank = l[i - 1].rank; });
+  const n = finalN();
+  return l.filter(x => x.rank <= n).map(x => ({ x, rank: x.rank, got: (x.adm && x.adm.gifts || {})[FINAL_ITEM] || 0 }));
+}
+function finalHTML(fin) {
+  const ex = (D.exchanges || []).filter(x => x.status !== "done").slice().sort((a, b) => (a.at || 0) - (b.at || 0));
+  const name = sid => (D.students.find(x => String(x.sid) === String(sid)) || {}).name || "";
+  return `<div class="panel">
+      <div class="ph"><h2>최종 순위 경품</h2><span class="sub">순위 상위 <input id="finN" type="number" min="1" max="50" value="${finalN()}" class="mini">등까지 · 같은 종수는 26종을 먼저 모은 순 · 순위 제외 학생은 빠짐</span>
+        <div class="right"><button class="btn gh sm" id="fincsv">명단 CSV</button></div></div>
+      <div class="pb flush"><table>
+        <thead><tr><th class="num">등수</th><th>이름</th><th>학번</th><th class="num">보유</th><th>연락처</th><th>수령</th></tr></thead>
+        <tbody>${fin.length ? fin.map(r => `<tr class="${r.got ? "dim" : ""}"><td class="num"><b>${r.rank}</b></td><td><b>${esc(r.x.name)}</b></td>
+          <td style="color:var(--mist)">${esc(r.x.sid)}</td><td class="num">${r.x.types}종</td><td style="color:var(--mist)">${esc(r.x.contact) || "-"}</td>
+          <td style="white-space:nowrap">${r.got ? `<span class="chip ok">수령 완료</span> <span class="note">${when(r.got)}</span> <button class="lnk" data-fnu="${esc(r.x.sid)}">취소</button>`
+            : api ? `<button class="btn sm" data-fng="${esc(r.x.sid)}">수령 완료</button>` : ""}</td></tr>`).join("")
+          : `<tr><td colspan="6"><div class="empty">아직 참여자가 없습니다.</div></td></tr>`}</tbody></table></div>
+    </div>
+    <div class="panel">
+      <div class="ph"><h2>굿즈 교환 대기</h2><span class="sub">등급을 완성해 교환을 신청한 학생 · 오래된 순</span></div>
+      <div class="pb flush"><table>
+        <thead><tr><th>신청</th><th>이름</th><th>학번</th><th>등급</th><th>선물</th><th>연락처</th><th></th></tr></thead>
+        <tbody>${ex.length ? ex.map(x => `<tr><td style="color:var(--mist);white-space:nowrap">${when(x.at)}</td><td><b>${esc(x.name || name(x.sid))}</b></td>
+          <td style="color:var(--mist)">${esc(x.sid)}</td><td><b>${esc(x.tier)}</b></td><td>${esc(x.goods || "")}</td><td style="color:var(--mist)">${esc(x.contact || "")}</td>
+          <td>${api ? `<button class="btn sm" data-fxd="${esc(x.sid)}|${esc(x.tier)}">지급 완료</button>` : ""}</td></tr>`).join("")
+          : `<tr><td colspan="7"><div class="empty">대기 중인 교환 신청이 없습니다.</div></td></tr>`}</tbody></table></div>
+    </div>`;
+}
+/* 최근 처리: 경품 지급·현장 지급 기록 8건 (다른 팀원이 방금 처리한 것도 보이게) */
+function recentHTML() {
+  const l = (D.grants || []).filter(g => /^\[경품\]|현장 지급/.test(g.reason || "")).slice(0, 8);
+  if (!l.length) return "";
+  return `<div class="panel"><div class="ph"><h2>최근 처리</h2><span class="sub">경품 지급·현장 카드 지급 · 최근 8건</span></div>
+    <div class="pb">${l.map(g => `<div class="rcn"><span class="note">${when(g.at)}</span> <b>${esc(g.name)}</b> <span class="note">${esc(g.sid)}</span> · ${esc(String(g.reason).replace("[경품] ", ""))}${g.cards ? ` · ${g.cards > 0 ? "+" : ""}${g.cards}장` : ""}</div>`).join("")}</div></div>`;
+}
+
 function fieldStudent(st) {
   const ex = (D.exchanges || []).filter(x => String(x.sid) === String(st.sid));
   const tiers = TIER_KEYS.map(t => {
@@ -961,6 +1025,7 @@ function fieldStudent(st) {
     return pr ? pr.status : (st.claims || {})[k] ? "wait" : ""; };
   const giftRow = (k, label, item) => {
     const ps = pst(k), ok = ps === "ok" || ps === "wait", given = gifts[item];
+    if (!ps && !given) return "";        // 인증도 안 했고 받은 적도 없으면 줄을 숨겨 화면을 짧게
     return `<div class="fgift ${ok ? "" : "off"}"><div><b>${label}</b>
         <span class="chip ${ps === "ok" ? "ok" : ps === "no" ? "no" : ps === "wait" ? "wait" : ""}">${ps === "ok" ? "인증 승인" : ps === "wait" ? "인증함 · 검토 전" : ps === "no" ? "반려됨" : "인증 안 함"}</span></div>
       <div>${given ? `<span class="chip ok">${esc(item)} 지급함 · ${when(given)}</span> <button class="lnk" data-gu="${esc(item)}">취소</button>`
@@ -970,7 +1035,11 @@ function fieldStudent(st) {
     <div class="fhd"><div><b style="font-size:18px">${esc(st.name)}</b> <span class="note">${esc(st.sid)}</span>
       ${st.adm && st.adm.hide ? `<span class="chip no">순위 제외</span>` : ""}${rejected ? `<span class="chip no">반려 ${rejected}건</span>` : ""}</div>
       <div class="note">보유 <b style="color:var(--foam)">${st.types}/${TOTAL_CARDS}종</b> · 미개봉 ${st.pending}장 · 연락처 ${esc(st.contact) || "-"}</div></div>
-    <div class="fgifts">${giftRow("tabs", "TABS 설문", "전기손난로")}${giftRow("follow", "인스타 팔로우", "단백질 쉐이크")}</div>
+    <div class="fgifts">${giftRow("tabs", "TABS 설문", "전기손난로")}${giftRow("follow", "인스타 팔로우", "단백질 쉐이크")}
+      ${(() => { const r = finalRows().find(z => String(z.x.sid) === String(st.sid)); if (!r) return "";
+        return `<div class="fgift"><div><b>최종 순위 ${r.rank}등</b> <span class="chip ok">경품 대상</span></div>
+          <div>${r.got ? `<span class="chip ok">${FINAL_ITEM} 지급함 · ${when(r.got)}</span> <button class="lnk" data-gu="${FINAL_ITEM}">취소</button>`
+            : `<button class="btn sm" data-gv="${FINAL_ITEM}">${FINAL_ITEM} 지급</button>`}</div></div>`; })()}</div>
     <div class="ftiers">${tiers}</div>
     ${api ? `<div class="frm" style="margin-top:12px">
       <span class="note">카드 지급</span>
@@ -998,6 +1067,29 @@ function showQR(e) {
 }
 function bindField() {
   if (V.tab !== "field") return;
+  app.querySelectorAll("[data-fsub]").forEach(b => b.onclick = () => { V.fsub = b.dataset.fsub; render();
+    if (V.fsub === "lookup") setTimeout(() => $("fsid") && $("fsid").focus(), 0); });
+  $("finN") && ($("finN").onchange = e => { try { localStorage.setItem("dingle:finalN", String(e.target.value)); } catch (er) {} render(); });
+  const fgift = async (sid, on, b) => {
+    b.disabled = true;
+    try { const j = await adminPost({ action: "gift", sid, item: FINAL_ITEM, on });
+      const st = D.students.find(x => String(x.sid) === sid); if (st) { st.adm = st.adm || {}; st.adm.gifts = j.gifts; }
+      D.grants.unshift({ at: Date.now(), sid, name: st ? st.name : "", cards: 0, reason: "[경품] " + FINAL_ITEM + (on ? " 지급" : " 지급 취소") });
+      toast(on ? "최종 경품 수령 완료로 표시했습니다" : "수령 표시를 취소했습니다"); render(); }
+    catch (err) { b.disabled = false; toast(err && err.message === "already gift" ? "이미 받은 학생입니다" : errMsg(err)); }
+  };
+  app.querySelectorAll("[data-fng]").forEach(b => b.onclick = () => fgift(b.dataset.fng, true, b));
+  app.querySelectorAll("[data-fnu]").forEach(b => b.onclick = () => { if (confirm("최종 경품 수령 표시를 취소할까요?")) fgift(b.dataset.fnu, false, b); });
+  app.querySelectorAll("[data-fxd]").forEach(b => b.onclick = async () => {
+    const [sid, tier] = b.dataset.fxd.split("|"); b.disabled = true;
+    try { await exchangeDone(sid, tier, "done");
+      const x = (D.exchanges || []).find(y => String(y.sid) === sid && y.tier === tier); if (x) x.status = "done";
+      toast(`${tier}등급 굿즈 지급 완료`); render(); }
+    catch (err) { b.disabled = false; toast(errMsg(err)); }
+  });
+  $("fincsv") && ($("fincsv").onclick = () => csv([["등수", "이름", "학번", "보유 종수", "26종 완성", "연락처", "수령"]]
+    .concat(finalRows().map(r => [r.rank, r.x.name, r.x.sid, r.x.types, r.x.done ? new Date(r.x.done).toLocaleString("ko-KR") : "", r.x.contact,
+      r.got ? new Date(r.got).toLocaleString("ko-KR") : ""])), "최종경품명단_" + new Date().toISOString().slice(0, 10)));
   $("fadd") && ($("fadd").onclick = async e => {
     const label = $("fl").value.trim(), cards = parseInt($("fc").value, 10) || 0, u = $("fu").value;
     if (!label) return toast("이벤트 이름을 적어 주세요");
@@ -1033,7 +1125,8 @@ function bindField() {
     b.disabled = true;
     try { const j = await adminPost({ action: "gift", sid: V.fsid, item, on });
       const st = D.students.find(x => String(x.sid) === V.fsid); if (st) { st.adm = st.adm || {}; st.adm.gifts = j.gifts; }
-      toast(on ? `${item} 지급으로 표시했습니다` : `${item} 지급 표시를 취소했습니다`); render(); }
+      D.grants.unshift({ at: Date.now(), sid: V.fsid, name: st ? st.name : "", cards: 0, reason: "[경품] " + item + (on ? " 지급" : " 지급 취소") });
+      toast(on ? `${item} 지급으로 표시했습니다` : `${item} 지급 표시를 취소했습니다`); render(); setTimeout(() => $("fsid") && $("fsid").select(), 0); }
     catch (err) { b.disabled = false; toast(err && err.message === "already gift" ? "이미 지급한 학생입니다 (다른 팀원이 먼저 처리)" : errMsg(err)); }
   };
   app.querySelectorAll("[data-gv]").forEach(b => b.onclick = () => gift(b.dataset.gv, true, b));
@@ -1094,7 +1187,8 @@ function tabsRows() {
              hand: g[HAND] || 0, shake: g["단백질 쉐이크"] || 0, follow: !!(st.claims || {}).follow, contact: st.contact || "" };
   }).sort((a, b) => (b.at || 0) - (a.at || 0));
 }
-function viewTabs() {
+function viewTabs() { return shell(tabsInner()); }
+function tabsInner() {
   const all = tabsRows();
   const n = k => all.filter(k).length;
   const given = D.students.filter(x => x.adm && x.adm.gifts && x.adm.gifts[HAND]).length;
@@ -1103,7 +1197,7 @@ function viewTabs() {
   const rows = all.filter(flt);
   const chip = r => r.status === "ok" ? `<span class="chip ok">승인</span>` : r.status === "no" ? `<span class="chip no">반려</span>` : `<span class="chip wait">검토 전</span>`;
   const pre = r => r.at && r.at < BOOTH_DAY ? `<span class="chip ok" title="부스 운영일 전에 인증">사전</span>` : `<span class="chip wait" title="부스 운영일 당일·이후 인증">당일</span>`;
-  return shell(`
+  return (`
     <div class="cards">
       <div class="kpi hl"><div class="l">TABS 인증</div><div class="v">${all.length}</div><div class="s">사전 인증 ${n(r => r.at && r.at < BOOTH_DAY)}명</div></div>
       <div class="kpi"><div class="l">검토</div><div class="v">${n(r => r.status === "wait")}</div><div class="s">승인 ${n(r => r.status === "ok")} · 반려 ${n(r => r.status === "no")}</div></div>
@@ -1137,7 +1231,7 @@ function viewTabs() {
     </div>`);
 }
 function bindTabs() {
-  if (V.tab !== "tabs") return;
+  if (V.tab !== "field" || V.fsub !== "tabs") return;
   const q = $("tq");
   // 검색은 다시 그리지 않고 줄만 숨긴다 (한글 입력이 끊기지 않도록)
   const apply = () => { const v = String(q.value || "").replace(/\s/g, ""); V.tq = q.value;
@@ -2139,7 +2233,7 @@ function render() {
   else if (V.tab === "poll") app.innerHTML = viewPoll();
   else if (V.tab === "report") app.innerHTML = viewReport();
   else if (V.tab === "field") app.innerHTML = viewField();
-  else if (V.tab === "tabs") app.innerHTML = viewTabs();
+  else if (V.tab === "tabs") { V.tab = "field"; V.fsub = "tabs"; app.innerHTML = viewField(); }
   else if (V.tab === "rating") app.innerHTML = viewRating();
   else if (V.tab === "referral") app.innerHTML = viewReferral();
   else if (V.tab === "exchange") app.innerHTML = viewExchange();

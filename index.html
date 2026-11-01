@@ -236,6 +236,19 @@
   .src.tabs .ttag{display:inline-block;margin:6px 0 2px;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:700;
     color:var(--beam);background:rgba(255,201,74,.12)}
   .src.tabs .tok{margin-top:10px;padding:10px 12px;border-radius:var(--r-sm);background:rgba(78,216,160,.13);color:#9FF0CC;font-size:14px;font-weight:650}
+  .daily{display:flex;align-items:center;gap:10px;margin:-6px 0 14px;padding:10px 13px;border-radius:var(--r-md);background:var(--hull2);
+    font-size:13.5px;color:var(--mist);box-shadow:inset 0 0 0 1px var(--rule)}
+  .daily.on{color:#9FF0CC;background:rgba(78,216,160,.1)}
+  .daily span{margin-left:auto;font-size:12px;color:var(--dim)}
+  .src.recap .rgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+  .src.recap .rgrid div{background:var(--sunk);border-radius:var(--r-sm);padding:10px 8px;text-align:center}
+  .src.recap .rgrid span{display:block;font-size:11.5px;color:var(--dim);margin-bottom:3px}
+  .src.recap .rgrid b{font-size:17px;color:var(--beam)}
+  .src.final{box-shadow:var(--lift),inset 0 0 0 1px rgba(255,201,74,.35)}
+  .src.final .fbig{margin:12px 0 4px;display:flex;align-items:baseline;gap:10px}
+  .src.final .fbig b{font-size:38px;font-weight:900;color:var(--beam);letter-spacing:-.03em}
+  .src.final .fbig span{color:var(--mist);font-size:14px}
+  .src.final .fprize{margin-top:8px;padding:10px 12px;border-radius:var(--r-sm);background:rgba(78,216,160,.13);color:#9FF0CC;font-weight:700}
   .src.ended .endl{margin:12px 0 0;padding-left:18px;color:var(--mist);font-size:14px;line-height:1.75}
   .src.ended .endl b{color:var(--foam)}
 
@@ -812,6 +825,9 @@ const CONFIG = {
   // 담당자 코드 (굿즈 교환 시 부스에서 입력)
   // 담당자 코드는 공개 페이지에 두지 않습니다 (Apps Script 스크립트 속성 ADMIN_CODE)
 
+  // 마감 뒤 순위 탭에 보이는 최종 결과 안내. top: 경품 대상 등수 (상위 N등), note: 안내 문구
+  FINAL: { top: 10, note: "최종 순위 상위권에는 실물 S급 딩글이 카드와 경품을 드려요. 수령 방법은 등대팀이 문자로 안내합니다." },
+
   // TABS 설문 인증 (더미래페스티벌 등대팀 부스 이벤트, 2026-11-10)
   //   on: false로 바꾸면 카드 얻기 화면에서 숨겨집니다. url은 [TABS 설문 하러 가기] 버튼이 여는 주소입니다.
   //   until: 이 날짜(한국 날짜, 그날 포함)까지만 인증할 수 있고, 다음 날부터 칸이 사라집니다.
@@ -843,7 +859,8 @@ const CONFIG = {
   REWARD: {
     welcome: 5,      // 처음 시작할 때 바로 주는 카드 (0으로 두면 지급하지 않음)
     follow: 7, quiz: 5, apply: 7, done: 10,
-    tabs: 7,         // TABS 설문 완료 인증 (더미래페스티벌 부스 이벤트)   // 2026-10-27부터 (이전: 팔로우 5 · 신청 5 · 완료 7)
+    tabs: 7,         // TABS 설문 완료 인증 (더미래페스티벌 부스 이벤트)
+    daily: 1,        // 출석 보너스: 하루 한 번 접속하면 (0으로 두면 지급하지 않음)   // 2026-10-27부터 (이전: 팔로우 5 · 신청 5 · 완료 7)
     invited: 5,      // 추천인을 입력하고 가입한 학생이 받는 카드
     referrer: 5,     // 추천한 학생이 받는 카드 (추천받은 사람이 프로그램을 인증해야 지급)
   },
@@ -1803,6 +1820,20 @@ async function claimEvent(raw, fromQR) {
     }
   } catch (e) {}
 })();
+/* 출석 보너스: 하루 한 번(한국 날짜) 접속하면 카드를 준다. 이벤트가 끝나면 주지 않는다 */
+function claimDaily() {
+  const n = Number(CONFIG.REWARD.daily) || 0;
+  if (!S || !n || eventOver()) return false;
+  const key = "daily:" + todayStr();
+  if (S.claims[key]) return false;
+  S.claims[key] = Date.now();
+  S.pending += n;
+  logPush({ k: "g", n, key });
+  S.dailyCount = (Number(S.dailyCount) || 0) + 1;
+  toast(`출석 카드 ${n}장을 받았어요! (${S.dailyCount}일째)`, 3000);
+  render(); persist(true);
+  return true;
+}
 function runPendingEvent() {
   let ev = ""; try { ev = sessionStorage.getItem("dingle:ev") || ""; } catch (e) {}
   if (!ev || !S) return;
@@ -1814,6 +1845,34 @@ function runPendingEvent() {
 /* 이벤트 마감 — 등대팀이 관리자 페이지에서 [이벤트 마감]을 누르면 서버가 알려 준다 (날짜로 자동 마감하지 않음).
    마감 뒤에는 인증·퀴즈·이벤트 코드·설문·시작 카드·추천으로 카드를 더 받을 수 없고, 받은 카드는 계속 열 수 있다. */
 function welcomeCards() { return eventOver() ? 0 : (Number(CONFIG.REWARD.welcome) || 0); }
+
+/* 마감 뒤 '내 활동 돌아보기' — 학생 기록만으로 만든다 */
+function recapHTML() {
+  const log = Array.isArray(S.log) ? S.log : [];
+  const claims = S.claims || {};
+  const proofs = Object.keys(claims).filter(k => k === "follow" || k === "tabs" || k.indexOf("apply:") === 0 || k.indexOf("done:") === 0).length;
+  const got = log.filter(e => e.k === "g" && !e.r).reduce((a, e) => a + (Number(e.n) || 0), 0)
+    || Object.values(S.owned || {}).reduce((a, b) => a + b, 0) + (S.pending || 0);
+  const firstS = log.find(e => e.k === "d" && (e.ids || []).some(id => id[0] === "S"));
+  const sId = firstS ? firstS.ids.find(id => id[0] === "S") : null;
+  const sCard = sId ? CARDS.find(c => c.id === sId) : null;
+  const days = S.createdAt ? Math.max(1, Math.round((Date.now() - S.createdAt) / 864e5)) : 0;
+  const fav = Object.keys(S.owned || {}).sort((a, b) => (S.owned[b] || 0) - (S.owned[a] || 0))[0];
+  const favCard = fav ? CARDS.find(c => c.id === fav) : null;
+  const items = [
+    ["모은 카드", `${types()} / ${CARDS.length}종`], ["받은 카드", `${got}장`],
+    ["완성한 등급", `${doneTiers().length}개`], ["인증", `${proofs}회`],
+    ["퀴즈", `${(S.quizDone || []).length}회`], ["출석", `${Number(S.dailyCount) || 0}일`],
+    days ? ["함께한 날", `${days}일`] : null,
+  ].filter(Boolean);
+  return `<div class="src recap">
+    <div class="hd"><div class="ttl">내 활동 돌아보기</div></div>
+    <div class="rgrid">${items.map(([l, v]) => `<div><span>${l}</span><b>${v}</b></div>`).join("")}</div>
+    ${sCard ? `<p class="meta" style="margin-top:12px">첫 S등급 카드는 <b>${esc(sCard.name)}</b>${firstS.t ? ` (${mdLabel(new Date(firstS.t + 9 * 3600e3).toISOString().slice(0, 10))})` : ""}</p>` : ""}
+    ${favCard && S.owned[fav] > 1 ? `<p class="meta">가장 많이 만난 카드는 <b>${esc(favCard.name)}</b> ×${S.owned[fav]}</p>` : ""}
+    <p class="note" style="margin-top:10px">한 학기 동안 등대팀과 함께해 줘서 고마워요. 다음 학기에도 만나요!</p>
+  </div>`;
+}
 function eventOver() { return !!store.closedAt; }
 function closedLabel() {
   const d = new Date(Number(store.closedAt) + 9 * 3600e3).toISOString().slice(0, 10);
@@ -1832,7 +1891,8 @@ function viewGet() {
         <li>최종 순위와 경품은 등대팀이 확인한 뒤 따로 안내해 드려요.</li>
       </ul>
       ${S.pending ? `<button class="btn" data-tab="draw" style="margin-top:14px">남은 카드 열러 가기</button>` : ""}
-    </div>`);
+    </div>
+    ${recapHTML()}`);
   const R = CONFIG.REWARD;
   const followed = !!S.claims.follow;
 
@@ -1890,6 +1950,9 @@ function viewGet() {
       반려된 인증으로 받은 카드는 회수되었어요. 아래에서 <b>재인증</b>을 눌러 다시 인증하면 카드를 다시 받을 수 있습니다.
     </div>` : ""}
     <p class="lead">학습지원 프로그램에 참여하고 인증하면 카드를 받아요. 많이 참여할수록 더 많이 모을 수 있어요.</p>
+    ${Number(R.daily) ? `<div class="daily ${S.claims["daily:" + todayStr()] ? "on" : ""}">
+      ${S.claims["daily:" + todayStr()] ? `✓ 오늘 출석 완료 · 카드 ${R.daily}장 받음` : `매일 접속하면 카드 ${R.daily}장`}
+      <span>${Number(S.dailyCount) || 0}일 출석</span></div>` : ""}
 
     ${pollsHTML()}
 
@@ -2152,11 +2215,21 @@ function viewRank() {
     // 50위 밖이면 내 순위를 따로 보여준다
     + (myRank >= 50 ? `<div class="rank sep">···</div>` + row(me, myRank) : "");
 
+  const over = eventOver(), F = CONFIG.FINAL || {}, topN = Number(F.top) || 0;
+  const inTop = !hiddenMe && topN && myRank >= 0 && myRank < topN;
+  const finalBox = over ? `<div class="src final">
+      <div class="hd"><div class="ttl">최종 결과</div><span class="st ${inTop ? "ok" : "wait"}">${closedLabel()} 마감</span></div>
+      <div class="fbig">${hiddenMe ? `<b style="color:var(--bad)">집계 제외</b>` : `<b>${myRank + 1}위</b><span>${types()}종 · 참여 ${list.length}명 중</span>`}</div>
+      ${inTop ? `<div class="fprize">🎉 상위 ${topN}등 안에 들었어요! 경품 대상입니다.</div>` : topN && !hiddenMe ? `<p class="meta">경품 대상은 상위 ${topN}등까지예요.</p>` : ""}
+      ${F.note ? `<p class="meta" style="margin-top:8px">${esc(F.note)}</p>` : ""}
+      <p class="note" style="margin-top:8px">마감 뒤에도 남은 카드를 열면 종수가 바뀔 수 있어요. 경품은 등대팀이 확정한 명단 기준입니다.</p>
+    </div>` : "";
   return shell(`
-    <div class="panel">
+    ${finalBox}
+    ${over ? "" : `<div class="panel">
       <h3>순위 집계</h3>
       <p>수집한 카드 종류 수로 순위를 매기며, 같은 종수일 경우 먼저 달성한 순서로 정합니다.</p>
-    </div>
+    </div>`}
     <p class="lead" style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
       <span>${hiddenMe ? `내 순위 <b style="color:var(--bad)">집계 제외</b>${store.rankMeWhy ? " · " + esc(store.rankMeWhy) : ""}`
                        : `내 순위 <b style="color:var(--beam)">${myRank + 1}위</b> · ${types()}종`}</span>
@@ -3296,7 +3369,7 @@ function bindLogin() {
       V.tab = "get";
       render();
       window.scrollTo(0, 0);
-      setTimeout(() => UpQ.run(), 3000); setTimeout(runPendingEvent, 600);
+      setTimeout(() => UpQ.run(), 3000); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500);
       toast(mine ? "서버가 붐벼서 이 기기에 남은 기록으로 시작해요. 연결되면 자동으로 맞춰집니다."
                  : "서버가 붐벼서 임시로 시작해요. 연결되면 기존 기록이 있는지 확인해 자동으로 맞춰집니다.", 3800);
       return;
@@ -3340,7 +3413,7 @@ function bindLogin() {
     render();
     window.scrollTo(0, 0);
     if (msg) toast(msg, 3400);
-    setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600);      // 지난번에 못 올린 인증 사진이 있으면 이어서 올린다
+    setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500);      // 지난번에 못 올린 인증 사진이 있으면 이어서 올린다
   };
   [$("sid"), $("nm")].forEach(el => el.onkeydown = e => { if (e.key === "Enter") go.click(); });
 }
@@ -3651,7 +3724,7 @@ async function boot() {
       S = normalize(d);
       if (last.name) S.name = last.name;
       V.tab = "get";
-      setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600);
+      setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500);
       return render();
     }
   } catch (e) {

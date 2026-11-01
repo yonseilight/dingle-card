@@ -229,6 +229,18 @@
   .qrfull{position:fixed;inset:0;z-index:300;background:rgba(3,8,18,.85);display:flex;align-items:center;justify-content:center;padding:20px}
   .qrbox{background:#fff;color:#0B1834;border-radius:18px;padding:24px;text-align:center;max-width:600px}
   .qrbox h2{margin:12px 0 4px;font-size:24px}.qrbox p{margin:0 0 6px;font-size:16px}.qrbox .note{color:#5E6A80}
+  .qrposter{display:none}
+  .pp{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:#0B1834;font-family:"Pretendard","Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+  .pp-k{font-size:14pt;color:#B07A00;font-weight:700;letter-spacing:.02em}
+  .pp h1{font-size:36pt;margin:4pt 0 0;font-weight:900}
+  .pp-ev{font-size:20pt;font-weight:700;color:#1C3260;margin-bottom:14pt}
+  .pp-qr svg{width:118mm;height:118mm}
+  .pp-big{font-size:26pt;font-weight:800;line-height:1.3;margin:14pt 0 10pt}.pp-big b{color:#B07A00}
+  .pp-steps{text-align:left;font-size:15pt;line-height:1.7;margin:0;padding-left:26pt}
+  .pp-url{margin-top:14pt;font-size:16pt;font-weight:700;color:#1C3260}
+  .pp-note{margin-top:6pt;font-size:11pt;color:#5E6A80}
+  @media print{ body.posterprint *{visibility:hidden} body.posterprint .qrposter,body.posterprint .qrposter *{visibility:visible}
+    body.posterprint .qrposter{display:block;position:absolute;inset:0;background:#fff;width:100%;height:100vh;padding:10mm} }
   /* QR 창을 띄웠을 때만 QR만 인쇄 (보고서 인쇄에는 영향 없음) */
   @media print{ body.qrprint *{visibility:hidden} body.qrprint .qrfull, body.qrprint .qrfull *{visibility:visible}
     body.qrprint .qrfull{background:#fff;position:absolute} body.qrprint .qrbox .frm{display:none} }
@@ -614,6 +626,7 @@ function routeRows() {
 
   rows.push(["인스타 팔로우", count(k => k === "follow")]);
   rows.push(["TABS 설문 인증", count(k => k === "tabs")]);
+  rows.push(["출석 보너스 (1회 이상)", count(k => k.indexOf("daily:") === 0)]);
   rows.push(["퀴즈 참여", D.students.filter(st => (st.quizDone || 0) > 0).length]);
   PROGRAMS.forEach(p => {
     rows.push([p.name + " 신청", count(k => k === "apply:" + p.id)]);
@@ -674,6 +687,41 @@ function viewReview() {
 }
 
 /* ── 참여자 ── */
+/* 확인해 볼 학생 — 의심 신호가 있는 학생을 모아 보여 준다 (판단은 사람이) */
+function suspectRows() {
+  const out = [];
+  const bySid = {};
+  D.proofs.forEach(p => (bySid[String(p.sid)] = bySid[String(p.sid)] || []).push(p));
+  const refKids = {};
+  D.students.forEach(x => { if (x.ref) (refKids[String(x.ref)] = refKids[String(x.ref)] || []).push(x); });
+  const active = x => Object.keys(x.claims || {}).some(k => k === "follow" || k === "tabs" || k.indexOf("apply:") === 0 || k.indexOf("done:") === 0 || (x.quizDone || 0) > 0);
+  D.students.forEach(x => {
+    const why = [], sid = String(x.sid), ps = (bySid[sid] || []).slice().sort((a, b) => (a.at || 0) - (b.at || 0));
+    // 짧은 시간에 인증 여러 건 (10분 안에 3건 이상)
+    for (let i = 0; i + 2 < ps.length; i++) if (ps[i + 2].at - ps[i].at < 10 * 60e3) { why.push("10분 안에 인증 3건 이상"); break; }
+    const no = ps.filter(p => p.status === "no").length;
+    if (no >= 2) why.push(`반려 ${no}건`);
+    const kids = refKids[sid] || [];
+    if (kids.length >= 2 && !kids.some(active)) why.push(`추천 친구 ${kids.length}명 모두 활동 없음`);
+    if ((x.adm && x.adm.ops || []).some(o => o.via === "revoke")) why.push("카드 회수 이력");
+    if (why.length) out.push({ x, why });
+  });
+  return out.sort((a, b) => b.why.length - a.why.length);
+}
+function suspectHTML() {
+  const l = suspectRows();
+  if (!l.length) return "";
+  const open = !!V.susOpen;
+  return `<div class="panel sus">
+    <div class="ph"><h2>확인해 볼 학생</h2><span class="sub">${l.length}명 · 의심 신호가 있을 뿐 부정으로 확정된 것은 아닙니다. 캡처와 기록을 보고 판단해 주세요.</span>
+      <div class="right"><button class="btn gh sm" id="susopen">${open ? "접기" : "펼치기"}</button></div></div>
+    ${open ? `<div class="pb flush"><table><thead><tr><th>이름</th><th>학번</th><th>신호</th><th></th></tr></thead><tbody>
+      ${l.map(r => `<tr><td><b>${esc(r.x.name)}</b></td><td style="color:var(--mist)">${esc(r.x.sid)}</td>
+        <td>${r.why.map(w => `<span class="chip no">${esc(w)}</span>`).join(" ")}</td>
+        <td class="num"><button class="btn gh sm" data-st="${esc(r.x.sid)}">관리</button></td></tr>`).join("")}</tbody></table></div>` : ""}
+  </div>`;
+}
+
 function viewStudents() {
   const q = V.q.trim();
   const list = D.students
@@ -681,6 +729,7 @@ function viewStudents() {
     .sort((a, b) => b.types - a.types);
 
   return shell(`
+    ${suspectHTML()}
     <div class="panel">
       <div class="ph"><h2>참여자</h2><span class="sub">${list.length}명</span>
         <div class="right">
@@ -1137,7 +1186,8 @@ function showQR(e) {
     <h2>${esc(e.label)}</h2><p>카메라로 찍으면 딩글이 카드 <b>${e.cards}장</b>!</p>
     <div class="note" style="word-break:break-all">${esc(qrLink(e.code))}</div>
     <div class="frm" style="justify-content:center;margin-top:12px"><button class="btn sm" id="qrcopy">링크 복사</button>
-      <button class="btn gh sm" id="qrprint">인쇄</button><button class="btn gh sm" id="qrx">닫기</button></div></div>`;
+      <button class="btn sm" id="qrposter">A4 포스터 인쇄</button>
+      <button class="btn gh sm" id="qrprint">QR만 인쇄</button><button class="btn gh sm" id="qrx">닫기</button></div></div>`;
   document.body.appendChild(z);
   document.body.classList.add("qrprint");
   const close = () => { z.remove(); document.body.classList.remove("qrprint"); };
@@ -1145,7 +1195,35 @@ function showQR(e) {
   z.onclick = ev => { if (ev.target === z) close(); };
   z.querySelector("#qrcopy").onclick = () => navigator.clipboard.writeText(qrLink(e.code)).then(() => toast("링크를 복사했습니다"), () => toast("복사하지 못했습니다"));
   z.querySelector("#qrprint").onclick = () => window.print();
+  z.querySelector("#qrposter").onclick = () => printPoster(e);
 }
+/* A4 포스터: QR + 참여 방법. 인쇄 뒤에는 지운다 */
+function printPoster(e) {
+  const old = document.querySelector(".qrposter"); if (old) old.remove();
+  const pz = document.createElement("div");
+  pz.className = "qrposter";
+  pz.innerHTML = `<div class="pp">
+    <div class="pp-k">연세대학교 미래캠퍼스 미래융합교육혁신원 · 등대팀</div>
+    <h1>딩글이 카드도감</h1>
+    <div class="pp-ev">${esc(e.label)}</div>
+    <div class="pp-qr">${qrSVG(qrLink(e.code), 560)}</div>
+    <div class="pp-big">카메라로 QR을 찍으면<br>딩글이 카드 <b>${e.cards}장</b>!</div>
+    <ol class="pp-steps">
+      <li>휴대폰 카메라로 QR을 찍어 사이트를 엽니다</li>
+      <li>처음이면 학번·이름을 넣고 [시작]</li>
+      <li>카드가 바로 들어가요 — 뽑기 탭에서 열어 보세요</li>
+    </ol>
+    <div class="pp-url">${esc(siteBase().replace(/^https?:\/\//, "").replace(/\/$/, ""))}</div>
+    <div class="pp-note">한 사람당 1회 · 학습지원 프로그램에 참여하고 인증하면 카드를 더 받을 수 있어요</div>
+  </div>`;
+  document.body.appendChild(pz);
+  document.body.classList.remove("qrprint");
+  document.body.classList.add("posterprint");
+  const done = () => { pz.remove(); document.body.classList.remove("posterprint"); if (document.querySelector(".qrfull")) document.body.classList.add("qrprint"); window.removeEventListener("afterprint", done); };
+  window.addEventListener("afterprint", done);
+  setTimeout(() => window.print(), 50);
+}
+
 function bindField() {
   if (V.tab !== "field") return;
   app.querySelectorAll("[data-fsub]").forEach(b => b.onclick = () => { V.fsub = b.dataset.fsub; render();
@@ -1415,7 +1493,7 @@ function reportData() {
     const t = Date.parse(String(x.week) + "T12:00:00+09:00"); const r = !isNaN(t) && at(t); if (r) r.quiz++;
   });
   // 참여 경로
-  const route = [["인스타그램 팔로우", "follow"], ["TABS 설문 인증", "tabs"], ["주간 퀴즈", null], ["프로그램 신청", "apply:"], ["활동 완료", "done:"],
+  const route = [["인스타그램 팔로우", "follow"], ["TABS 설문 인증", "tabs"], ["출석 보너스", "daily:"], ["주간 퀴즈", null], ["프로그램 신청", "apply:"], ["활동 완료", "done:"],
                  ["이벤트 코드", "event:"], ["기간 설문", "survey:"], ["친구 추천으로 가입", "ref"]]
     .map(([l, pre]) => [l, pre === null ? k.quizStu : pre === "ref" ? k.ref : S.filter(x => has(x, pre)).length]);
   // 만족도
@@ -2020,6 +2098,7 @@ const OP_LABEL = { hide: "순위 제외", unhide: "순위 복구", revoke: "인�
 function logText(e) {
   if (e.k === "d") return `카드 ${(e.ids || []).length}장 뽑음 <span class="note">(${(e.ids || []).join(", ")})</span>`;
   const key = String(e.key || "");
+  if (key.indexOf("daily:") === 0) return `카드 ${e.n}장 받음 · 출석 (${esc(key.slice(6))})`;
   const what = key === "welcome" ? "시작 카드" : key === "invited" ? "추천인 입력" : key === "server" ? "추천·등대팀 지급"
     : key.indexOf("quiz:") === 0 ? "주간 퀴즈" : key.indexOf("event:") === 0 ? "이벤트 코드 " + esc(key.slice(6))
     : key.indexOf("survey:") === 0 ? "기간 설문" : key === "follow" || key.indexOf(":") > 0 ? proofLabel(key) + " 인증" : esc(key);
@@ -2409,6 +2488,7 @@ function bind() {
   bindOps();
   bindField();
   bindStock();
+  $("susopen") && ($("susopen").onclick = () => { V.susOpen = !V.susOpen; render(); });
   bindTabs();
   if (typeof bindReport === "function") bindReport();
   app.querySelectorAll("[data-tab]").forEach(el => el.onclick = () => { V.tab = el.dataset.tab; render(); });

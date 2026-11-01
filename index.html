@@ -249,6 +249,7 @@
   .src.final .fbig b{font-size:38px;font-weight:900;color:var(--beam);letter-spacing:-.03em}
   .src.final .fbig span{color:var(--mist);font-size:14px}
   .src.final .fprize{margin-top:8px;padding:10px 12px;border-radius:var(--r-sm);background:rgba(78,216,160,.13);color:#9FF0CC;font-weight:700}
+  .celebrate.remind .ceyebrow{letter-spacing:.02em;font-size:12.5px}
   .src.ended .endl{margin:12px 0 0;padding-left:18px;color:var(--mist);font-size:14px;line-height:1.75}
   .src.ended .endl b{color:var(--foam)}
 
@@ -3285,6 +3286,43 @@ function celebrate(tiers) {
   el.onclick = e => { if (e.target === el) close(); };
 }
 
+/* 등급을 완성하고도 교환을 신청하지 않았으면, 다음에 들어왔을 때 알려 준다.
+   [나중에]를 누르면 그날은 다시 띄우지 않고, 다음 날 들어오면 다시 알려 준다. 새 등급을 완성하면 바로 다시 알린다. */
+function remindExchange() {
+  if (!S) return;
+  const ready = doneTiers().filter(t => !(S.exchanged || {})[t]);
+  if (!ready.length) return;
+  if (document.querySelector(".celebrate, .modal, #stage, #proofModal, .sheet")) { setTimeout(remindExchange, 4000); return; }
+  const mark = todayStr() + ":" + ready.join("");
+  const key = "dingle:xremind:" + S.sid;
+  try { if (localStorage.getItem(key) === mark) return; } catch (e) {}
+  const main = TIERS[ready[0]];
+  const el = document.createElement("div");
+  el.className = "celebrate remind";
+  el.innerHTML = `
+    <div class="cbox" style="--cc:${main.color}" role="dialog" aria-modal="true" aria-label="교환 신청 안내">
+      <div class="cmedal"><span style="background:${main.color}">${ready[0]}</span></div>
+      <p class="ceyebrow">교환 신청을 기다리고 있어요</p>
+      <h3>${ready.map(t => TIERS[t].label + " · " + TIERS[t].word).join(" / ")} 등급을 완성했어요</h3>
+      <p class="cdesc">${ready.map(t => TIERS[t].goods).join(", ")}<br>아직 교환을 신청하지 않았어요. 연락처를 남기면 등대팀이 선물을 전해 드려요.</p>
+      <button class="btn" data-rgo="1">지금 신청하기</button>
+      <button class="lnk" data-rlater="1">나중에 하기</button>
+    </div>`;
+  document.body.appendChild(el);
+  const close = later => { el.remove(); unlockScroll(); if (later) { try { localStorage.setItem(key, mark); } catch (e) {} } };
+  el.querySelector("[data-rlater]").onclick = () => close(true);
+  el.onclick = e => { if (e.target === el) close(true); };
+  el.querySelector("[data-rgo]").onclick = () => {
+    close(false);
+    V.tab = "album"; V.codeOpen = ready[0]; render();
+    setTimeout(() => {
+      const box = document.querySelector(".codebox");
+      if (box && box.scrollIntoView) box.scrollIntoView({ behavior: "smooth", block: "center" });
+      const inp = $("xcontact"); if (inp) inp.focus();
+    }, 60);
+  };
+}
+
 /* ───────── 12. 렌더 & 이벤트 ───────── */
 function render() {
   if (!S) { app.innerHTML = viewLogin(); return bindLogin(); }
@@ -3369,7 +3407,7 @@ function bindLogin() {
       V.tab = "get";
       render();
       window.scrollTo(0, 0);
-      setTimeout(() => UpQ.run(), 3000); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500);
+      setTimeout(() => UpQ.run(), 3000); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(remindExchange, 2800);
       toast(mine ? "서버가 붐벼서 이 기기에 남은 기록으로 시작해요. 연결되면 자동으로 맞춰집니다."
                  : "서버가 붐벼서 임시로 시작해요. 연결되면 기존 기록이 있는지 확인해 자동으로 맞춰집니다.", 3800);
       return;
@@ -3413,7 +3451,7 @@ function bindLogin() {
     render();
     window.scrollTo(0, 0);
     if (msg) toast(msg, 3400);
-    setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500);      // 지난번에 못 올린 인증 사진이 있으면 이어서 올린다
+    setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(remindExchange, 2800);      // 지난번에 못 올린 인증 사진이 있으면 이어서 올린다
   };
   [$("sid"), $("nm")].forEach(el => el.onkeydown = e => { if (e.key === "Enter") go.click(); });
 }
@@ -3724,7 +3762,7 @@ async function boot() {
       S = normalize(d);
       if (last.name) S.name = last.name;
       V.tab = "get";
-      setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500);
+      setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(remindExchange, 2800);
       return render();
     }
   } catch (e) {

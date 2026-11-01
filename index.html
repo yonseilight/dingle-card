@@ -249,6 +249,24 @@
   .src.final .fbig b{font-size:38px;font-weight:900;color:var(--beam);letter-spacing:-.03em}
   .src.final .fbig span{color:var(--mist);font-size:14px}
   .src.final .fprize{margin-top:8px;padding:10px 12px;border-radius:var(--r-sm);background:rgba(78,216,160,.13);color:#9FF0CC;font-weight:700}
+  .tabshero{position:relative;margin:0 0 16px;padding:18px 18px 16px;border-radius:var(--r-lg,22px);overflow:hidden;
+    background:radial-gradient(120% 90% at 100% 0%,rgba(255,201,74,.35),rgba(255,201,74,0) 60%),linear-gradient(160deg,#2A2457,#1A2A5C 55%,#13224A);
+    box-shadow:0 10px 30px rgba(255,201,74,.18),inset 0 0 0 1.5px rgba(255,201,74,.55)}
+  .tabshero .th-top{display:flex;justify-content:space-between;align-items:center}
+  .tabshero .th-tag{font-size:12px;font-weight:800;color:#1A1608;background:#FFC94A;border-radius:999px;padding:3px 10px}
+  .tabshero .th-dday{font-size:22px;font-weight:900;color:#FFC94A;letter-spacing:-.02em}
+  .tabshero .th-big{margin-top:12px;font-size:22px;font-weight:900;line-height:1.35;color:#fff;letter-spacing:-.02em}
+  .tabshero .th-big b{color:#FFC94A}
+  .tabshero .th-sub{margin-top:6px;font-size:13.5px;color:#D6E2F7}.tabshero .th-sub b{color:#FFC94A}
+  .tabshero .th-steps{margin:12px 0 0;padding-left:20px;font-size:13.5px;line-height:1.75;color:#C9D5EE}.tabshero .th-steps b{color:#fff}
+  .tabshero .act{margin-top:14px;display:flex;gap:8px}
+  .tabshero .act button{flex:1;min-height:48px;border:none;border-radius:14px;font-size:14.5px;font-weight:700;font-family:inherit;cursor:pointer;
+    background:rgba(255,255,255,.1);color:#FFE29A;box-shadow:inset 0 0 0 1px rgba(255,226,154,.35)}
+  .tabshero .act button.done{color:var(--dim);box-shadow:inset 0 0 0 1px var(--rule);background:none;cursor:default}
+  .tabshero .act button.th-main{background:linear-gradient(180deg,#FFD873,#FFC23D);color:#1A1608;font-weight:800;box-shadow:0 6px 18px rgba(255,194,61,.35)}
+  .tabshero .th-note{margin:10px 0 0;font-size:12px;color:#AFC0E2}.tabshero .th-note b{color:#fff}
+  .tabshero .tok{margin-top:12px}
+  .welcome.gtabs{background:rgba(255,201,74,.16);color:#FFE29A;font-weight:600}.welcome.gtabs b{color:#FFC94A}
   .celebrate.remind .ceyebrow{letter-spacing:.02em;font-size:12.5px}
   .src.ended .endl{margin:12px 0 0;padding-left:18px;color:var(--mist);font-size:14px;line-height:1.75}
   .src.ended .endl b{color:var(--foam)}
@@ -832,10 +850,13 @@ const CONFIG = {
   // TABS 설문 인증 (더미래페스티벌 등대팀 부스 이벤트, 2026-11-10)
   //   on: false로 바꾸면 카드 얻기 화면에서 숨겨집니다. url은 [TABS 설문 하러 가기] 버튼이 여는 주소입니다.
   //   until: 이 날짜(한국 날짜, 그날 포함)까지만 인증할 수 있고, 다음 날부터 칸이 사라집니다.
-  TABS: { on: true, until: "2026-11-11", url: "https://with.yonsei.ac.kr/with/curriculum.htm?ch=1",
-          title: "TABS 설문 참여 인증", tag: "더미래페스티벌 이벤트 · 11월 11일(수)까지",
+  //   경품 홍보(큰 배너·안내 창·로그인 배너)는 관리자 페이지의 [TABS 현장 이벤트 종료]를 누르면 꺼지고, 그 뒤로는 카드만 지급합니다.
+  TABS: { on: true, until: "2026-11-30", url: "https://with.yonsei.ac.kr/with/curriculum.htm?ch=1",
+          title: "TABS 설문 참여 인증", tag: "더미래페스티벌 이벤트",
           desc: "교내 학습지원 프로그램을 둘러보고 TABS 설문을 완료한 뒤, 완료 화면을 캡처해 인증해 주세요.",
-          gift: "11월 10일(화) 더미래페스티벌 등대팀 부스에서 인증 화면을 보여 주면 전기손난로를 드려요 (선착순)" },
+          gift: "11월 10일(화) 더미래페스티벌 등대팀 부스에서 인증 화면을 보여 주면 전기손난로를 드려요 (선착순)",
+          // 부스 홍보: booth 날짜까지 카드 얻기 맨 위 큰 배너 + 하루 한 번 안내 창, 로그인 화면 배너
+          booth: "2026-11-10", place: "더미래페스티벌 등대팀 부스", prize: "전기손난로", prizeCount: 30 },
 
   // 이벤트 목록. 새 이벤트가 생기면 여기에 한 줄만 추가하면 됩니다.
   //   code  : 학생에게 안내할 참여 코드 (추측하기 어렵게)
@@ -1120,6 +1141,7 @@ const store = {
   serverEpoch: null,   // 서버의 초기화 회차 (모르면 null)
   notice: null,        // 등대팀 공지 { t, at }
   events: [],
+  tabsEnd: (() => { try { return Number(localStorage.getItem("dingle:tabsEnd")) || 0; } catch (e) { return 0; } })(),
   closedAt: (() => { try { return Number(localStorage.getItem("dingle:closed")) || 0; } catch (e) { return 0; } })(),
                        // 등대팀이 이벤트를 마감한 시각 (0이면 진행 중). 서버에 못 닿아도 지난번 상태를 기억한다
   takeMeta(j) {        // 서버가 응답마다 실어 보내는 공지·마감 상태
@@ -1128,6 +1150,9 @@ const store = {
     const was = this.closedAt;
     this.closedAt = Number(j.closed) || 0;
     this.events = Array.isArray(j.events) ? j.events : [];      // 등대팀이 만든 현장 이벤트(QR)
+    const te = this.tabsEnd; this.tabsEnd = Number(j.tabsEnd) || 0;   // TABS 현장 이벤트(경품) 종료 여부
+    try { if (this.tabsEnd) localStorage.setItem("dingle:tabsEnd", String(this.tabsEnd)); else localStorage.removeItem("dingle:tabsEnd"); } catch (e) {}
+    if (te !== this.tabsEnd && typeof S !== "undefined" && S && V.tab === "get" && !document.getElementById("stage")) setTimeout(render, 0);
     try { if (this.closedAt) localStorage.setItem("dingle:closed", String(this.closedAt)); else localStorage.removeItem("dingle:closed"); } catch (e) {}
     if (!!was !== !!this.closedAt && typeof S !== "undefined" && S && !document.getElementById("stage")) setTimeout(render, 0);
   },
@@ -1776,6 +1801,7 @@ function viewLogin() {
       </label>
       ${(() => { try { return sessionStorage.getItem("dingle:ev"); } catch (e) { return ""; } })()
         ? `<div class="welcome" style="background:rgba(78,216,160,.14);color:#9FF0CC">QR 이벤트 카드는 학번·이름을 넣고 시작하면 바로 들어와요</div>` : ""}
+      ${typeof boothAhead === "function" && boothAhead() ? `<div class="welcome gtabs">🎁 ${mdLabel(CONFIG.TABS.booth)} ${esc(CONFIG.TABS.place)} · TABS 참여 인증하면 <b>${esc(CONFIG.TABS.prize)} 선착순 ${CONFIG.TABS.prizeCount}명</b></div>` : ""}
       ${welcomeCards() ? `<div class="welcome">지금 시작하면 카드 ${CONFIG.REWARD.welcome}장을 바로 받아요</div>` : ""}
       <button class="btn" id="go">시작하기</button>
       </div>
@@ -2386,6 +2412,56 @@ function proofTips(key) {
 }
 
 /* TABS 설문 인증 칸 — 인증 상태가 부스에서 전기손난로를 받는 조건이라 크게 보여 준다 */
+/* 부스 날짜까지(그날 포함) 홍보를 크게 한다 */
+function boothAhead() { const T = CONFIG.TABS || {}; return !!(T.booth && tabsOpen() && !store.tabsEnd); }
+function boothDday() {
+  const T = CONFIG.TABS || {}; if (!T.booth) return "";
+  const d = Math.round((Date.parse(T.booth + "T00:00:00+09:00") - Date.parse(todayStr() + "T00:00:00+09:00")) / 864e5);
+  return d > 0 ? "D-" + d : d === 0 ? "오늘!" : "";       // 부스 날짜가 지나면 표시하지 않음
+}
+function tabsHero(T, st, pr, done, state) {
+  return `<div class="tabshero">
+    <div class="th-top"><span class="th-tag">${esc(T.place || "부스 이벤트")}</span><span class="th-dday">${boothDday()}</span></div>
+    <div class="th-big">TABS 참여하고 인증하면<br><b>${esc(T.prize || "경품")}</b> 선착순 ${T.prizeCount ? T.prizeCount + "명" : ""}!</div>
+    <div class="th-sub">${mdLabel(T.booth)} 부스에서 인증 화면만 보여 주세요 · 카드도 <b>${CONFIG.REWARD.tabs}장</b> 바로 지급</div>
+    <ol class="th-steps"><li>학습지원 프로그램 둘러보고 <b>TABS 설문</b> 완료</li><li>완료 화면 <b>캡처</b> → 여기서 인증</li><li>${mdLabel(T.booth)} 부스 방문 → <b>${esc(T.prize || "경품")}</b> 받기</li></ol>
+    ${done ? `<div class="tok">✓ TABS 인증 완료 ${state} — ${mdLabel(T.booth)} 부스에서 이 화면을 보여 주세요</div>` : ""}
+    <div class="act">
+      ${T.url ? `<button class="th-go" data-open="tabs">TABS 설문 하러 가기</button>` : ""}
+      ${done ? `<button class="done" disabled>${pr && pr.up ? "사진 올리는 중" : "인증 완료"}</button>`
+             : `<button class="th-main" data-proof="tabs">${st === "no" ? "다시 인증하기" : "완료 화면 인증하기"}</button>`}
+    </div>
+    <p class="th-note">${esc(T.prize || "경품")}은 <b>부스에 오기 전에 미리</b> TABS에 참여하고 인증한 학생에게 드려요 · 수량이 다 떨어지면 마감</p>
+  </div>`;
+}
+/* 하루 한 번 TABS 안내 창 (부스 날짜까지, 아직 인증 안 한 학생에게만) */
+function promoTabs() {
+  if (!S || !boothAhead() || S.claims.tabs || eventOver() || window.__noPromo) return;
+  if (document.querySelector(".celebrate, .modal, #stage, #proofModal, .sheet")) { setTimeout(promoTabs, 4000); return; }
+  const key = "dingle:tabspromo:" + S.sid, mark = todayStr();
+  try { if (localStorage.getItem(key) === mark) return; } catch (e) {}
+  const T = CONFIG.TABS;
+  const el = document.createElement("div");
+  el.className = "celebrate remind promo";
+  el.innerHTML = `
+    <div class="cbox" style="--cc:#FFC94A" role="dialog" aria-modal="true" aria-label="TABS 이벤트 안내">
+      <div class="cmedal"><span style="background:#FFC94A;font-size:20px">${boothDday() || "🎁"}</span></div>
+      <p class="ceyebrow">${esc(T.place || "부스 이벤트")} · ${mdLabel(T.booth)}</p>
+      <h3>TABS 참여하고 인증하면<br>${esc(T.prize)} 선착순 ${T.prizeCount ? T.prizeCount + "명" : ""}!</h3>
+      <p class="cdesc">TABS 설문 완료 화면을 캡처해 카드도감에 인증하면 카드 ${CONFIG.REWARD.tabs}장을 바로 받고,<br>${mdLabel(T.booth)} 부스에서 인증 화면을 보여 주면 ${esc(T.prize)}을 드려요.</p>
+      ${T.url ? `<button class="btn" data-pgo="1">TABS 설문 하러 가기</button>` : ""}
+      <button class="btn ghost" data-pproof="1" style="margin-top:8px">이미 했어요 · 인증하기</button>
+      <button class="lnk" data-plater="1">나중에 하기</button>
+    </div>`;
+  document.body.appendChild(el);
+  const close = () => { el.remove(); unlockScroll(); try { localStorage.setItem(key, mark); } catch (e) {} };
+  el.querySelector("[data-plater]").onclick = close;
+  el.onclick = e => { if (e.target === el) close(); };
+  const go = el.querySelector("[data-pgo]");
+  if (go) go.onclick = () => { close(); window.open(T.url, "_blank", "noopener"); };
+  el.querySelector("[data-pproof]").onclick = () => { close(); V.tab = "get"; render(); Proof.open("tabs"); };
+}
+
 function tabsOpen() {
   const T = CONFIG.TABS;
   return !!(T && T.on && (!T.until || todayStr() <= T.until));
@@ -2396,17 +2472,18 @@ function tabsHTML() {
   const st = proofStatus("tabs"), pr = (S.proofs || {}).tabs, done = !!S.claims.tabs && st !== "no";
   const state = st === "no" ? `<span class="st no">반려</span>` : pr && pr.up ? `<span class="st wait">올리는 중</span>`
     : st === "ok" ? `<span class="st ok">승인</span>` : done ? `<span class="st wait">검토중</span>` : "";
+  if (boothAhead()) return tabsHero(T, st, pr, done, state);
   return `<div class="src tabs">
     <div class="hd"><div class="ttl">${esc(T.title)}</div>${state}<div class="amt">${CONFIG.REWARD.tabs}장</div></div>
-    ${T.tag ? `<div class="ttag">${esc(T.tag)}</div>` : ""}
+    <div class="ttag">${store.tabsEnd ? "" : esc(T.tag) + " · "}${mdLabel(T.until)}까지</div>
     <div class="meta">${esc(T.desc)} · 1회 한정</div>
-    ${done ? `<div class="tok">✓ TABS 인증 완료 — 부스에서 이 화면을 보여 주세요</div>` : ""}
+    ${done ? `<div class="tok">✓ TABS 인증 완료${store.tabsEnd ? ` · 카드 ${CONFIG.REWARD.tabs}장 받음` : " — 부스에서 이 화면을 보여 주세요"}</div>` : ""}
     <div class="act">
       ${T.url ? `<button data-open="tabs">TABS 설문 하러 가기</button>` : ""}
       ${done ? `<button class="done" disabled>${pr && pr.up ? "사진 올리는 중" : "인증 완료"}</button>`
              : `<button data-proof="tabs">${st === "no" ? "다시 인증하기" : "완료 화면 인증하기"}</button>`}
     </div>
-    ${T.gift ? `<p class="note" style="margin-top:10px">🎁 ${esc(T.gift)}</p>` : ""}
+    ${T.gift && !store.tabsEnd ? `<p class="note" style="margin-top:10px">🎁 ${esc(T.gift)}</p>` : ""}
   </div>`;
 }
 
@@ -3407,7 +3484,7 @@ function bindLogin() {
       V.tab = "get";
       render();
       window.scrollTo(0, 0);
-      setTimeout(() => UpQ.run(), 3000); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(remindExchange, 2800);
+      setTimeout(() => UpQ.run(), 3000); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(remindExchange, 2800); setTimeout(promoTabs, 3400);
       toast(mine ? "서버가 붐벼서 이 기기에 남은 기록으로 시작해요. 연결되면 자동으로 맞춰집니다."
                  : "서버가 붐벼서 임시로 시작해요. 연결되면 기존 기록이 있는지 확인해 자동으로 맞춰집니다.", 3800);
       return;
@@ -3451,7 +3528,7 @@ function bindLogin() {
     render();
     window.scrollTo(0, 0);
     if (msg) toast(msg, 3400);
-    setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(remindExchange, 2800);      // 지난번에 못 올린 인증 사진이 있으면 이어서 올린다
+    setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(remindExchange, 2800); setTimeout(promoTabs, 3400);      // 지난번에 못 올린 인증 사진이 있으면 이어서 올린다
   };
   [$("sid"), $("nm")].forEach(el => el.onkeydown = e => { if (e.key === "Enter") go.click(); });
 }
@@ -3762,7 +3839,7 @@ async function boot() {
       S = normalize(d);
       if (last.name) S.name = last.name;
       V.tab = "get";
-      setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(remindExchange, 2800);
+      setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(remindExchange, 2800); setTimeout(promoTabs, 3400);
       return render();
     }
   } catch (e) {

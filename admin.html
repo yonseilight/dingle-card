@@ -314,7 +314,7 @@ function rewardFor(st, key) {
 }
 const rewardOf = key => key === "follow" ? REWARD.follow : key === "tabs" ? (REWARD.tabs || 7)
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-11-02";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-11-03";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -388,7 +388,7 @@ async function load(silent) {
             pollSheets: j.pollSheets || [],
             meta: { v: j.v || "", epoch: j.epoch || "", notice: j.notice || null,
                     sheetName: j.sheetName || "", sheetUrl: j.sheetUrl || "",
-                    closed: Number(j.closed) || 0, backup: j.backup || null },
+                    closed: Number(j.closed) || 0, backup: j.backup || null, tabsEnd: Number(j.tabsEnd) || 0 },
             stock: j.stock || { total: {}, count: {}, log: [] },
             events: Array.isArray(j.events) ? j.events : [] };
     } else {
@@ -1369,7 +1369,17 @@ function tabsInner() {
   const rows = all.filter(flt);
   const chip = r => r.status === "ok" ? `<span class="chip ok">승인</span>` : r.status === "no" ? `<span class="chip no">반려</span>` : `<span class="chip wait">검토 전</span>`;
   const pre = r => r.at && r.at < BOOTH_DAY ? `<span class="chip ok" title="부스 운영일 전에 인증">사전</span>` : `<span class="chip wait" title="부스 운영일 당일·이후 인증">당일</span>`;
+  const te = Number(D.meta.tabsEnd) || 0;
+  const ctl = `<div class="panel tbctl">
+      <div class="ph"><h2>TABS 현장 이벤트 (${esc(HAND)})</h2>
+        <span class="chip ${te ? "no" : "ok"}">${te ? "종료 · " + when(te) : "진행 중"}</span>
+        <div class="right">${api ? (te ? `<button class="btn gh sm" id="tbopen">다시 열기</button>` : `<button class="btn sm danger" id="tbend">현장 이벤트 종료</button>`) : ""}</div></div>
+      <div class="pb"><p class="note" style="margin:0">${te
+        ? `학생 화면의 ${esc(HAND)} 홍보(큰 배너·안내 창·로그인 배너)가 꺼졌습니다. TABS 인증은 11월 30일까지 계속되고 <b>카드만 지급</b>됩니다.`
+        : `지금은 학생 화면에 '${esc(HAND)} 선착순' 홍보가 크게 보입니다. 부스가 끝나면 [현장 이벤트 종료]를 누르세요 — 홍보만 꺼지고 TABS 인증(카드 지급)은 11월 30일까지 계속됩니다.`}</p></div>
+    </div>`;
   return (`
+    ${ctl}
     <div class="cards">
       <div class="kpi hl"><div class="l">TABS 인증</div><div class="v">${all.length}</div><div class="s">사전 인증 ${n(r => r.at && r.at < BOOTH_DAY)}명</div></div>
       <div class="kpi"><div class="l">검토</div><div class="v">${n(r => r.status === "wait")}</div><div class="s">승인 ${n(r => r.status === "ok")} · 반려 ${n(r => r.status === "no")}</div></div>
@@ -1404,6 +1414,14 @@ function tabsInner() {
 }
 function bindTabs() {
   if (V.tab !== "field" || V.fsub !== "tabs") return;
+  const tb = async (ended, btn) => {
+    btn.disabled = true;
+    try { const j = await adminPost({ action: "tabsBooth", ended }); D.meta.tabsEnd = Number(j.tabsEnd) || 0;
+      toast(ended ? "TABS 현장 이벤트를 종료했습니다 (인증은 카드만 지급)" : "TABS 현장 이벤트를 다시 열었습니다"); render(); }
+    catch (e) { btn.disabled = false; toast(errMsg(e)); }
+  };
+  $("tbend") && ($("tbend").onclick = e => { if (confirm(`TABS 현장 이벤트(${HAND})를 종료할까요?\n학생 화면의 경품 홍보가 꺼지고, TABS 인증은 11월 30일까지 카드만 지급됩니다.`)) tb(true, e.currentTarget); });
+  $("tbopen") && ($("tbopen").onclick = e => { if (confirm("TABS 현장 이벤트를 다시 열까요? 학생 화면에 경품 홍보가 다시 보입니다.")) tb(false, e.currentTarget); });
   const q = $("tq");
   // 검색은 다시 그리지 않고 줄만 숨긴다 (한글 입력이 끊기지 않도록)
   const apply = () => { const v = String(q.value || "").replace(/\s/g, ""); V.tq = q.value;
@@ -1876,7 +1894,7 @@ function viewReferral() {
 }
 
 /* ── 운영 ── */
-const SERVER_EXPECT = "2026-11-02";
+const SERVER_EXPECT = "2026-11-03";
 function errMsg(e) {
   const m = e && e.message;
   return m === "auth" ? "담당자 코드가 맞지 않습니다" : m === "not found" ? "학생을 찾지 못했습니다"

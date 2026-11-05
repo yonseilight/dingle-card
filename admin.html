@@ -314,7 +314,7 @@ function rewardFor(st, key) {
 }
 const rewardOf = key => key === "follow" ? REWARD.follow : key === "tabs" ? (REWARD.tabs || 7)
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-11-03";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-11-04";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -362,6 +362,14 @@ function admImgFallback(im) {
   im.classList.add("bad");
 }
 
+function phoneFmt(v) {
+  const raw = String(v == null ? "" : v).trim();
+  let d = raw.replace(/\D/g, "");
+  if (/^1\d{8,9}$/.test(d)) d = "0" + d;
+  if (/^01\d{9}$/.test(d)) return d.slice(0, 3) + "-" + d.slice(3, 7) + "-" + d.slice(7);
+  if (/^01\d{8}$/.test(d)) return d.slice(0, 3) + "-" + d.slice(3, 6) + "-" + d.slice(6);
+  return raw;
+}
 function proofLabel(key) {
   if (key === "follow") return "인스타 팔로우";
   if (key === "tabs") return "TABS 설문";
@@ -391,6 +399,9 @@ async function load(silent) {
                     closed: Number(j.closed) || 0, backup: j.backup || null, tabsEnd: Number(j.tabsEnd) || 0 },
             stock: j.stock || { total: {}, count: {}, log: [] },
             events: Array.isArray(j.events) ? j.events : [] };
+      // 시트가 앞의 0을 지운 예전 번호(1012345678)까지 010-1234-5678 꼴로 맞춘다
+      D.students.forEach(x => { if (x.contact) x.contact = phoneFmt(x.contact); });
+      D.exchanges.forEach(x => { if (x.contact) x.contact = phoneFmt(x.contact); });
     } else {
       D = fromLocal();
     }
@@ -1894,7 +1905,7 @@ function viewReferral() {
 }
 
 /* ── 운영 ── */
-const SERVER_EXPECT = "2026-11-03";
+const SERVER_EXPECT = "2026-11-04";
 function errMsg(e) {
   const m = e && e.message;
   return m === "auth" ? "담당자 코드가 맞지 않습니다" : m === "not found" ? "학생을 찾지 못했습니다"

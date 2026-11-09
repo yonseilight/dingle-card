@@ -738,14 +738,12 @@ function suspectHTML() {
 
 function viewStudents() {
   const q = V.q.trim();
-  const list = D.students
-    .filter(s => !q || s.name.indexOf(q) >= 0 || String(s.sid).indexOf(q) >= 0)
-    .sort((a, b) => b.types - a.types);
+  const list = D.students.slice().sort((a, b) => b.types - a.types);
 
   return shell(`
     ${suspectHTML()}
     <div class="panel">
-      <div class="ph"><h2>참여자</h2><span class="sub">${list.length}명</span>
+      <div class="ph"><h2>참여자</h2><span class="sub" id="qcount">${list.length}명</span>
         <div class="right">
           <input class="search" id="q" placeholder="이름 또는 학번" value="${esc(V.q)}">
           <button class="btn gh sm" id="csv">CSV 내려받기</button>
@@ -759,7 +757,7 @@ function viewStudents() {
             <th class="num">미개봉</th><th class="num">퀴즈</th><th>교환</th><th></th>
           </tr></thead>
           <tbody>
-            ${list.length ? list.map(s => `<tr>
+            ${list.length ? list.map(s => `<tr data-q="${esc((String(s.name) + " " + s.sid).replace(/\s/g, "").toLowerCase())}">
               <td>${esc(s.name)}${s.adm && s.adm.hide ? ` <span class="chip no">순위 제외</span>` : ""}</td>
               <td style="color:var(--mist)">${esc(s.sid)}</td>
               <td class="num">${s.types} / ${TOTAL_CARDS}</td>
@@ -773,7 +771,8 @@ function viewStudents() {
               <td>${String(s.exchanged || "").split(",").filter(Boolean)
                     .map(t => `<span class="chip ${t}">${t}</span>`).join(" ") || "-"}</td>
               <td class="num"><button class="btn gh sm" data-st="${esc(s.sid)}">관리</button></td>
-            </tr>`).join("") : `<tr><td colspan="11"><div class="empty">참여자가 없습니다.</div></td></tr>`}
+            </tr>`).join("") + `<tr id="qnone" style="display:none"><td colspan="11"><div class="empty">찾는 학생이 없습니다.</div></td></tr>`
+            : `<tr><td colspan="11"><div class="empty">참여자가 없습니다.</div></td></tr>`}
           </tbody>
         </table>
       </div></div>
@@ -2688,8 +2687,17 @@ function bind() {
   // 검색
   const q = $("q");
   if (q) {
-    q.oninput = () => { V.q = q.value; const p = q.selectionStart; render();
-      const n = $("q"); if (n) { n.focus(); n.setSelectionRange(p, p); } };
+    // 화면을 다시 그리지 않고 줄만 숨긴다 — 다시 그리면 한글 조합(ㅈ+ㅜ+ㅇ → 중)이 끊겨 자음·모음이 따로 들어간다
+    const apply = () => {
+      V.q = q.value;
+      const v = String(q.value || "").replace(/\s/g, "").toLowerCase();
+      let n = 0;
+      app.querySelectorAll("tr[data-q]").forEach(tr => { const on = !v || tr.dataset.q.indexOf(v) >= 0; tr.style.display = on ? "" : "none"; if (on) n++; });
+      const c = $("qcount"); if (c) c.textContent = v ? `${n}명 / 전체 ${D.students.length}명` : `${D.students.length}명`;
+      const none = $("qnone"); if (none) none.style.display = v && !n ? "" : "none";
+    };
+    q.oninput = apply;
+    if (q.value) apply();
   }
 
   // CSV

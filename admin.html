@@ -316,7 +316,7 @@ function rewardFor(st, key) {
 }
 const rewardOf = key => key === "follow" ? REWARD.follow : key === "tabs" ? (REWARD.tabs || 7)
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-11-05";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-11-11";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -992,13 +992,15 @@ function viewField() {
   const pick = !st && matches.length > 1 ? `<div class="fpick"><p class="note" style="margin:10px 0 6px">'${esc(q)}' 학생이 ${matches.length}명입니다. 학번을 확인하고 골라 주세요.</p>
     ${matches.map(x => `<button class="fpk" data-fpick="${esc(x.sid)}"><b>${esc(x.name)}</b><span>${esc(x.sid)}</span>
       <span class="note">보유 ${x.types}종 · 미개봉 ${x.pending}장 · ${tail(x.contact)}</span></button>`).join("")}</div>` : "";
-  const sub = V.fsub || "lookup";
+  let sub = V.fsub || "lookup";
+  if (BOOTH_DONE && ["lookup", "qr", "final"].indexOf(sub) < 0) sub = V.fsub = "lookup";
   const gcount = it => D.students.filter(x => x.adm && x.adm.gifts && x.adm.gifts[it]).length;
   const fin = finalRows(), finDone = fin.filter(r => r.got).length;
   const exWait = (D.exchanges || []).filter(exWaiting).length;
   const live = evs.filter(evLive).length;
   const subs = [["lookup", "학생 조회"], ["stock", "재고·퀴즈"], ["qr", "현장 QR" + (live ? ` <i>${live}</i>` : "")], ["tabs", "TABS 명단"],
-                ["final", "최종 경품" + (exWait ? ` <i>${exWait}</i>` : "")]];
+                ["final", "최종 경품" + (exWait ? ` <i>${exWait}</i>` : "")]]
+    .filter(([k]) => !BOOTH_DONE || k === "lookup" || k === "qr" || k === "final");   // 현장 QR은 다음 이벤트에도 씀
   const body = sub === "stock" ? stockHTML() : sub === "qr" ? `
     <div class="panel">
       <div class="ph"><h2>현장 이벤트 QR</h2><span class="sub">학생이 폰 카메라로 QR을 찍으면 사이트가 열리면서 카드가 바로 들어갑니다 (로그인 전이면 로그인 직후)</span></div>
@@ -1033,7 +1035,7 @@ function viewField() {
   return shell(`
     <div class="fbar">
       <div class="fsum">
-        ${STOCK_ITEMS.map(([it]) => { const t = stockTotal(it), l = stockLeft(it);
+        ${BOOTH_DONE ? "" : STOCK_ITEMS.map(([it]) => { const t = stockTotal(it), l = stockLeft(it);
           return `<span class="${stockLow(it) ? "low" : ""}">${it === KEYRING ? "키링(퀴즈)" : it === HAND ? "손난로" : "쉐이크"} ${t ? `남은 <b>${Math.max(0, l)}</b>/${t}` : `<b>${stockUsed(it)}</b>개 지급`}${t && l <= 0 ? " · 소진" : ""}</span>`; }).join("")}
         <span>진행 중 QR <b>${live}</b></span><span>최종 경품 <b>${finDone}</b>/${fin.length}</span><span>굿즈 교환 대기 <b>${exWait}</b></span>
       </div>
@@ -1347,6 +1349,12 @@ const stockUsed = it => STOCK_ITEMS.find(x => x[0] === it && x[1] === "count")
   : D.students.filter(x => x.adm && x.adm.gifts && x.adm.gifts[it]).length;
 const stockLeft = it => stockTotal(it) ? stockTotal(it) - stockUsed(it) : null;
 const stockLow = it => { const t = stockTotal(it), l = stockLeft(it); return t > 0 && l <= Math.max(3, Math.ceil(t * 0.1)); };
+/* 더미래페스티벌 부스(11/10)가 끝났다: 현장·경품 탭은 '학생 조회'와 '최종 경품'만 보이고,
+   TABS 현장 이벤트 종료 버튼은 운영 탭으로 옮긴다. 다음 현장 이벤트 때 false로 바꾸면 메뉴가 다시 보인다. */
+const BOOTH_DONE = true;
+/* 부스 최종 지급 수(확정치) — 키링은 [+1]을 중간에 못 눌러 기록이 모자라고, 손난로는 1개가 기록 없이 나가서
+   보고서에는 '준비 수량 전부 지급'으로 적는다. 숫자가 다르면 여기만 고치면 된다. */
+const BOOTH_FINAL = { [HAND]: 30, [KEYRING]: 155 };
 const HAND_TOTAL = { valueOf: () => stockTotal(HAND), toString: () => String(stockTotal(HAND)) };
 const BOOTH_DAY = Date.parse("2026-11-10T00:00:00+09:00");   // 이보다 먼저 인증했으면 '사전 인증'
 function tabsRows() {
@@ -1358,6 +1366,17 @@ function tabsRows() {
   }).sort((a, b) => (b.at || 0) - (a.at || 0));
 }
 function viewTabs() { return shell(tabsInner()); }
+function tabsCtlHTML() {
+  const te = Number(D.meta.tabsEnd) || 0;
+  return `<div class="panel tbctl">
+      <div class="ph"><h2>TABS 현장 이벤트 (${esc(HAND)})</h2>
+        <span class="chip ${te ? "no" : "ok"}">${te ? "종료 · " + when(te) : "진행 중"}</span>
+        <div class="right">${api ? (te ? `<button class="btn gh sm" id="tbopen">다시 열기</button>` : `<button class="btn sm danger" id="tbend">현장 이벤트 종료</button>`) : ""}</div></div>
+      <div class="pb"><p class="note" style="margin:0">${te
+        ? `학생 화면의 ${esc(HAND)} 홍보(큰 배너·안내 창·로그인 배너)가 꺼졌습니다. TABS 인증은 11월 30일까지 계속되고 <b>카드만 지급</b>됩니다.`
+        : `지금은 학생 화면에 '${esc(HAND)} 선착순' 홍보가 크게 보입니다. 부스가 끝나면 [현장 이벤트 종료]를 누르세요 — 홍보만 꺼지고 TABS 인증(카드 지급)은 11월 30일까지 계속됩니다.`}</p></div>
+    </div>`;
+}
 function tabsInner() {
   const all = tabsRows();
   const n = k => all.filter(k).length;
@@ -1367,15 +1386,7 @@ function tabsInner() {
   const rows = all.filter(flt);
   const chip = r => r.status === "ok" ? `<span class="chip ok">승인</span>` : r.status === "no" ? `<span class="chip no">반려</span>` : `<span class="chip wait">검토 전</span>`;
   const pre = r => r.at && r.at < BOOTH_DAY ? `<span class="chip ok" title="부스 운영일 전에 인증">사전</span>` : `<span class="chip wait" title="부스 운영일 당일·이후 인증">당일</span>`;
-  const te = Number(D.meta.tabsEnd) || 0;
-  const ctl = `<div class="panel tbctl">
-      <div class="ph"><h2>TABS 현장 이벤트 (${esc(HAND)})</h2>
-        <span class="chip ${te ? "no" : "ok"}">${te ? "종료 · " + when(te) : "진행 중"}</span>
-        <div class="right">${api ? (te ? `<button class="btn gh sm" id="tbopen">다시 열기</button>` : `<button class="btn sm danger" id="tbend">현장 이벤트 종료</button>`) : ""}</div></div>
-      <div class="pb"><p class="note" style="margin:0">${te
-        ? `학생 화면의 ${esc(HAND)} 홍보(큰 배너·안내 창·로그인 배너)가 꺼졌습니다. TABS 인증은 11월 30일까지 계속되고 <b>카드만 지급</b>됩니다.`
-        : `지금은 학생 화면에 '${esc(HAND)} 선착순' 홍보가 크게 보입니다. 부스가 끝나면 [현장 이벤트 종료]를 누르세요 — 홍보만 꺼지고 TABS 인증(카드 지급)은 11월 30일까지 계속됩니다.`}</p></div>
-    </div>`;
+  const ctl = tabsCtlHTML();
   return (`
     ${ctl}
     <div class="cards">
@@ -1410,8 +1421,7 @@ function tabsInner() {
       </table></div></div>
     </div>`);
 }
-function bindTabs() {
-  if (V.tab !== "field" || V.fsub !== "tabs") return;
+function bindTabsCtl() {
   const tb = async (ended, btn) => {
     btn.disabled = true;
     try { const j = await adminPost({ action: "tabsBooth", ended }); D.meta.tabsEnd = Number(j.tabsEnd) || 0;
@@ -1420,6 +1430,9 @@ function bindTabs() {
   };
   $("tbend") && ($("tbend").onclick = e => { if (confirm(`TABS 현장 이벤트(${HAND})를 종료할까요?\n학생 화면의 경품 홍보가 꺼지고, TABS 인증은 11월 30일까지 카드만 지급됩니다.`)) tb(true, e.currentTarget); });
   $("tbopen") && ($("tbopen").onclick = e => { if (confirm("TABS 현장 이벤트를 다시 열까요? 학생 화면에 경품 홍보가 다시 보입니다.")) tb(false, e.currentTarget); });
+}
+function bindTabs() {
+  if (V.tab !== "field" || V.fsub !== "tabs") return;
   const q = $("tq");
   // 검색은 다시 그리지 않고 줄만 숨긴다 (한글 입력이 끊기지 않도록)
   const apply = () => { const v = String(q.value || "").replace(/\s/g, ""); V.tq = q.value;
@@ -1555,8 +1568,10 @@ function reportData() {
   const tabsP = D.proofs.filter(p => p.key === "tabs"), dayT = Date.parse("2026-11-10T00:00:00+09:00");
   const gifts = it => S.filter(x => x.adm && x.adm.gifts && x.adm.gifts[it]).length;
   const booth = { tabs: tabsP.length, pre: tabsP.filter(p => p.at && p.at < dayT).length, ok: tabsP.filter(p => p.status === "ok").length,
-                  no: tabsP.filter(p => p.status === "no").length, hand: gifts("전기손난로"), shake: gifts("단백질 쉐이크"),
-                  quiz: stockUsed(KEYRING), handT: stockTotal(HAND), keyT: stockTotal(KEYRING), shakeT: stockTotal(SHAKE) };
+                  no: tabsP.filter(p => p.status === "no").length,
+                  hand: Math.max(gifts("전기손난로"), BOOTH_FINAL[HAND] || 0), shake: gifts("단백질 쉐이크"),
+                  quiz: Math.max(stockUsed(KEYRING), BOOTH_FINAL[KEYRING] || 0),
+                  handT: stockTotal(HAND), keyT: stockTotal(KEYRING), shakeT: stockTotal(SHAKE) };
   // 교환
   const exT = TIER_KEYS.map(t => ({ t, word: TIERS[t].word, req: ex.filter(x => x.tier === t && x.status !== "cancel").length, done: ex.filter(x => x.tier === t && x.status === "done").length, ready: tiers.find(z => z.t === t).done }));
   // 상위 10명 (이름 가림)
@@ -1673,8 +1688,8 @@ function reportHTML() {
 
     ${r.booth.tabs || r.booth.quiz ? sec("7", "더미래페스티벌 부스 이벤트", `<div class="rkpi">
       ${[["TABS 설문 인증", r.booth.tabs + "명", "사전 인증 " + r.booth.pre + "명 · 당일 " + (r.booth.tabs - r.booth.pre) + "명"],
-         ["학습지원 프로그램 퀴즈", r.booth.quiz + "명", "인형 키링 지급" + (r.booth.keyT ? " · 준비 " + r.booth.keyT + "개" : "")],
-         ["전기손난로 지급", r.booth.hand + "개", r.booth.handT ? "준비 " + r.booth.handT + "개 · 남은 " + Math.max(0, r.booth.handT - r.booth.hand) + "개" : "TABS 사전 인증자"],
+         ["학습지원 프로그램 퀴즈", r.booth.quiz + "명", "인형 키링 " + r.booth.quiz + "개 지급" + (r.booth.keyT && r.booth.quiz >= r.booth.keyT ? " · 준비 수량 전부 소진" : r.booth.keyT ? " · 준비 " + r.booth.keyT + "개" : "")],
+         ["전기손난로 지급", r.booth.hand + "개", r.booth.handT && r.booth.hand >= r.booth.handT ? "준비 " + r.booth.handT + "개 전부 소진" : r.booth.handT ? "준비 " + r.booth.handT + "개 · 남은 " + Math.max(0, r.booth.handT - r.booth.hand) + "개" : "TABS 사전 인증자"],
          ["단백질 쉐이크 지급", r.booth.shake + "개", r.booth.shakeT ? "준비 " + r.booth.shakeT + "개" : "팔로우 인증자 대상"]]
         .map(([l, v, sm]) => `<div><span>${l}</span><b>${v}</b><small>${esc(sm)}</small></div>`).join("")}</div>
       <p class="rn">'사전 인증' = 부스 운영일(11월 10일) 0시 전에 TABS 인증을 마친 학생.</p>`, "keep") : ""}
@@ -1907,6 +1922,7 @@ function viewOps() {
   const cl = Number(D.meta.closed) || 0;
   const bk = D.meta.backup;
   return shell(`
+    ${BOOTH_DONE ? tabsCtlHTML() : ""}
     <div class="panel">
       <div class="ph"><h2>이벤트 마감</h2>
         <span class="chip ${cl ? "no" : "ok"}">${cl ? "마감됨 · " + when(cl) : "진행 중"}</span></div>
@@ -2593,6 +2609,7 @@ document.addEventListener("keydown", e => {
 function bind() {
   bindOps();
   bindField();
+  bindTabsCtl();
   bindStock();
   $("susopen") && ($("susopen").onclick = () => { V.susOpen = !V.susOpen; render(); });
   bindTabs();

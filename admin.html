@@ -320,7 +320,7 @@ function rewardFor(st, key) {
 }
 const rewardOf = key => key === "follow" ? REWARD.follow : key === "tabs" ? (REWARD.tabs || 7)
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-11-14b";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-11-14c";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -1810,8 +1810,7 @@ function reportHTML() {
         ["합계", ...["n", "ok", "wait", "no"].map(f => r.pr.reduce((a, x) => a + x[f], 0)),
          PCT(r.pr.reduce((a, x) => a + x.no, 0), r.pr.reduce((a, x) => a + x.n, 0)) + "%"], "rnum")) : "") +
     blk("C. 카드별 보유 학생 비율", `<div class="cgs">${cardGrid}</div>`,
-      "숫자 = 그 카드를 1장 이상 가진 학생 비율. 뽑기 확률은 C 50% · B 30% · A 15% · S 5%이며, 한 등급을 모두 3장씩 모으면 그 등급 확률이 남은 등급에 나뉩니다.") +
-    (r.evs.length ? blk("D. 이벤트 코드 · 현장 QR 참여", tbl(["이벤트", "참여 학생"], r.evs.map(([l, n]) => [esc(l), n + "명"]), null, "rnum")) : ""), true);
+      "숫자 = 그 카드를 1장 이상 가진 학생 비율. 뽑기 확률은 C 50% · B 30% · A 15% · S 5%이며, 한 등급을 모두 3장씩 모으면 그 등급 확률이 남은 등급에 나뉩니다."), true);
 
   return `<article class="rep" id="report"><table class="rpage"><thead><tr><td><div class="rrh"><span>딩글이 카드도감 운영 보고서</span><span>등대팀 20기 · ${new Date(r.now).toLocaleDateString("ko-KR")} 집계</span></div></td></tr></thead>
     <tfoot><tr><td><div class="rrf"></div></td></tr></tfoot><tbody><tr><td class="rbody">

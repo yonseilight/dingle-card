@@ -67,6 +67,10 @@
   a.btn{text-decoration:none;display:inline-flex;align-items:center}
   .pb{padding:16px}
   .pb.flush{padding:0}
+  .fzbar{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;border-bottom:1px solid var(--line);padding:12px 16px}
+  .ckl{list-style:none;margin:0;padding:0}.ckl li{display:grid;grid-template-columns:26px 1fr auto;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+  .ckl li:first-child{border-top:0}.ckl .ck{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;background:rgba(255,255,255,.07);color:var(--mist)}
+  .ckl li.ok .ck{background:rgba(78,216,160,.2);color:#7FE9C0}.ckl li.ok b{color:var(--mist)}.ckl .note{display:block}
 
   table{width:100%;border-collapse:collapse;font-size:13px}
   th{text-align:left;padding:11px 14px;background:rgba(0,0,0,.2);color:var(--mist);font-weight:600;
@@ -316,7 +320,7 @@ function rewardFor(st, key) {
 }
 const rewardOf = key => key === "follow" ? REWARD.follow : key === "tabs" ? (REWARD.tabs || 7)
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-11-11";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-11-14b";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -398,7 +402,8 @@ async function load(silent) {
             pollSheets: j.pollSheets || [],
             meta: { v: j.v || "", epoch: j.epoch || "", notice: j.notice || null,
                     sheetName: j.sheetName || "", sheetUrl: j.sheetUrl || "",
-                    closed: Number(j.closed) || 0, backup: j.backup || null, tabsEnd: Number(j.tabsEnd) || 0 },
+                    closed: Number(j.closed) || 0, backup: j.backup || null, tabsEnd: Number(j.tabsEnd) || 0,
+                    final: j.final && Array.isArray(j.final.list) ? j.final : null },
             stock: j.stock || { total: {}, count: {}, log: [] },
             events: Array.isArray(j.events) ? j.events : [] };
       // 시트가 앞의 0을 지운 예전 번호(1012345678)까지 010-1234-5678 꼴로 맞춘다
@@ -1047,7 +1052,13 @@ function viewField() {
 /* 최종 경품: 순위 상위 N명(학기 말 실물 S급 카드·경품) + 아직 안 준 굿즈 교환 */
 const FINAL_ITEM = "최종 순위 경품";
 function finalN() { try { return Math.max(1, Math.min(50, parseInt(localStorage.getItem("dingle:finalN"), 10) || 10)); } catch (e) { return 10; } }
+/* 확정한 명단이 있으면 그것을, 없으면 지금 순위를 쓴다 */
 function finalRows() {
+  const fz = D.meta.final;
+  if (fz) return fz.list.map(e => {
+    const x = D.students.find(z => String(z.sid) === String(e.s)) || { sid: e.s, name: e.n, types: e.t, contact: "", adm: {} };
+    return { x, rank: e.r, fzTypes: e.t, got: (x.adm && x.adm.gifts || {})[FINAL_ITEM] || 0, hidNow: !!(x.adm && x.adm.hide) };
+  });
   const l = rankList(); l.forEach((x, i) => { if (x.rank === null) x.rank = l[i - 1].rank; });
   const n = finalN();
   return l.filter(x => x.rank <= n).map(x => ({ x, rank: x.rank, got: (x.adm && x.adm.gifts || {})[FINAL_ITEM] || 0 }));
@@ -1055,13 +1066,22 @@ function finalRows() {
 function finalHTML(fin) {
   const ex = (D.exchanges || []).filter(exWaiting).slice().sort((a, b) => (a.at || 0) - (b.at || 0));
   const name = sid => (D.students.find(x => String(x.sid) === String(sid)) || {}).name || "";
+  const fz = D.meta.final, cl = Number(D.meta.closed) || 0;
   return `<div class="panel">
-      <div class="ph"><h2>최종 순위 경품</h2><span class="sub">순위 상위 <input id="finN" type="number" min="1" max="50" value="${finalN()}" class="mini">등까지 · 같은 종수는 26종을 먼저 모은 순 · 순위 제외 학생은 빠짐</span>
-        <div class="right"><button class="btn gh sm" id="fincsv">명단 CSV</button></div></div>
+      <div class="ph"><h2>최종 순위 경품</h2>${fz
+        ? `<span class="chip ok">확정됨 · ${when(fz.at)}</span><span class="sub">확정 당시 상위 ${fz.n}등 · 참여 ${fz.total}명 중 · 그 뒤 카드를 열어도 이 명단은 바뀌지 않습니다</span>`
+        : `<span class="sub">지금 순위 기준 상위 <input id="finN" type="number" min="1" max="50" value="${finalN()}" class="mini">등까지 · 같은 종수는 26종을 먼저 모은 순 · 순위 제외 학생은 빠짐</span>`}
+        <div class="right"><button class="btn gh sm" id="rcptprint">수령 확인표 인쇄</button><button class="btn gh sm" id="fincsv">명단 CSV</button></div></div>
+      <div class="pb fzbar">${fz
+        ? `<span class="note">학생 화면 순위 탭에도 '최종 ○위 (확정)'으로 보입니다. 순위 제외(제재)를 바꿨다면 확정을 취소하고 다시 확정해 주세요.</span>
+           ${api ? `<button class="btn gh sm" id="finclear">확정 취소</button>` : ""}`
+        : cl ? `<span class="note"><b style="color:var(--beam)">아직 확정 전</b> — 마감 뒤에도 학생이 남은 카드를 열면 순위가 바뀝니다. 경품 연락을 돌리기 전에 지금 순위로 확정해 주세요.</span>
+           ${api ? `<button class="btn sm" id="finset">이 순위로 확정</button>` : ""}`
+        : `<span class="note">순위 확정은 이벤트를 마감한 뒤에 할 수 있습니다 (운영 탭 → 이벤트 마감).</span>`}</div>
       <div class="pb flush"><table>
         <thead><tr><th class="num">등수</th><th>이름</th><th>학번</th><th class="num">보유</th><th>연락처</th><th>수령</th></tr></thead>
         <tbody>${fin.length ? fin.map(r => `<tr class="${r.got ? "dim" : ""}"><td class="num"><b>${r.rank}</b></td><td><b>${esc(r.x.name)}</b></td>
-          <td style="color:var(--mist)">${esc(r.x.sid)}</td><td class="num">${r.x.types}종</td><td style="color:var(--mist)">${esc(r.x.contact) || "-"}</td>
+          <td style="color:var(--mist)">${esc(r.x.sid)}</td><td class="num">${r.fzTypes !== undefined ? r.fzTypes : r.x.types}종${r.fzTypes !== undefined && r.x.types !== r.fzTypes ? `<div class="note">지금 ${r.x.types}종</div>` : ""}${r.hidNow ? `<div><span class="chip no">지금 순위 제외</span></div>` : ""}</td><td style="color:var(--mist)">${esc(r.x.contact) || "-"}</td>
           <td style="white-space:nowrap">${r.got ? `<span class="chip ok">수령 완료</span> <span class="note">${when(r.got)}</span> <button class="lnk" data-fnu="${esc(r.x.sid)}">취소</button>`
             : api ? `<button class="btn sm" data-fng="${esc(r.x.sid)}">수령 완료</button>` : ""}</td></tr>`).join("")
           : `<tr><td colspan="6"><div class="empty">아직 참여자가 없습니다.</div></td></tr>`}</tbody></table></div>
@@ -1071,6 +1091,41 @@ function finalHTML(fin) {
         <div class="right"><button class="btn gh sm" id="excopy">연락 명단 복사</button></div></div>
       <div class="pb flush">${exGroupTable(exGroups(ex), "대기 중인 교환 신청이 없습니다.")}</div>
     </div>`;
+}
+/* 경품 수령 확인표 (서명란) — 정산 증빙용. 연락처는 넣지 않는다 */
+function printReceipt() {
+  const fz = D.meta.final, fin = finalRows();
+  const day = t => t ? new Date(t).toLocaleDateString("ko-KR") : "";
+  const rows = [];
+  fin.forEach(r => rows.push(["최종 순위 " + r.rank + "등", r.x.name, r.x.sid, FINAL_ITEM, day(r.got)]));
+  const ex = (D.exchanges || []).filter(x => x.status !== "cancel")
+    .sort((a, b) => TIER_KEYS.indexOf(a.tier) - TIER_KEYS.indexOf(b.tier) || (a.at || 0) - (b.at || 0));
+  ex.forEach(x => rows.push([`굿즈 교환 ${x.tier}등급`, x.name, x.sid, x.goods || `${x.tier}등급 굿즈`, x.status === "done" ? day(x.doneAt || x.at) : ""]));
+  if (!rows.length) return toast("인쇄할 명단이 없습니다");
+  const w = window.open("", "_blank");
+  if (!w) return toast("팝업이 막혔습니다. 브라우저에서 이 사이트 팝업을 허용해 주세요");
+  const done = rows.filter(r => r[4]).length;
+  w.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>경품 수령 확인표</title><style>
+    @page{size:A4;margin:0} *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body{margin:0;padding:0 15mm;font-family:"Pretendard","Apple SD Gothic Neo","Noto Sans KR",sans-serif;color:#1D2433;font-size:12px}
+    table{width:100%;border-collapse:collapse} .sp td{height:13mm;border:0;padding:0} .spf td{height:12mm;border:0;padding:0}
+    h1{font-size:20px;margin:0 0 4px;color:#0F1F3D} .m{font-size:11.5px;color:#4A5568;margin:0 0 10px}
+    th{background:#0F1F3D;color:#fff;font-weight:600;padding:7px 6px;text-align:left;font-size:11.5px}
+    td{border-bottom:1px solid #C9D0DC;padding:0 6px;height:11mm} tr{break-inside:avoid}
+    .no{width:9mm;text-align:right;color:#7A8599} .g{width:30mm} .sid{width:27mm} .d{width:24mm} .sg{width:36mm;border-left:1px solid #E3E7EF}
+    .ttl td{border:0;height:auto;padding:0 0 8px}
+    @media screen{body{padding:20px 15mm;max-width:210mm;margin:auto}}
+  </style></head><body><table>
+    <thead><tr class="sp"><td colspan="7"></td></tr>
+      <tr class="ttl"><td colspan="7"><h1>딩글이 카드도감 경품 수령 확인표</h1>
+        <p class="m">미래융합교육혁신원 등대팀 20기 · 출력 ${new Date().toLocaleString("ko-KR", { dateStyle: "long", timeStyle: "short" })}
+        ${fz ? ` · 최종 순위는 ${new Date(fz.at).toLocaleDateString("ko-KR")} 확정 명단 기준` : " · 최종 순위는 출력 시점 순위 기준(확정 전)"} · 총 ${rows.length}건 (수령 표시 ${done}건)</p></td></tr>
+      <tr><th class="no">번호</th><th class="g">구분</th><th>이름</th><th class="sid">학번</th><th>경품</th><th class="d">수령일</th><th class="sg">서명</th></tr></thead>
+    <tfoot><tr class="spf"><td colspan="7"></td></tr></tfoot>
+    <tbody>${rows.map((r, i) => `<tr><td class="no">${i + 1}</td><td class="g">${esc(r[0])}</td><td><b>${esc(r[1])}</b></td><td class="sid">${esc(r[2])}</td>
+      <td>${esc(r[3])}</td><td class="d">${esc(r[4])}</td><td class="sg"></td></tr>`).join("")}</tbody></table>
+    <script>setTimeout(function(){window.print()},300)<\/script></body></html>`);
+  w.document.close();
 }
 /* 재고·퀴즈 화면 */
 function stockHTML() {
@@ -1254,6 +1309,22 @@ function bindField() {
   app.querySelectorAll("[data-fng]").forEach(b => b.onclick = () => fgift(b.dataset.fng, true, b));
   app.querySelectorAll("[data-fnu]").forEach(b => b.onclick = () => { if (confirm("최종 경품 수령 표시를 취소할까요?")) fgift(b.dataset.fnu, false, b); });
   bindExGroups();
+  $("finset") && ($("finset").onclick = async e => {
+    const n = finalN(), btn = e.currentTarget;
+    if (!confirm(`지금 순위로 상위 ${n}등 명단을 확정할까요?\n확정한 뒤에는 학생이 카드를 더 열어도 경품 명단이 바뀌지 않고,\n학생 화면에 '최종 ○위 (확정)'으로 보입니다.`)) return;
+    btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+    try { const j = await adminPost({ action: "finalize", mode: "set", n }); D.meta.final = j.final; toast(`상위 ${n}등 명단을 확정했습니다`); }
+    catch (er) { toast(String(er && er.message) === "unknown action" ? "서버가 예전 버전입니다. apps-script.gs를 새 버전으로 배포해 주세요."
+                 : String(er && er.message) === "not closed" ? "이벤트를 먼저 마감해 주세요" : errMsg(er)); }
+    render();
+  });
+  $("finclear") && ($("finclear").onclick = async e => {
+    if (!confirm("최종 순위 확정을 취소할까요?\n명단이 지금 순위 기준으로 돌아가고, 학생 화면의 '확정' 표시도 사라집니다.")) return;
+    const btn = e.currentTarget; btn.disabled = true;
+    try { await adminPost({ action: "finalize", mode: "clear" }); D.meta.final = null; toast("확정을 취소했습니다"); } catch (er) { toast(errMsg(er)); }
+    render();
+  });
+  $("rcptprint") && ($("rcptprint").onclick = () => printReceipt());
   $("fincsv") && ($("fincsv").onclick = () => csv([["등수", "이름", "학번", "보유 종수", "26종 완성", "연락처", "수령"]]
     .concat(finalRows().map(r => [r.rank, r.x.name, r.x.sid, r.x.types, r.x.done ? new Date(r.x.done).toLocaleString("ko-KR") : "", r.x.contact,
       r.got ? new Date(r.got).toLocaleString("ko-KR") : ""])), "최종경품명단_" + new Date().toISOString().slice(0, 10)));
@@ -1492,7 +1563,7 @@ function reportData() {
   const rate = D.ratings.filter(r => r.score > 0);
   const k = {
     total: S.length,
-    proofStu: S.filter(x => has(x, "follow") || has(x, "apply:") || has(x, "done:")).length,
+    proofStu: S.filter(x => has(x, "follow") || has(x, "tabs") || has(x, "apply:") || has(x, "done:")).length,
     applyStu: S.filter(x => has(x, "apply:")).length,
     doneStu: S.filter(x => has(x, "done:")).length,
     quiz: S.reduce((a, x) => a + (x.quizDone || 0), 0),
@@ -1576,7 +1647,10 @@ function reportData() {
   const exT = TIER_KEYS.map(t => ({ t, word: TIERS[t].word, req: ex.filter(x => x.tier === t && x.status !== "cancel").length, done: ex.filter(x => x.tier === t && x.status === "done").length, ready: tiers.find(z => z.t === t).done }));
   // 상위 10명 (이름 가림)
   const mask = n => { n = String(n || ""); return n.length <= 1 ? n : n.length === 2 ? n[0] + "*" : n[0] + "*".repeat(n.length - 2) + n[n.length - 1]; };
-  const top = S.filter(x => !(x.adm && x.adm.hide)).slice().sort((a, b) => (b.types || 0) - (a.types || 0) || (a.done || 0) - (b.done || 0)).slice(0, 10)
+  const fz = D.meta.final;
+  const top = fz ? fz.list.slice(0, 10).map(e => { const x = S.find(z => String(z.sid) === String(e.s)) || {};
+      return { r: e.r, name: mask(x.name || e.n), types: e.t, done: e.a || 0 }; })
+    : S.filter(x => !(x.adm && x.adm.hide)).slice().sort((a, b) => (b.types || 0) - (a.types || 0) || (a.done || 0) - (b.done || 0)).slice(0, 10)
     .map((x, i) => ({ r: i + 1, name: mask(x.name), types: x.types || 0, done: x.done || 0 }));
   // 누적 참여 학생 (주차별)
   let cum = 0; weeks.forEach(w => { cum += w.join; w.cum = cum; });
@@ -1584,29 +1658,32 @@ function reportData() {
   return { k, prog, weeks, route, rp, qs, firstAt, now, tiers, dist, own, avgTypes, full, pr, evs, booth, exT, top, last7 };
 }
 
-function hbars(rows, color) {           // rows: [[label, n, pctBase]]
+function hbars(rows, color, opt) {     // rows: [[label, n, pctBase]]  opt.top: 1위 강조
+  opt = opt || {};
   const max = Math.max(1, ...rows.map(r => r[1]));
-  return `<div class="rb">${rows.map(([l, n, base]) => `<div class="rbr"><span class="rbl">${esc(l)}</span>
-    <span class="rbt"><i style="width:${Math.round(n / max * 100)}%;background:${color || "#2F5BD3"}"></i></span>
-    <span class="rbn">${KO(n)}${base ? ` <small>(${PCT(n, base)}%)</small>` : ""}</span></div>`).join("")}</div>`;
+  return `<div class="rb">${rows.map(([l, n, base], i) => {
+    const hi = opt.top && i === 0 && n > 0;
+    return `<div class="rbr${hi ? " hi" : ""}"><span class="rbl" title="${esc(l)}">${esc(l)}</span>
+    <span class="rbt"><i style="width:${Math.max(n ? 2 : 0, Math.round(n / max * 100))}%;background:${color || "#2F5BD3"}"></i></span>
+    <span class="rbn">${KO(n)}${opt.unit || "명"}${base ? `<small>${PCT(n, base)}%</small>` : ""}</span></div>`; }).join("")}</div>`;
 }
-function weekChart(weeks) {
-  const W = 680, H = 210, P = { l: 34, r: 12, t: 14, b: 30 };
-  const keys = [["join", "신규 가입", "#2F5BD3"], ["proof", "인증 제출", "#E3A008"], ["quiz", "퀴즈 '한 마디' 응답", "#18A36B"]];
-  const max = Math.max(1, ...weeks.map(w => Math.max(w.join, w.proof, w.quiz)));
-  const n = weeks.length, gx = (W - P.l - P.r) / Math.max(1, n), bw = Math.min(16, gx / 4);
-  const y = v => P.t + (H - P.t - P.b) * (1 - v / max);
-  let g = "";
-  for (let i = 0; i <= 4; i++) { const v = Math.round(max * i / 4), yy = y(v);
-    g += `<line x1="${P.l}" x2="${W - P.r}" y1="${yy}" y2="${yy}" stroke="#E3E7EF"/><text x="${P.l - 6}" y="${yy + 3}" text-anchor="end" font-size="9" fill="#7A8599">${v}</text>`; }
+/* 주차별 막대 하나짜리 작은 차트 (합계·가장 많았던 주 표시) */
+function miniChart(weeks, key, title, color) {
+  const W = 300, H = 120, P = { l: 6, r: 6, t: 16, b: 18 };
+  const vals = weeks.map(w => w[key] || 0), max = Math.max(1, ...vals), sum = vals.reduce((a, b) => a + b, 0);
+  const n = weeks.length, gx = (W - P.l - P.r) / Math.max(1, n), bw = Math.max(4, Math.min(20, gx * 0.62));
+  const pk = vals.indexOf(Math.max(...vals));
+  const step = n > 10 ? 3 : n > 6 ? 2 : 1;
+  let g = `<line x1="${P.l}" x2="${W - P.r}" y1="${H - P.b}" y2="${H - P.b}" stroke="#D5DBE6"/>`;
   weeks.forEach((w, i) => {
-    const cx = P.l + gx * i + gx / 2;
-    keys.forEach(([k, , c], j) => { const v = w[k], x = cx + (j - 1) * (bw + 2) - bw / 2;
-      g += `<rect x="${x}" y="${y(v)}" width="${bw}" height="${H - P.b - y(v)}" rx="2" fill="${c}"/>`; });
-    g += `<text x="${cx}" y="${H - P.b + 14}" text-anchor="middle" font-size="9.5" fill="#4A5568">${wkLabel(w.w)}</text>`;
+    const v = vals[i], h = (H - P.t - P.b) * v / max, x = P.l + gx * i + (gx - bw) / 2, cx = x + bw / 2;
+    g += `<rect x="${x.toFixed(1)}" y="${(H - P.b - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${color}" opacity="${i === pk ? 1 : .45}"/>`;
+    if (i === pk && v) g += `<text x="${cx.toFixed(1)}" y="${(H - P.b - h - 4).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="#0F1F3D">${v}</text>`;
+    if (i % step === 0 || i === n - 1) g += `<text x="${cx.toFixed(1)}" y="${H - 5}" text-anchor="middle" font-size="9" fill="#7A8599">${wkLabel(w.w)}</text>`;
   });
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="주차별 참여 추이">${g}</svg>
-    <div class="rleg">${keys.map(([, l, c]) => `<span><i style="background:${c}"></i>${l}</span>`).join("")}</div>`;
+  return `<div class="rmc"><div class="rmch"><span>${title}</span><b>${KO(sum)}</b></div>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(title)} 주차별">${g}</svg>
+    <div class="rmcf">가장 많았던 주: ${vals[pk] ? wkLabel(weeks[pk].w) + " 주 (" + vals[pk] + ")" : "-"}</div></div>`;
 }
 
 function reportHTML() {
@@ -1616,167 +1693,213 @@ function reportHTML() {
   const sumP = f => r.prog.reduce((a, p) => a + p[f], 0);
   const convAll = PCT(sumP("both"), sumP("apply"));
   const bestProg = r.prog.slice().sort((a, b) => b.apply - a.apply)[0];
-  const bestQ = r.qs.find(q => q.kind === "poll") || r.qs[0];
-  const sec = (no, title, inner, cls) => `<section class="${cls || ""}"><h2><span>${no}</span>${title}</h2>${inner}</section>`;
-  const tbl = (head, rows, sum) => `<table class="rt"><thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>
+  const convProg = r.prog.filter(p => p.apply >= 3).sort((a, b) => b.conv - a.conv)[0];
+  const hasBooth = !!(r.booth.tabs || r.booth.quiz);
+  const tbl = (head, rows, sum, cls) => `<table class="rt ${cls || ""}"><thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>
     ${rows.map(rw => `<tr>${rw.map(c => `<td>${c}</td>`).join("")}</tr>`).join("")}${sum ? `<tr class="sum">${sum.map(c => `<td>${c}</td>`).join("")}</tr>` : ""}</tbody></table>`;
-  const cardGrid = TIER_KEYS.map(t => `<div class="cg"><div class="cgh">${t} ${TIERS[t].word}</div><div class="cgr">${
-    Array.from({ length: PER_TIER[t] }, (_, i) => { const id = t + (i + 1), n = r.own[id] || 0, pc = PCT(n, k.total);
-      return `<div class="cgc" title="${id}"><b>${id}</b><i style="height:${Math.max(4, pc)}%"></i><span>${pc}%</span></div>`; }).join("")}</div></div>`).join("");
+  const chap = (no, title, lead, inner, brk) => `<div class="rsec${brk ? " rbrk" : ""}">
+    <div class="rch"><span>${no}</span><h2>${title}</h2></div>${lead ? `<p class="rlead">${lead}</p>` : ""}${inner}</div>`;
+  const blk = (title, inner, note) => `<div class="rblk">${title ? `<h3>${title}</h3>` : ""}${inner}${note ? `<p class="rn">${note}</p>` : ""}</div>`;
+  const tile = (l, v, sm, cls) => `<div class="${cls || ""}"><span>${l}</span><b>${v}</b>${sm ? `<small>${sm}</small>` : ""}</div>`;
+  const rate = p => { const o = r.rp[p.name]; return o && o.n ? `${(o.sum / o.n).toFixed(1)} <small>(${o.n})</small>` : "-"; };
+  const convBar = (v, on) => on ? `<span class="rcv"><i style="width:${v}%"></i></span><b>${v}%</b>` : "-";
+  const topAns = q => { const o = Object.keys(q.cnt).sort((a, b) => q.cnt[b] - q.cnt[a])[0]; return o && q.cnt[o] ? o : ""; };
+  const pollQ = r.qs.find(q => q.kind === "poll" && topAns(q));
 
-  return `<article class="rep" id="report">
-    <header class="rh">
+  /* ── 요약 ── */
+  const funnel = [["참여 학생", k.total], ["인증 1회 이상", k.proofStu], ["프로그램 신청 인증", k.applyStu], ["활동 완료 인증", k.doneStu]];
+  const finds = [
+    `카드도감에 <b>${KO(k.total)}명</b>이 참여했고, 그중 <b>${KO(k.proofStu)}명(${PCT(k.proofStu, k.total)}%)</b>이 팔로우·TABS·프로그램 인증을 1회 이상 했습니다.`,
+    `학습지원 프로그램 <b>신청 인증 ${KO(sumP("apply"))}건</b> 중 <b>${KO(sumP("both"))}건(${convAll}%)</b>이 활동 완료 인증까지 이어졌습니다.${bestProg && bestProg.apply ? ` 신청이 가장 많은 프로그램은 <b>${esc(bestProg.name)}</b>(${bestProg.apply}명)입니다.` : ""}`,
+    `주간 퀴즈 참여 <b>${KO(k.quiz)}회</b>(${KO(k.quizStu)}명) · 26종을 모두 모은 학생 <b>${KO(r.full)}명</b> · 1인 평균 보유 ${r.avgTypes}종.`,
+    hasBooth ? `더미래페스티벌 부스: TABS 설문 인증 <b>${KO(r.booth.tabs)}명</b>, 학습지원 프로그램 퀴즈 <b>${KO(r.booth.quiz)}명</b> 참여, 전기손난로 ${KO(r.booth.hand)}개 지급.` : "",
+    pollQ ? `이벤트 설문 '${esc(pollQ.q)}'에서 가장 많이 고른 답은 <b>${esc(topAns(pollQ))}</b>입니다(응답 ${pollQ.n}명 중 ${pollQ.cnt[topAns(pollQ)]}명).` : "",
+  ].filter(Boolean);
+  const summary = `<header class="rhd">
       <div class="rk">미래융합교육혁신원 등대팀(Lighthouse Team) 20기</div>
       <h1>딩글이 카드도감 운영 보고서</h1>
-      <div class="rm">운영 기간 ${day(r.firstAt)} ~ ${cl ? day(cl) + " (마감)" : day(r.now) + " (진행 중)"} · 집계 ${new Date(r.now).toLocaleString("ko-KR")}<br>
-        딩글이 카드도감 관리자 페이지에서 자동 생성 · 인증 수치는 카드도감에 올린 캡처 기준</div>
+      <div class="rm"><span class="rpill ${cl ? "end" : ""}">${cl ? "운영 마감" : "운영 중"}</span>
+        운영 기간 ${day(r.firstAt)} ~ ${cl ? day(cl) : day(r.now)} · 집계 ${new Date(r.now).toLocaleString("ko-KR", { dateStyle: "long", timeStyle: "short" })}</div>
     </header>
-
-    <div class="rsum">
-      <div class="rst">한눈에 보는 요약</div>
-      <ul>
-        <li>카드도감에 <b>${KO(k.total)}명</b>이 참여했고, 이 중 <b>${KO(k.proofStu)}명(${PCT(k.proofStu, k.total)}%)</b>이 팔로우·TABS·프로그램 인증을 1회 이상 했습니다. 최근 7일 신규 참여 ${KO(r.last7)}명.</li>
-        <li>학습지원 프로그램 <b>신청 인증 ${KO(sumP("apply"))}건</b>, <b>활동 완료 인증 ${KO(sumP("done"))}건</b> · 신청 후 완료까지 이어진 비율 <b>${convAll}%</b>${bestProg && bestProg.apply ? ` · 신청이 가장 많은 프로그램은 <b>${esc(bestProg.name)}</b>(${bestProg.apply}명)` : ""}.</li>
-        <li>주간 퀴즈 참여 <b>${KO(k.quiz)}회</b>(${KO(k.quizStu)}명) · 26종 모두 모은 학생 <b>${KO(r.full)}명</b> · 1인 평균 보유 ${r.avgTypes}종.</li>
-        ${r.booth.tabs || r.booth.quiz ? `<li>더미래페스티벌 부스: TABS 인증 <b>${r.booth.tabs}명</b>(사전 ${r.booth.pre}명) · 학습지원 프로그램 퀴즈 <b>${r.booth.quiz}명</b> · 전기손난로 ${r.booth.hand}개 · 단백질 쉐이크 ${r.booth.shake}개 지급.</li>` : ""}
-        ${bestQ ? `<li>설문 '${esc(bestQ.q)}' 1위 응답: <b>${esc(Object.keys(bestQ.cnt).sort((a, b) => bestQ.cnt[b] - bestQ.cnt[a])[0] || "-")}</b> (응답 ${bestQ.n}명).</li>` : ""}
-      </ul>
+    <div class="rhero">
+      ${tile("참여 학생", KO(k.total) + "<em>명</em>", "최근 7일 신규 " + KO(r.last7) + "명")}
+      ${tile("인증 참여", KO(k.proofStu) + "<em>명</em>", "참여 학생의 " + PCT(k.proofStu, k.total) + "%")}
+      ${tile("프로그램 신청 인증", KO(k.applyStu) + "<em>명</em>", "참여 학생의 " + PCT(k.applyStu, k.total) + "%")}
+      ${tile("활동 완료 인증", KO(k.doneStu) + "<em>명</em>", "신청 → 완료 " + convAll + "%")}
     </div>
+    <div class="r2 rtop">
+      ${blk("참여 단계", `<div class="rfun">${funnel.map(([l, n], i) => `<div class="rfr"><span class="rfl">${l}</span>
+          <span class="rft"><i style="width:${Math.max(n ? 3 : 0, PCT(n, k.total))}%;opacity:${1 - i * .18}"></i></span>
+          <span class="rfn">${KO(n)}명<small>${PCT(n, k.total)}%</small></span></div>`).join("")}</div>`,
+        "비율은 모두 참여 학생 대비. 인증은 반려되지 않은 것만 셉니다.")}
+      ${blk("그 밖의 지표", `<div class="rsub">
+        ${tile("주간 퀴즈", KO(k.quiz) + "회", KO(k.quizStu) + "명 참여")}
+        ${tile("지급된 카드", KO(k.cards) + "장", "평균 " + r.avgTypes + "종 보유")}
+        ${tile("굿즈 교환", KO(k.exDone) + "건", "신청 " + KO(k.exReq) + "건")}
+        ${tile("프로그램 만족도", k.rateAvg + (k.rateN ? "<em>/5</em>" : ""), KO(k.rateN) + "건 응답")}</div>`)}
+    </div>
+    <div class="rsum"><h3>핵심 결과</h3><ol>${finds.map(f => `<li>${f}</li>`).join("")}</ol></div>
+    <div class="rtoc">${["학습지원 프로그램 연계", "참여 추이와 경로", "카드 수집과 경품", "설문 결과", "세부 표"]
+      .map((t, i) => `<span><b>${i < 4 ? "0" + (i + 1) : "부록"}</b>${t}</span>`).join("")}</div>`;
 
-    ${sec("1", "핵심 지표", `<div class="rkpi">
-      ${[["참여 학생", KO(k.total) + "명", "최근 7일 +" + KO(r.last7) + "명"],
-         ["인증 참여", KO(k.proofStu) + "명", PCT(k.proofStu, k.total) + "% · 인증 1회 이상"],
-         ["프로그램 신청 인증", KO(k.applyStu) + "명", PCT(k.applyStu, k.total) + "% · With Yonsei 신청"],
-         ["활동 완료 인증", KO(k.doneStu) + "명", PCT(k.doneStu, k.applyStu) + "% (신청 인증 학생 대비)"],
-         ["주간 퀴즈 참여", KO(k.quiz) + "회", KO(k.quizStu) + "명 참여"],
-         ["지급된 카드", KO(k.cards) + "장", "1인 평균 보유 " + r.avgTypes + "종"],
-         ["굿즈 교환", KO(k.exDone) + "건 지급", "신청 " + KO(k.exReq) + "건"],
-         ["프로그램 만족도", k.rateAvg + (k.rateN ? " / 5" : ""), KO(k.rateN) + "건 응답"]]
-        .map(([l, v, sm]) => `<div><span>${l}</span><b>${v}</b><small>${esc(sm)}</small></div>`).join("")}</div>`)}
+  /* ── 01 프로그램 ── */
+  const ch1 = chap("01", "학습지원 프로그램 연계",
+    `신청 인증 ${KO(sumP("apply"))}건 → 활동 완료 인증 ${KO(sumP("done"))}건 · 신청 후 완료 전환율 <b>${convAll}%</b>${convProg ? ` · 전환율이 가장 높은 프로그램 <b>${esc(convProg.name)}</b>(${convProg.conv}%)` : ""}`,
+    blk("", tbl(["프로그램", "신청 인증", "활동 완료 인증", "신청 후 완료", "전환율", "만족도"],
+        r.prog.map(p => [`<b>${esc(p.name)}</b>`, p.apply + "명", p.done + "명", p.both + "명", convBar(p.conv, p.apply), rate(p)]),
+        ["합계", sumP("apply") + "건", sumP("done") + "건", sumP("both") + "건", convBar(convAll, sumP("apply")), k.rateAvg + (k.rateN ? ` <small>(${k.rateN})</small>` : "")], "rprog"),
+      "전환율 = 같은 프로그램을 신청 인증한 학생 중 활동 완료까지 인증한 비율. 만족도 = 별점 평균(5점 만점), 괄호는 응답 수. 반려된 인증은 빠집니다."), true);
 
-    ${sec("2", "프로그램별 신청 → 완료 전환", tbl(["프로그램", "신청 인증", "활동 완료 인증", "신청 후 완료", "전환율"],
-        r.prog.map(p => [esc(p.name), p.apply + "명", p.done + "명", p.both + "명", `<b>${p.apply ? p.conv + "%" : "-"}</b>`]),
-        ["<b>합계</b>", sumP("apply") + "건", sumP("done") + "건", sumP("both") + "건", `<b>${convAll}%</b>`]) +
-      (() => { const mx = Math.max(1, ...r.prog.map(p => p.apply), ...r.prog.map(p => p.done));
-        return `<div class="rb">${r.prog.map(p => `<div class="rbr g2"><span class="rbl">${esc(p.name)}</span>
-          <span><span class="rbt"><i style="width:${Math.round(p.apply / mx * 100)}%;background:#2F5BD3"></i></span>
-                <span class="rbt"><i style="width:${Math.round(p.done / mx * 100)}%;background:#18A36B"></i></span></span>
-          <span class="rbn">${p.apply} → ${p.done}</span></div>`).join("")}</div>
-          <div class="rleg"><span><i style="background:#2F5BD3"></i>신청 인증</span><span><i style="background:#18A36B"></i>활동 완료 인증</span></div>`; })() +
-      `<p class="rn">전환율 = 같은 프로그램을 신청 인증한 학생 중 활동 완료까지 인증한 비율. 반려된 인증은 빠집니다.</p>`)}
+  /* ── 02 추이·경로 ── */
+  const ch2 = chap("02", "참여 추이와 경로", `최근 7일 신규 참여 ${KO(r.last7)}명 · 한 학생이 여러 경로에 참여할 수 있습니다.`,
+    blk("주차별 추이", `<div class="r3">${miniChart(r.weeks, "join", "신규 가입", "#2F5BD3")}${miniChart(r.weeks, "proof", "인증 제출", "#E3A008")}${miniChart(r.weeks, "quiz", "퀴즈 '한 마디' 응답", "#18A36B")}</div>`,
+      "가로축은 그 주의 월요일 날짜. 진하게 칠한 막대가 가장 많았던 주입니다. 주차별 숫자는 부록 A에 있습니다.") +
+    blk("참여 경로별 인원", hbars(r.route.map(([l, n]) => [l, n, k.total]).sort((a, b) => b[1] - a[1]), "#2F5BD3"),
+      "오른쪽 %는 참여 학생 대비 비율."));
 
-    ${sec("3", "주차별 참여 추이", `<div class="keep">${weekChart(r.weeks)}</div>` +
-      tbl(["주차 (월요일)", "신규 가입", "누적 참여 학생", "인증 제출", "퀴즈 '한 마디' 응답"],
-        r.weeks.map(w => [wkLabel(w.w) + " 주", w.join, w.cum, w.proof, w.quiz])) +
-      `<p class="rn">인증 제출은 항목별 마지막 제출 시각 기준(재인증하면 새 주차로 셉니다). 퀴즈는 '한 마디' 설문 응답 수로 셉니다.</p>`)}
+  /* ── 03 카드·경품 ── */
+  const ch3 = chap("03", "카드 수집과 경품",
+    `26종 완성 <b>${KO(r.full)}명</b> · 1인 평균 보유 ${r.avgTypes}종 · 굿즈 교환 지급 ${KO(k.exDone)}건`,
+    `<div class="r2">${blk("등급별 완성과 굿즈 교환", tbl(["등급", "완성 학생", "교환 신청", "지급 완료"],
+        r.exT.map(t => [`<b class="tg tg${t.t}">${t.t}</b> ${t.word} <small>(${PER_TIER[t.t]}종)</small>`, `${t.ready}명 <small>${PCT(t.ready, k.total)}%</small>`, t.req + "건", t.done + "건"])),
+        "완성 = 그 등급 카드를 종류별로 모두 가진 학생.")}
+      ${blk("보유 종수 분포", hbars(r.dist.map(([l, n]) => [l, n, k.total]), "#E3A008"))}</div>` +
+    (hasBooth ? blk("더미래페스티벌 부스 이벤트 (11월 10일)", `<div class="rsub r3b">
+        ${tile("TABS 설문 인증", KO(r.booth.tabs) + "명", "사전 " + r.booth.pre + "명 · 당일 이후 " + (r.booth.tabs - r.booth.pre) + "명")}
+        ${tile("프로그램 퀴즈 참여", KO(r.booth.quiz) + "명", "인형 키링 " + r.booth.quiz + "개" + (r.booth.keyT && r.booth.quiz >= r.booth.keyT ? " · 준비 수량 전부 소진" : ""))}
+        ${tile("전기손난로 지급", KO(r.booth.hand) + "개", r.booth.handT && r.booth.hand >= r.booth.handT ? "준비 " + r.booth.handT + "개 전부 소진" : r.booth.handT ? "준비 " + r.booth.handT + "개" : "TABS 사전 인증자")}
+</div>`,
+        "사전 인증 = 부스 운영일(11월 10일) 0시 전에 TABS 인증을 마친 학생.") : "") +
+    blk(D.meta.final ? `최종 순위 상위 10명 <small style="font-weight:500;color:#7A8599">(${new Date(D.meta.final.at).toLocaleDateString("ko-KR")} 확정)</small>` : "순위 상위 10명", `<div class="rtop10">${tbl(["순위", "이름", "보유", "26종 완성일"],
+        r.top.slice(0, 5).map(x => [x.r, x.name, x.types + "종", x.done ? new Date(x.done).toLocaleDateString("ko-KR") : "-"]))}${
+        r.top.length > 5 ? tbl(["순위", "이름", "보유", "26종 완성일"], r.top.slice(5).map(x => [x.r, x.name, x.types + "종", x.done ? new Date(x.done).toLocaleDateString("ko-KR") : "-"])) : ""}</div>`,
+      (D.meta.final ? "확정 시점의 보유 종수 기준. " : "") + "순위는 보유 종류 수 → 26종을 먼저 모은 순. 순위에서 제외한 학생은 빠지고, 이름은 가운데를 가렸습니다."), true);
 
-    ${sec("4", "참여 경로별 인원", hbars(r.route.map(([l, n]) => [l, n, k.total]), "#6B5BD3") +
-      (r.evs.length ? `<h3>이벤트 코드 · 현장 QR 참여</h3>` + tbl(["이벤트", "참여 학생"], r.evs.map(([l, n]) => [esc(l), n + "명"])) : "") +
-      `<p class="rn">괄호 안은 전체 참여 학생 대비 비율. 한 학생이 여러 경로에 참여할 수 있습니다.</p>`)}
+  /* ── 04 설문 ── */
+  const qhtml = q => {
+    const opts = Object.keys(q.cnt).sort((a, b) => q.cnt[b] - q.cnt[a]);
+    const picked = opts.reduce((a, o) => a + q.cnt[o], 0);
+    return `<div class="rq"><h4>${esc(q.q)}</h4>
+      <div class="rqm">응답 ${q.n}명${q.etc.length ? ` · 직접 입력 ${q.etc.length}명` : ""}</div>
+      ${hbars(opts.map(o => [o, q.cnt[o], picked]), q.kind === "poll" ? "#E3A008" : "#18A36B", { top: true })}
+      ${q.etc.length ? `<div class="retc"><b>직접 입력</b> ${q.etc.slice(0, 6).map(t => `<span>${esc(t)}</span>`).join("")}${q.etc.length > 6 ? ` <em>외 ${q.etc.length - 6}건</em>` : ""}</div>` : ""}
+    </div>`; };
+  const polls = r.qs.filter(q => q.kind === "poll"), weekly = r.qs.filter(q => q.kind !== "poll");
+  const byPoll = {};
+  polls.forEach(q => { const id = q.meta ? q.meta.id : q.group; (byPoll[id] = byPoll[id] || { meta: q.meta, list: [] }).list.push(q); });
+  const md = ymd => { if (!ymd) return ""; const d = new Date(ymd + "T00:00:00+09:00"); return (d.getMonth() + 1) + "월 " + d.getDate() + "일"; };
+  const ch4 = chap("04", "설문 결과", `막대 옆 %는 그 문항에서 보기를 고른 학생 대비 비율이고, 가장 많이 고른 답을 진하게 표시했습니다.`,
+    blk("이벤트 설문", Object.keys(byPoll).length ? Object.values(byPoll).map(g => `
+      <div class="rpg"><div class="rpgh"><b>${esc(g.meta ? g.meta.title : "이벤트 설문")}</b>
+        <span>${g.meta && g.meta.from ? md(g.meta.from) + (g.meta.until ? " ~ " + md(g.meta.until) : "") + " · " : ""}참여 ${g.meta ? g.meta.people : "-"}명${g.meta && g.meta.cards ? " · 참여 보상 카드 " + g.meta.cards + "장" : ""}</span></div>
+        <div class="rqg">${g.list.map(qhtml).join("")}</div></div>`).join("") : `<p class="rn">진행한 이벤트 설문이 없습니다.</p>`,
+      "카드 얻기 화면에서 기간을 정해 연 설문(참여하면 카드 지급). 학생 1명당 1회 응답.") +
+    blk("주간 퀴즈 '이번 주 한 마디'", weekly.length ? `<div class="rqg">${weekly.map(qhtml).join("")}</div>` : `<p class="rn">아직 주간 설문 응답이 없습니다.</p>`,
+      "주간 퀴즈를 푼 뒤 받는 한 문항 설문. 학생마다 참여 순서대로 다른 문항이 나오므로 문항별 응답 수가 다릅니다."), true);
 
-    ${r.pr.length ? sec("5", "인증 항목별 검토 결과", tbl(["인증 항목", "제출", "승인", "검토 전", "반려", "반려율"],
+  /* ── 부록 ── */
+  const cardGrid = TIER_KEYS.map(t => `<div class="cg"><div class="cgh"><b class="tg tg${t}">${t}</b> ${TIERS[t].word}</div><div class="cgr">${
+    Array.from({ length: PER_TIER[t] }, (_, i) => { const id = t + (i + 1), n = r.own[id] || 0, pc = PCT(n, k.total);
+      return `<div class="cgc" title="${id}"><span>${pc}%</span><i style="height:${Math.max(3, pc * .6)}px"></i><b>${id}</b></div>`; }).join("")}</div></div>`).join("");
+  const app = chap("부록", "세부 표", "",
+    blk("A. 주차별 참여", tbl(["주차 (월요일)", "신규 가입", "누적 참여 학생", "인증 제출", "퀴즈 '한 마디' 응답"],
+        r.weeks.map(w => [wkLabel(w.w) + " 주", w.join, w.cum, w.proof, w.quiz]), null, "rnum"),
+      "인증 제출은 항목별 마지막 제출 시각 기준(재인증하면 새 주차로 셉니다).") +
+    (r.pr.length ? blk("B. 인증 항목별 검토 결과", tbl(["인증 항목", "제출", "승인", "검토 전", "반려", "반려율"],
         r.pr.map(x => [esc(x.label), x.n, x.ok, x.wait, x.no, PCT(x.no, x.n) + "%"]),
-        ["<b>합계</b>", ...["n", "ok", "wait", "no"].map(f => r.pr.reduce((a, x) => a + x[f], 0)),
-         PCT(r.pr.reduce((a, x) => a + x.no, 0), r.pr.reduce((a, x) => a + x.n, 0)) + "%"])) : ""}
+        ["합계", ...["n", "ok", "wait", "no"].map(f => r.pr.reduce((a, x) => a + x[f], 0)),
+         PCT(r.pr.reduce((a, x) => a + x.no, 0), r.pr.reduce((a, x) => a + x.n, 0)) + "%"], "rnum")) : "") +
+    blk("C. 카드별 보유 학생 비율", `<div class="cgs">${cardGrid}</div>`,
+      "숫자 = 그 카드를 1장 이상 가진 학생 비율. 뽑기 확률은 C 50% · B 30% · A 15% · S 5%이며, 한 등급을 모두 3장씩 모으면 그 등급 확률이 남은 등급에 나뉩니다.") +
+    (r.evs.length ? blk("D. 이벤트 코드 · 현장 QR 참여", tbl(["이벤트", "참여 학생"], r.evs.map(([l, n]) => [esc(l), n + "명"]), null, "rnum")) : ""), true);
 
-    ${sec("6", "카드 수집 현황",
-      `<div class="r2"><div><h3>등급별 완성 학생</h3>${tbl(["등급", "카드 수", "완성 학생", "비율"],
-          r.tiers.map(t => [`<b>${t.t}</b> ${t.word}`, t.all + "종", t.done + "명", PCT(t.done, k.total) + "%"]))}</div>
-        <div><h3>보유 종수 분포</h3>${hbars(r.dist.map(([l, n]) => [l, n, k.total]), "#E3A008")}</div></div>
-       <h3>카드별 보유 학생 비율</h3><div class="cgs">${cardGrid}</div>
-       <p class="rn">막대 높이 = 그 카드를 1장 이상 가진 학생 비율. 뽑기 확률은 C 50% · B 30% · A 15% · S 5%이며, 한 등급을 모두 3장씩 모으면 그 등급 확률이 남은 등급에 나뉩니다.</p>`)}
-
-    ${r.booth.tabs || r.booth.quiz ? sec("7", "더미래페스티벌 부스 이벤트", `<div class="rkpi">
-      ${[["TABS 설문 인증", r.booth.tabs + "명", "사전 인증 " + r.booth.pre + "명 · 당일 " + (r.booth.tabs - r.booth.pre) + "명"],
-         ["학습지원 프로그램 퀴즈", r.booth.quiz + "명", "인형 키링 " + r.booth.quiz + "개 지급" + (r.booth.keyT && r.booth.quiz >= r.booth.keyT ? " · 준비 수량 전부 소진" : r.booth.keyT ? " · 준비 " + r.booth.keyT + "개" : "")],
-         ["전기손난로 지급", r.booth.hand + "개", r.booth.handT && r.booth.hand >= r.booth.handT ? "준비 " + r.booth.handT + "개 전부 소진" : r.booth.handT ? "준비 " + r.booth.handT + "개 · 남은 " + Math.max(0, r.booth.handT - r.booth.hand) + "개" : "TABS 사전 인증자"],
-         ["단백질 쉐이크 지급", r.booth.shake + "개", r.booth.shakeT ? "준비 " + r.booth.shakeT + "개" : "팔로우 인증자 대상"]]
-        .map(([l, v, sm]) => `<div><span>${l}</span><b>${v}</b><small>${esc(sm)}</small></div>`).join("")}</div>
-      <p class="rn">'사전 인증' = 부스 운영일(11월 10일) 0시 전에 TABS 인증을 마친 학생.</p>`, "keep") : ""}
-
-    ${sec((r.booth.tabs || r.booth.quiz) ? "8" : "7", "굿즈 교환과 순위", `<div class="r2"><div><h3>등급별 굿즈 교환</h3>${tbl(["등급", "완성 학생", "교환 신청", "지급 완료"],
-        r.exT.map(t => [`<b>${t.t}</b> ${t.word}`, t.ready + "명", t.req + "건", t.done + "건"]))}</div>
-      <div><h3>순위 상위 10명</h3>${tbl(["순위", "이름", "보유", "26종 완성"], r.top.map(x => [x.r, x.name, x.types + "종", x.done ? new Date(x.done).toLocaleDateString("ko-KR") : "-"]))}</div></div>
-      <p class="rn">순위는 보유 종류 수 → 26종을 먼저 모은 순. 등대팀이 순위에서 제외한 학생은 빠집니다. 이름은 가운데를 가렸습니다.</p>`)}
-
-    ${sec((r.booth.tabs || r.booth.quiz) ? "9" : "8", "프로그램 만족도", Object.keys(r.rp).length ? tbl(["프로그램", "평균 별점", "응답", "의견"],
-        Object.entries(r.rp).map(([p, o]) => [esc(p), `<b>${o.n ? (o.sum / o.n).toFixed(2) : "-"}</b> / 5`, o.n + "건", o.memo + "건"]))
-      : `<p class="rn">아직 만족도 응답이 없습니다.</p>`, "keep")}
-
-    ${(() => {
-      const qhtml = (q, i) => {
-        const opts = Object.keys(q.cnt).sort((a, b) => q.cnt[b] - q.cnt[a]);
-        const picked = opts.reduce((a, o) => a + q.cnt[o], 0);
-        return `<div class="rq"><h3>${i + 1}. ${esc(q.q)}</h3>
-          <div class="rqm">응답 ${q.n}명 · 보기 선택 ${picked}명 · 직접 입력 ${q.etc.length}명${opts[0] && q.cnt[opts[0]] ? ` · 1위 <b>${esc(opts[0])}</b>` : ""}</div>
-          ${hbars(opts.map(o => [o, q.cnt[o], picked]), q.kind === "poll" ? "#E3A008" : "#18A36B")}
-          ${q.etc.length ? `<div class="retc"><b>직접 입력</b> ${q.etc.slice(0, 12).map(t => `<span>${esc(t)}</span>`).join("")}${q.etc.length > 12 ? ` <em>외 ${q.etc.length - 12}건</em>` : ""}</div>` : ""}
-        </div>`; };
-      const n0 = (r.booth.tabs || r.booth.quiz) ? 10 : 9;
-      const polls = r.qs.filter(q => q.kind === "poll"), weekly = r.qs.filter(q => q.kind !== "poll");
-      // 이벤트 설문은 설문별로 묶는다
-      const byPoll = {};
-      polls.forEach(q => { const id = q.meta ? q.meta.id : q.group; (byPoll[id] = byPoll[id] || { meta: q.meta, list: [] }).list.push(q); });
-      const md = ymd => { if (!ymd) return ""; const d = new Date(ymd + "T00:00:00+09:00"); return (d.getMonth() + 1) + "월 " + d.getDate() + "일"; };
-      const pollPart = Object.keys(byPoll).length ? Object.values(byPoll).map(g => `
-        <div class="rpg"><div class="rpgh"><b>${esc(g.meta ? g.meta.title : "이벤트 설문")}</b>
-          <span>${g.meta && g.meta.from ? md(g.meta.from) + (g.meta.until ? " ~ " + md(g.meta.until) : "") + " · " : ""}참여 ${g.meta ? g.meta.people : "-"}명${g.meta && g.meta.cards ? " · 참여 보상 카드 " + g.meta.cards + "장" : ""}</span></div>
-          ${g.list.map(qhtml).join("")}</div>`).join("")
-        : `<p class="rn">진행한 이벤트 설문이 없습니다.</p>`;
-      const weeklyPart = weekly.length ? weekly.map(qhtml).join("")
-        : `<p class="rn">아직 주간 설문 응답이 없습니다.</p>`;
-      return sec(String(n0), "이벤트 설문 결과", `<p class="rn" style="margin:-4px 0 8px">카드 얻기 화면에서 기간을 정해 연 설문(참여하면 카드 지급). 학생 1명당 1회 응답.</p>` + pollPart)
-        + sec(String(n0 + 1), "주간 퀴즈 설문 결과 ('이번 주 한 마디')", `<p class="rn" style="margin:-4px 0 8px">주간 퀴즈를 푼 뒤 받는 한 문항 설문. 학생마다 참여 순서대로 다른 문항이 나오므로 문항별 응답 수가 다릅니다.</p>` + weeklyPart);
-    })()}
-
-  </article>`;
+  return `<article class="rep" id="report"><table class="rpage"><thead><tr><td><div class="rrh"><span>딩글이 카드도감 운영 보고서</span><span>등대팀 20기 · ${new Date(r.now).toLocaleDateString("ko-KR")} 집계</span></div></td></tr></thead>
+    <tfoot><tr><td><div class="rrf"></div></td></tr></tfoot><tbody><tr><td class="rbody">
+    ${summary}${ch1}${ch2}${ch3}${ch4}${app}
+    <div class="rf">딩글이 카드도감 관리자 페이지에서 자동 생성 · 인증 수치는 카드도감에 올린 캡처 기준</div>
+    </td></tr></tbody></table></article>`;
 }
 
 const REPORT_CSS = `
-.rep{background:#fff;color:#1D2433;border-radius:14px;padding:34px 38px;font-family:"Pretendard","Apple SD Gothic Neo","Noto Sans KR",sans-serif;line-height:1.6;max-width:880px;margin:0 auto}
-.rep h1{font-size:25px;margin:6px 0 4px;letter-spacing:-.02em;color:#0F1F3D}
-.rep .rk{font-size:12px;color:#B07A00;font-weight:700;letter-spacing:.02em}
-.rep .rm{font-size:12px;color:#6B7486}
-.rep .rh{border-bottom:3px solid #0F1F3D;padding-bottom:14px;margin-bottom:8px}
-.rep section{margin-top:22px;break-inside:auto}
-.rep .keep{break-inside:avoid;page-break-inside:avoid}
-.rep h2{break-after:avoid;page-break-after:avoid;font-size:16px;color:#0F1F3D;margin:0 0 10px;padding-left:9px;border-left:4px solid #E9A91E}
-.rep h3{font-size:13.5px;margin:2px 0 2px;color:#1D2433}
-.rkpi{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.rkpi div{background:#F4F6FA;border:1px solid #E3E7EF;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column}
-.rkpi span{font-size:11px;color:#6B7486}.rkpi b{font-size:20px;color:#0F1F3D;margin:2px 0}.rkpi small{font-size:10.5px;color:#7A8599}
-.rt{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0 10px}
-.rt th{background:#0F1F3D;color:#fff;text-align:left;padding:6px 8px;font-weight:600}
-.rt td{padding:6px 8px;border-bottom:1px solid #E3E7EF}.rt tr{break-inside:avoid}.r2>div,.cg,.rbr{break-inside:avoid}.rt tr:nth-child(even) td{background:#F7F8FB}
-.rt tr.sum td{font-weight:700;background:#EEF2FA}
-.rb{margin:6px 0}.rbr{display:grid;grid-template-columns:190px 1fr 92px;gap:8px;align-items:center;font-size:12px;margin:3px 0}
-.rbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rbt{height:11px;background:#EEF1F6;border-radius:6px;overflow:hidden}
-.rbt i{display:block;height:100%;border-radius:6px}
-.rbr.g2 .rbt{display:block;height:8px;margin:2px 0}.rbn{text-align:right;font-weight:700}.rbn small{font-weight:400;color:#7A8599}
-.rleg{display:flex;gap:14px;justify-content:center;font-size:11px;color:#4A5568;margin:2px 0 8px}
-.rleg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
-.rn{font-size:11px;color:#7A8599;margin:4px 0 0}
-.rq{border:1px solid #E3E7EF;border-radius:10px;padding:10px 12px;margin:0 0 9px;break-inside:avoid}
-.rqg{font-size:10.5px;color:#B07A00;font-weight:700}
-.rpg{border:1.5px solid #F2D58C;border-radius:12px;padding:10px 12px 2px;margin:0 0 12px;background:#FFFCF3}
+.rep{background:#fff;color:#1D2433;border-radius:14px;padding:30px 36px;font-family:"Pretendard","Apple SD Gothic Neo","Noto Sans KR",sans-serif;line-height:1.55;max-width:880px;margin:0 auto;font-size:12.5px}
+.rep *{box-sizing:border-box}
+.rpage{width:100%;border-collapse:collapse;table-layout:fixed}.rpage>thead>tr>td,.rpage>tfoot>tr>td,.rpage>tbody>tr>td{padding:0;border:0}
+.rep .rbody{white-space:normal;word-break:keep-all;overflow-wrap:anywhere}.rpage>tbody>tr:hover{background:none}
+.rrh{display:none}.rrf{height:0}
+.rep h1{font-size:28px;margin:4px 0 6px;letter-spacing:-.03em;color:#0F1F3D;line-height:1.25}
+.rep .rk{font-size:12px;color:#B07A00;font-weight:700}
+.rep .rm{font-size:12px;color:#6B7486;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rpill{display:inline-block;padding:1px 9px;border-radius:99px;background:#E7F6EE;color:#12784F;font-weight:700;font-size:11px}
+.rpill.end{background:#EEF1F6;color:#4A5568}
+.rep .rhd{padding-bottom:16px;margin-bottom:18px;border-bottom:3px solid #0F1F3D}
+.rhero{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.rhero div{background:#0F1F3D;color:#fff;border-radius:12px;padding:14px 16px;display:flex;flex-direction:column}
+.rhero span{font-size:11.5px;color:#B9C3D6}.rhero b{font-size:30px;line-height:1.15;margin:4px 0 2px;letter-spacing:-.02em}
+.rhero b em,.rsub b em{font-style:normal;font-size:14px;font-weight:600;margin-left:2px;opacity:.8}.rhero small{font-size:11px;color:#E9C46A}
+.rtop{margin-bottom:6px}
+.rsub{display:grid;grid-template-columns:1fr 1fr;gap:8px}.rsub.r3b{grid-template-columns:repeat(3,1fr)}
+.rsub div{background:#F4F6FA;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column}
+.rsub span{font-size:11px;color:#6B7486}.rsub b{font-size:19px;color:#0F1F3D;line-height:1.3}.rsub small{font-size:10.5px;color:#7A8599}
+.rfun{display:flex;flex-direction:column;gap:9px;margin-top:4px}
+.rfr{display:grid;grid-template-columns:104px 1fr 74px;gap:8px;align-items:center}
+.rfl{font-size:11.5px;color:#4A5568}.rft{height:16px;background:#EEF1F6;border-radius:4px;overflow:hidden}.rft i{display:block;height:100%;background:#2F5BD3;border-radius:4px}
+.rfn{text-align:right;font-weight:800;color:#0F1F3D}.rfn small,.rbn small{display:inline-block;min-width:30px;font-weight:500;color:#7A8599;margin-left:5px;font-size:10.5px}
+.rsum{margin:14px 0 0;padding:14px 18px;border-radius:12px;background:#FFF8E6;border:1px solid #F2D58C}
+.rsum h3{margin:0 0 6px!important}.rsum ol{margin:0;padding-left:20px}.rsum li{margin:4px 0;line-height:1.6}.rsum b{color:#0F1F3D}
+.rtoc{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:14px;padding-top:10px;border-top:1px solid #E3E7EF;font-size:11px;color:#6B7486}
+.rtoc b{color:#0F1F3D;margin-right:5px}
+.rsec{margin-top:30px}
+.rch{display:flex;align-items:baseline;gap:10px;border-bottom:2px solid #0F1F3D;padding-bottom:6px;margin-bottom:10px;break-after:avoid;page-break-after:avoid}
+.rch span{font-size:22px;font-weight:800;color:#E3A008;letter-spacing:-.02em}.rch h2{margin:0;font-size:19px;color:#0F1F3D;letter-spacing:-.02em}
+.rlead{margin:0 0 12px;padding:9px 12px;background:#F4F6FA;border-radius:8px;font-size:12.5px;color:#2B3446;break-after:avoid;page-break-after:avoid}.rlead b{color:#0F1F3D}
+.rblk{margin:0 0 18px;break-inside:avoid;page-break-inside:avoid}
+.rblk:has(.rqg),.rblk:has(.rnum){break-inside:auto;page-break-inside:auto}.rt thead{display:table-header-group}
+.rep h3{font-size:13.5px;color:#0F1F3D;margin:0 0 8px;break-after:avoid;page-break-after:avoid}
+.rep h4{font-size:12.5px;color:#0F1F3D;margin:0 0 1px;line-height:1.4}
+.rt{width:100%;border-collapse:collapse;font-size:12px;margin:0}
+.rt th{background:#0F1F3D;color:#fff;text-align:left;padding:7px 9px;font-weight:600;font-size:11.5px}
+.rt td{padding:7px 9px;border-bottom:1px solid #E3E7EF;vertical-align:middle}.rt tr{break-inside:avoid}
+.rt tr.sum td{font-weight:800;background:#EEF2FA;border-bottom:0}
+.rt small{color:#7A8599;font-weight:500}
+.rt.rnum td:not(:first-child),.rt.rnum th:not(:first-child){text-align:right}
+.rprog td:nth-child(n+2):nth-child(-n+4),.rprog th:nth-child(n+2):nth-child(-n+4){text-align:right}
+.rcv{display:inline-block;width:64px;height:7px;background:#E3E7EF;border-radius:4px;overflow:hidden;margin-right:7px;vertical-align:1px}.rcv i{display:block;height:100%;background:#18A36B}
+.tg{display:inline-block;width:18px;height:18px;line-height:18px;text-align:center;border-radius:5px;color:#fff;font-size:11px;margin-right:3px}
+.tgC{background:#7C8FA8}.tgB{background:#2FA597}.tgA{background:#8F62DB}.tgS{background:#D9A400}
+.rb{margin:2px 0}.rbr{display:grid;grid-template-columns:150px 1fr 82px;gap:8px;align-items:center;font-size:12px;margin:4px 0}
+.rbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#2B3446}.rbt{height:10px;background:#EEF1F6;border-radius:5px;overflow:hidden}
+.rbt i{display:block;height:100%;border-radius:5px;opacity:.55}.rbn{text-align:right;font-weight:700;white-space:nowrap}
+.rbr.hi .rbl{font-weight:800;color:#0F1F3D}.rbr.hi .rbt i,.rb:not(:has(.hi)) .rbt i{opacity:1}
+.r2{display:grid;grid-template-columns:1fr 1fr;gap:18px}.r3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.rmc{border:1px solid #E3E7EF;border-radius:10px;padding:9px 10px 6px}
+.rmch{display:flex;justify-content:space-between;align-items:baseline;font-size:11.5px;color:#4A5568}.rmch b{font-size:17px;color:#0F1F3D}
+.rmcf{font-size:10.5px;color:#7A8599}
+.rqg{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.rq{border:1px solid #E3E7EF;border-radius:10px;padding:10px 12px;break-inside:avoid;page-break-inside:avoid;background:#fff}
+.rq .rbr{grid-template-columns:minmax(0,1fr) 70px 70px;font-size:11.5px}
+.rqm{font-size:10.5px;color:#7A8599;margin-bottom:4px}
+.rpg{border:1.5px solid #F2D58C;border-radius:12px;padding:10px 12px 12px;margin:0 0 4px;background:#FFFCF3}
 .rpgh{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px}.rpgh b{font-size:13.5px;color:#0F1F3D}.rpgh span{font-size:11px;color:#7A8599}
-.rpg .rq{background:#fff}.rqm{font-size:11px;color:#7A8599}
-.retc{font-size:11px;color:#4A5568;margin-top:6px;line-height:1.9}.retc span{display:inline-block;background:#F4F6FA;border-radius:6px;padding:0 7px;margin:0 4px 0 0}
-.rsum{margin:14px 0 4px;padding:12px 16px;border-radius:10px;background:#F4F6FA;border:1px solid #E3E7EF;font-size:12.5px}
-.rsum .rst{font-weight:800;color:#0F1F3D;margin-bottom:4px}.rsum b{color:#0F1F3D}.rsum ul{margin:0;padding-left:18px}.rsum li{margin:3px 0}
-.rep h2 span{display:inline-block;min-width:22px;height:22px;line-height:22px;text-align:center;border-radius:6px;background:#0F1F3D;color:#fff;font-size:12px;margin-right:8px}
-.rep h2{border-left:none;padding-left:0}
-.rep h3{font-size:12.5px;color:#0F1F3D;margin:12px 0 4px;break-after:avoid;page-break-after:avoid}
-.r2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.retc{font-size:10.5px;color:#4A5568;margin-top:6px;line-height:1.9}.retc span{display:inline-block;background:#F4F6FA;border-radius:6px;padding:0 7px;margin:0 4px 0 0}
+.rn{font-size:10.5px;color:#7A8599;margin:6px 0 0;line-height:1.5}
+.rtop10{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .cgs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.cg{border:1px solid #E3E7EF;border-radius:8px;padding:6px 8px}.cgh{font-size:11px;font-weight:700;color:#0F1F3D;margin-bottom:4px}
-.cgr{display:flex;gap:3px;align-items:flex-end;height:74px}
-.cgc{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;font-size:8px;color:#7A8599}
-.cgc i{display:block;width:70%;background:#2F5BD3;border-radius:2px 2px 0 0;margin:2px 0}.cgc b{font-size:8px;color:#4A5568;order:3}.cgc span{order:1}
-.rf{break-before:avoid;page-break-before:avoid;margin-top:14px;padding-top:10px;border-top:1px solid #E3E7EF;font-size:10.5px;color:#9AA3B5;text-align:center}
+.cg{border:1px solid #E3E7EF;border-radius:8px;padding:7px 8px;break-inside:avoid}.cgh{font-size:11px;font-weight:700;color:#0F1F3D;margin-bottom:6px}
+.cgr{display:flex;gap:3px;align-items:flex-end;height:84px}
+.cgc{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;font-size:8.5px;color:#4A5568}
+.cgc i{display:block;width:70%;background:#2F5BD3;border-radius:2px 2px 0 0;margin:2px 0}.cgc b{font-size:8px;color:#7A8599;font-weight:500}
+.rf{margin-top:18px;padding-top:10px;border-top:1px solid #E3E7EF;font-size:10.5px;color:#9AA3B5;text-align:center}
 *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-@media (max-width:640px){ .rep{padding:18px 14px;border-radius:10px} .rep h1{font-size:20px} .r2{grid-template-columns:1fr} .cgs{grid-template-columns:1fr 1fr}
-  .rkpi{grid-template-columns:repeat(2,1fr)} .rbr{grid-template-columns:96px 1fr 70px}
+@media print{
+  .rep{border-radius:0;padding:0 15mm;max-width:none;margin:0}
+  .rrh{display:flex;justify-content:space-between;align-items:flex-end;height:13mm;padding-bottom:3mm;margin-bottom:4mm;border-bottom:1px solid #E3E7EF;font-size:9px;color:#9AA3B5}
+  .rrf{height:11mm}
+  .rsec.rbrk{break-before:page;page-break-before:always;margin-top:0}
+  @page{size:A4;margin:0}
+}
+@media (max-width:640px){ .rep{padding:18px 14px;border-radius:10px} .rep h1{font-size:21px}
+  .r2,.r3,.rqg,.rtop10{grid-template-columns:1fr} .cgs{grid-template-columns:1fr 1fr}
+  .rhero{grid-template-columns:repeat(2,1fr)} .rsub.r3b{grid-template-columns:1fr} .rhero b{font-size:24px} .rbr{grid-template-columns:96px 1fr 76px} .rfr{grid-template-columns:86px 1fr 70px}
   .rep .rt{display:block;overflow-x:auto;white-space:nowrap} .rep svg{max-width:100%} }
 `;
 
@@ -1787,14 +1910,14 @@ function viewReport() {
       <div class="right"><button class="btn sm" id="repprint">인쇄 · PDF로 저장</button><button class="btn gh sm" id="rephtml">HTML로 저장</button></div></div></div>
     <style>${REPORT_CSS}
       @media print{ body{background:#fff!important} .top,.tabbar,.panel,.toast,.vwarn{display:none!important}
-        .wrap{padding:0!important;max-width:none!important} .rep{border-radius:0;padding:14mm;max-width:none} @page{size:A4;margin:0} }</style>
+        .wrap{padding:0!important;max-width:none!important} }</style>
     ${reportHTML()}`);
 }
 function bindReport() {
   $("repprint") && ($("repprint").onclick = () => window.print());
   $("rephtml") && ($("rephtml").onclick = () => {
     const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-      <title>딩글이 카드도감 운영 보고서</title><style>body{background:#EEF1F6;margin:0;padding:24px}${REPORT_CSS}@media print{body{background:#fff;padding:0}.rep{padding:14mm}@page{size:A4;margin:0}}</style></head>
+      <title>딩글이 카드도감 운영 보고서</title><style>body{background:#EEF1F6;margin:0;padding:24px}${REPORT_CSS}@media print{body{background:#fff;padding:0}}</style></head>
       <body>${$("report").outerHTML}</body></html>`;
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
@@ -1904,7 +2027,7 @@ function viewReferral() {
 }
 
 /* ── 운영 ── */
-const SERVER_EXPECT = "2026-11-05";
+const SERVER_EXPECT = "2026-11-14";
 function errMsg(e) {
   const m = e && e.message;
   return m === "auth" ? "담당자 코드가 맞지 않습니다" : m === "not found" ? "학생을 찾지 못했습니다"
@@ -1916,12 +2039,34 @@ function errMsg(e) {
 }
 const when = ms => ms ? new Date(ms).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "-";
 
+/* 이벤트 마무리 순서 — 지금 상태를 보고 무엇이 남았는지 보여 준다 */
+function closeChecklist() {
+  const cl = Number(D.meta.closed) || 0, fz = D.meta.final, bk = D.meta.backup || {};
+  const wait = D.proofs.filter(p => p.status === "wait").length;
+  const fin = finalRows(), finLeft = fin.filter(r => !r.got).length;
+  const exLeft = (D.exchanges || []).filter(exWaiting).length;
+  const bkAfter = cl && bk.last && bk.last >= cl;
+  const steps = [
+    [wait === 0, "검토 대기 인증 처리", wait ? `검토 전 인증 ${wait}건이 남았습니다. 마감 전에 승인·반려해야 학생이 카드를 받습니다.` : "검토 대기 인증이 없습니다.", wait ? `<button class="btn gh sm" data-ckgo="review">인증 검토로</button>` : ""],
+    [!!cl, "이벤트 마감", cl ? `${when(cl)}에 마감했습니다.` : "아래 [이벤트 마감하기]를 누르면 학생이 카드를 더 받을 수 없습니다.", ""],
+    [!!fz, "최종 순위 확정", fz ? `${when(fz.at)}에 상위 ${fz.n}등을 확정했습니다.` : cl ? "마감 뒤에도 남은 카드를 열면 순위가 바뀝니다. 경품 연락 전에 확정하세요." : "마감한 뒤에 할 수 있습니다.", !fz && cl ? `<button class="btn gh sm" data-ckgo="final">최종 경품으로</button>` : ""],
+    [!!(fz || cl) && finLeft === 0 && exLeft === 0, "경품·굿즈 지급", `최종 경품 미수령 ${finLeft}명 · 굿즈 교환 대기 ${exLeft}건`, finLeft || exLeft ? `<button class="btn gh sm" data-ckgo="final">최종 경품으로</button>` : ""],
+    [!!bkAfter, "마감 뒤 백업", bk.last ? `마지막 백업 ${when(bk.last)}${cl && !bkAfter ? " (마감 전 백업입니다)" : ""}` : "아직 백업이 없습니다.", ""],
+    [false, "운영 보고서 저장", "보고서 탭에서 [인쇄 · PDF로 저장]으로 최종본을 남깁니다. 경품 수령 확인표는 최종 경품 화면에서 인쇄합니다.", `<button class="btn gh sm" data-ckgo="report">보고서로</button>`],
+  ];
+  return `<div class="panel">
+    <div class="ph"><h2>이벤트 마무리 순서</h2><span class="sub">위에서부터 차례로 · 지금 상태를 자동으로 확인합니다 (보고서 저장은 직접 확인)</span></div>
+    <div class="pb"><ol class="ckl">${steps.map(([ok, t, d, b], i) => `<li class="${ok ? "ok" : ""}"><span class="ck">${ok ? "✓" : i + 1}</span>
+      <div><b>${t}</b><span class="note">${d}</span></div><div>${b}</div></li>`).join("")}</ol></div>
+  </div>`;
+}
 function viewOps() {
   const nt = D.meta.notice;
   const ep = Number(D.meta.epoch) || 0;
   const cl = Number(D.meta.closed) || 0;
   const bk = D.meta.backup;
   return shell(`
+    ${closeChecklist()}
     ${BOOTH_DONE ? tabsCtlHTML() : ""}
     <div class="panel">
       <div class="ph"><h2>이벤트 마감</h2>
@@ -2571,6 +2716,11 @@ function bindOps() {
     try { const j = await adminPost(body); toast(okMsg); return j; }
     catch (e) { btn.disabled = false; btn.textContent = label; toast(errMsg(e)); return null; }
   };
+  app.querySelectorAll("[data-ckgo]").forEach(b => b.onclick = () => {
+    const t = b.dataset.ckgo;
+    if (t === "final") { V.tab = "field"; V.fsub = "final"; } else V.tab = t;
+    render(); window.scrollTo(0, 0);
+  });
   $("evclose") && ($("evclose").onclick = async e => {
     const btn = e.currentTarget;
     const r = prompt("이벤트를 마감할까요?\n학생 화면에서 카드를 더 받는 모든 방법이 바로 닫힙니다.\n\n확인하려면 '마감'이라고 입력하세요.", "");
@@ -2581,9 +2731,9 @@ function bindOps() {
   });
   $("evopen") && ($("evopen").onclick = async e => {
     const btn = e.currentTarget;
-    if (!confirm("마감을 취소하고 이벤트를 다시 열까요?")) return;
+    if (!confirm("마감을 취소하고 이벤트를 다시 열까요?" + (D.meta.final ? "\n확정한 최종 순위 명단도 함께 풀립니다." : ""))) return;
     const j = await go(btn, { action: "closeEvent", closed: false }, "이벤트를 다시 열었습니다");
-    if (j) { D.meta.closed = 0; render(); }
+    if (j) { D.meta.closed = 0; D.meta.final = null; render(); }
   });
   const bk = (id, mode, msg) => $(id) && ($(id).onclick = async e => {
     const j = await go(e.currentTarget, { action: "backup", mode }, msg);

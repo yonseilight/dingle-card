@@ -1329,6 +1329,7 @@ const store = {
       store.takeMeta(j);
       store.rankMeHidden = !!j.meHidden;      // 등대팀이 순위에서 뺀 경우
       store.rankMeWhy = String(j.meHideReason || "");
+      store.rankFin = j.fin && Array.isArray(j.fin.list) ? j.fin : null;   // 등대팀이 확정한 최종 순위 (마감 뒤)
       return j.list || [];
     }
     const out = [];
@@ -2242,14 +2243,21 @@ function viewRank() {
     // 50위 밖이면 내 순위를 따로 보여준다
     + (myRank >= 50 ? `<div class="rank sep">···</div>` + row(me, myRank) : "");
 
-  const over = eventOver(), F = CONFIG.FINAL || {}, topN = Number(F.top) || 0;
-  const inTop = !hiddenMe && topN && myRank >= 0 && myRank < topN;
+  const over = eventOver(), F = CONFIG.FINAL || {}, fin = over ? store.rankFin : null;
+  const topN = fin ? Number(fin.n) || 0 : Number(F.top) || 0;
+  // 확정 명단이 있으면 그 등수가 기준 (확정 뒤 카드를 더 열어도 바뀌지 않음)
+  const inTop = fin ? fin.me > 0 : !hiddenMe && topN && myRank >= 0 && myRank < topN;
+  const finDay = fin ? mdLabel(new Date(Number(fin.at) + 9 * 3600e3).toISOString().slice(0, 10)) : "";
   const finalBox = over ? `<div class="src final">
-      <div class="hd"><div class="ttl">최종 결과</div><span class="st ${inTop ? "ok" : "wait"}">${closedLabel()} 마감</span></div>
-      <div class="fbig">${hiddenMe ? `<b style="color:var(--bad)">집계 제외</b>` : `<b>${myRank + 1}위</b><span>${types()}종 · 참여 ${list.length}명 중</span>`}</div>
-      ${inTop ? `<div class="fprize">🎉 상위 ${topN}등 안에 들었어요! 경품 대상입니다.</div>` : topN && !hiddenMe ? `<p class="meta">경품 대상은 상위 ${topN}등까지예요.</p>` : ""}
+      <div class="hd"><div class="ttl">최종 결과</div><span class="st ${inTop ? "ok" : "wait"}">${fin ? finDay + " 확정" : closedLabel() + " 마감"}</span></div>
+      <div class="fbig">${fin
+        ? (fin.me ? `<b>${fin.me}위</b><span>최종 순위 (확정) · 참여 ${fin.total}명 중</span>`
+                  : `<b style="font-size:22px">상위 ${topN}등 밖</b><span>최종 순위 (확정) · 참여 ${fin.total}명 중</span>`)
+        : hiddenMe ? `<b style="color:var(--bad)">집계 제외</b>` : `<b>${myRank + 1}위</b><span>${types()}종 · 참여 ${list.length}명 중</span>`}</div>
+      ${inTop ? `<div class="fprize">🎉 상위 ${topN}등 안에 들었어요! 경품 대상입니다.</div>` : topN && (fin || !hiddenMe) ? `<p class="meta">경품 대상은 상위 ${topN}등까지예요.</p>` : ""}
       ${F.note ? `<p class="meta" style="margin-top:8px">${esc(F.note)}</p>` : ""}
-      <p class="note" style="margin-top:8px">마감 뒤에도 남은 카드를 열면 종수가 바뀔 수 있어요. 경품은 등대팀이 확정한 명단 기준입니다.</p>
+      <p class="note" style="margin-top:8px">${fin ? `최종 순위는 ${finDay}에 확정됐어요. 그 뒤로 카드를 더 열어도 경품 명단은 바뀌지 않아요.`
+        : "마감 뒤에도 남은 카드를 열면 종수가 바뀔 수 있어요. 경품은 등대팀이 확정한 명단 기준입니다."}</p>
     </div>` : "";
   return shell(`
     ${finalBox}
@@ -2259,7 +2267,7 @@ function viewRank() {
     </div>`}
     <p class="lead" style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
       <span>${hiddenMe ? `내 순위 <b style="color:var(--bad)">집계 제외</b>${store.rankMeWhy ? " · " + esc(store.rankMeWhy) : ""}`
-                       : `내 순위 <b style="color:var(--beam)">${myRank + 1}위</b> · ${types()}종`}</span>
+                       : `${fin ? "지금 순위" : "내 순위"} <b style="color:var(--beam)">${myRank + 1}위</b> · ${types()}종${fin ? ` <span class="note">(참고용 · 경품은 위 확정 결과 기준)</span>` : ""}`}</span>
       <button class="lnk" id="rankrefresh" style="margin-left:auto">새로고침</button>
     </p>
     ${rows ? `<div class="ranklist">${rows}</div>` : `<p class="lead">아직 참여자가 없습니다.</p>`}`);

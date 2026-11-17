@@ -325,7 +325,7 @@ function rewardFor(st, key) {
 }
 const rewardOf = key => key === "follow" ? REWARD.follow : key === "tabs" ? (REWARD.tabs || 7)
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-11-17";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-11-17b";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -484,12 +484,13 @@ function tierDone(st, t) {
   return n;
 }
 function stats() {
-  const s = { total: D.students.length, cards: 0, wait: 0, exch: 0, comp: { C: 0, B: 0, A: 0, S: 0 }, full: 0 };
+  const s = { total: D.students.length, cards: 0, wait: 0, exch: 0, comp: { C: 0, B: 0, A: 0, S: 0 }, full: 0, hidComp: { C: 0, B: 0, A: 0, S: 0 }, hidFull: 0 };
   D.students.forEach(st => {
     const o = st.owned || {};
     Object.keys(o).forEach(k => s.cards += o[k]);
-    TIER_KEYS.forEach(t => { if (tierDone(st, t) === PER_TIER[t]) s.comp[t]++; });
-    if (TIER_KEYS.every(t => tierDone(st, t) === PER_TIER[t])) s.full++;
+    const hid = !!(st.adm && st.adm.hide);   // 순위 제외 학생은 완성자 수에서 빼고 따로 센다 (학생 순위표와 같은 기준)
+    TIER_KEYS.forEach(t => { if (tierDone(st, t) === PER_TIER[t]) (hid ? s.hidComp : s.comp)[t]++; });
+    if (TIER_KEYS.every(t => tierDone(st, t) === PER_TIER[t])) hid ? s.hidFull++ : s.full++;
     s.exch += String(st.exchanged || "").split(",").filter(Boolean).length;
   });
   s.wait = D.proofs.filter(p => p.status === "wait").length;
@@ -624,7 +625,7 @@ function viewHome() {
     ${rankPanel()}
 
     <div class="panel">
-      <div class="ph"><h2>등급별 완성자</h2><span class="sub">한 등급을 모두 모은 학생 수</span></div>
+      <div class="ph"><h2>등급별 완성자</h2><span class="sub">한 등급을 모두 모은 학생 수 · 순위 제외 학생은 빠짐</span></div>
       <div class="pb">
         ${TIER_KEYS.map(t => {
           const n = s.comp[t], pct = s.total ? Math.round(n / s.total * 100) : 0;
@@ -633,6 +634,8 @@ function viewHome() {
             <div class="bar"><i style="width:${pct}%;background:${TIERS[t].color}"></i></div>
             <div class="n">${n}명 · ${pct}%</div></div>`;
         }).join("")}
+        <p class="note" style="margin-top:10px">26종을 모두 모은 학생 <b style="color:var(--foam)">${s.full}명</b> — 한 등급(예: S)을 다 모아도 다른 등급 카드가 빠져 있으면 26종이 아니라서, 등급별 숫자가 26종 인원보다 클 수 있습니다.${
+          TIER_KEYS.some(t => s.hidComp[t]) ? ` 순위 제외 학생 중 완성자(${TIER_KEYS.filter(t => s.hidComp[t]).map(t => t + " " + s.hidComp[t] + "명").join(" · ")})는 위 숫자에서 뺐습니다.` : ""}</p>
       </div>
     </div>
 
@@ -1005,11 +1008,10 @@ function viewField() {
   let sub = V.fsub || "lookup";
   if (BOOTH_DONE && ["lookup", "qr", "final"].indexOf(sub) < 0) sub = V.fsub = "lookup";
   const gcount = it => D.students.filter(x => x.adm && x.adm.gifts && x.adm.gifts[it]).length;
-  const fin = finalRows(), finDone = fin.filter(r => r.got).length;
   const exWait = (D.exchanges || []).filter(exWaiting).length;
   const live = evs.filter(evLive).length;
   const subs = [["lookup", "학생 조회"], ["stock", "재고·퀴즈"], ["qr", "현장 QR" + (live ? ` <i>${live}</i>` : "")], ["tabs", "TABS 명단"],
-                ["final", "최종 경품" + (exWait ? ` <i>${exWait}</i>` : "")]]
+                ["final", "굿즈 교환" + (exWait ? ` <i>${exWait}</i>` : "")]]
     .filter(([k]) => !BOOTH_DONE || k === "lookup" || k === "qr" || k === "final");   // 현장 QR은 다음 이벤트에도 씀
   const body = sub === "stock" ? stockHTML() : sub === "qr" ? `
     <div class="panel">
@@ -1031,7 +1033,7 @@ function viewField() {
       </div>
     </div>
 
-` : sub === "tabs" ? tabsInner() : sub === "final" ? finalHTML(fin) : `
+` : sub === "tabs" ? tabsInner() : sub === "final" ? exFieldHTML() : `
     <div class="panel">
       <div class="ph"><h2>학생 조회</h2><span class="sub">학번 또는 이름을 넣으면 카드 현황·인증·교환 상태를 보고 바로 지급합니다</span></div>
       <div class="pb">
@@ -1047,63 +1049,28 @@ function viewField() {
       <div class="fsum">
         ${BOOTH_DONE ? "" : STOCK_ITEMS.map(([it]) => { const t = stockTotal(it), l = stockLeft(it);
           return `<span class="${stockLow(it) ? "low" : ""}">${it === KEYRING ? "키링(퀴즈)" : it === HAND ? "손난로" : "쉐이크"} ${t ? `남은 <b>${Math.max(0, l)}</b>/${t}` : `<b>${stockUsed(it)}</b>개 지급`}${t && l <= 0 ? " · 소진" : ""}</span>`; }).join("")}
-        <span>진행 중 QR <b>${live}</b></span><span>최종 경품 <b>${finDone}</b>/${fin.length}</span><span>굿즈 교환 대기 <b>${exWait}</b></span>
+        <span>진행 중 QR <b>${live}</b></span><span>굿즈 교환 대기 <b>${exWait}</b></span>
       </div>
       <div class="fsub" role="tablist">${subs.map(([k, l]) => `<button class="${sub === k ? "on" : ""}" data-fsub="${k}" role="tab" aria-selected="${sub === k}">${l}</button>`).join("")}</div>
     </div>
     ${body}`);
 }
 
-/* 최종 경품: 순위 상위 N명(학기 말 실물 S급 카드·경품) + 아직 안 준 굿즈 교환 */
-const FINAL_ITEM = "최종 순위 경품";
-function finalN() { try { return Math.max(1, Math.min(50, parseInt(localStorage.getItem("dingle:finalN"), 10) || 10)); } catch (e) { return 10; } }
-/* 확정한 명단이 있으면 그것을, 없으면 지금 순위를 쓴다 */
-function finalRows() {
-  const fz = D.meta.final;
-  if (fz) return fz.list.map(e => {
-    const x = D.students.find(z => String(z.sid) === String(e.s)) || { sid: e.s, name: e.n, types: e.t, contact: "", adm: {} };
-    return { x, rank: e.r, fzTypes: e.t, got: (x.adm && x.adm.gifts || {})[FINAL_ITEM] || 0, hidNow: !!(x.adm && x.adm.hide) };
-  });
-  const l = rankList(); l.forEach((x, i) => { if (x.rank === null) x.rank = l[i - 1].rank; });
-  const n = finalN();
-  return l.filter(x => x.rank <= n).map(x => ({ x, rank: x.rank, got: (x.adm && x.adm.gifts || {})[FINAL_ITEM] || 0 }));
-}
-function finalHTML(fin) {
+/* 굿즈 교환 (현장·경품 탭): 아직 안 준 교환 신청. 순위 보상은 없앴다 */
+function exFieldHTML() {
   const ex = (D.exchanges || []).filter(exWaiting).slice().sort((a, b) => (a.at || 0) - (b.at || 0));
-  const name = sid => (D.students.find(x => String(x.sid) === String(sid)) || {}).name || "";
-  const fz = D.meta.final, cl = Number(D.meta.closed) || 0;
   return `<div class="panel">
-      <div class="ph"><h2>최종 순위 경품</h2>${fz
-        ? `<span class="chip ok">확정됨 · ${when(fz.at)}</span><span class="sub">확정 당시 상위 ${fz.n}등 · 참여 ${fz.total}명 중 · 그 뒤 카드를 열어도 이 명단은 바뀌지 않습니다</span>`
-        : `<span class="sub">지금 순위 기준 상위 <input id="finN" type="number" min="1" max="50" value="${finalN()}" class="mini">등까지 · 같은 종수는 26종을 먼저 모은 순 · 순위 제외 학생은 빠짐</span>`}
-        <div class="right"><button class="btn gh sm" id="rcptprint">수령 확인표 인쇄</button><button class="btn gh sm" id="fincsv">명단 CSV</button></div></div>
-      <div class="pb fzbar">${fz
-        ? `<span class="note">학생 화면 순위 탭에도 '최종 ○위 (확정)'으로 보입니다. 순위 제외(제재)를 바꿨다면 확정을 취소하고 다시 확정해 주세요.</span>
-           ${api ? `<button class="btn gh sm" id="finclear">확정 취소</button>` : ""}`
-        : cl ? `<span class="note"><b style="color:var(--beam)">아직 확정 전</b> — 마감 뒤에도 학생이 남은 카드를 열면 순위가 바뀝니다. 경품 연락을 돌리기 전에 지금 순위로 확정해 주세요.</span>
-           ${api ? `<button class="btn sm" id="finset">이 순위로 확정</button>` : ""}`
-        : `<span class="note">순위 확정은 이벤트를 마감한 뒤에 할 수 있습니다 (운영 탭 → 이벤트 마감).</span>`}</div>
-      <div class="pb flush"><table>
-        <thead><tr><th class="num">등수</th><th>이름</th><th>학번</th><th class="num">보유</th><th>연락처</th><th>수령</th></tr></thead>
-        <tbody>${fin.length ? fin.map(r => `<tr class="${r.got ? "dim" : ""}"><td class="num"><b>${r.rank}</b></td><td><b>${esc(r.x.name)}</b></td>
-          <td style="color:var(--mist)">${esc(r.x.sid)}</td><td class="num">${r.fzTypes !== undefined ? r.fzTypes : r.x.types}종${r.fzTypes !== undefined && r.x.types !== r.fzTypes ? `<div class="note">지금 ${r.x.types}종</div>` : ""}${r.hidNow ? `<div><span class="chip no">지금 순위 제외</span></div>` : ""}</td><td style="color:var(--mist)">${esc(r.x.contact) || "-"}</td>
-          <td style="white-space:nowrap">${r.got ? `<span class="chip ok">수령 완료</span> <span class="note">${when(r.got)}</span> <button class="lnk" data-fnu="${esc(r.x.sid)}">취소</button>`
-            : api ? `<button class="btn sm" data-fng="${esc(r.x.sid)}">수령 완료</button>` : ""}</td></tr>`).join("")
-          : `<tr><td colspan="6"><div class="empty">아직 참여자가 없습니다.</div></td></tr>`}</tbody></table></div>
-    </div>
-    <div class="panel">
-      <div class="ph"><h2>굿즈 교환 대기</h2><span class="sub">등급을 완성해 교환을 신청한 학생 · 학생별 한 줄 · 오래된 순</span>
-        <div class="right"><button class="btn gh sm" id="excopy">연락 명단 복사</button></div></div>
+      <div class="ph"><h2>굿즈 교환 대기</h2><span class="sub">학생별 한 줄 · 오래된 순 · 신청한 등급 중 가장 높은 등급 1개만 지급</span>
+        <div class="right"><button class="btn gh sm" id="rcptprint">수령 확인표 인쇄</button><button class="btn gh sm" id="excopy">연락 명단 복사</button></div></div>
       <div class="pb flush">${exGroupTable(exGroups(ex), "대기 중인 교환 신청이 없습니다.")}</div>
     </div>`;
 }
 /* 경품 수령 확인표 (서명란) — 정산 증빙용. 연락처는 넣지 않는다 */
 function printReceipt() {
-  const fz = D.meta.final, fin = finalRows();
   const day = t => t ? new Date(t).toLocaleDateString("ko-KR") : "";
   const rows = [];
-  fin.forEach(r => rows.push(["최종 순위 " + r.rank + "등", r.x.name, r.x.sid, FINAL_ITEM, day(r.got)]));
-  const ex = (D.exchanges || []).filter(x => x.status !== "cancel")
+  // 이미 지급한 것은 모두 + 아직 안 준 것은 학생별 가장 높은 등급 1건만 (지금도 등급을 갖춘 대기)
+  const ex = (D.exchanges || []).filter(x => x.status === "done" || (x.status !== "cancel" && !exSuper(x) && !exBroken(x)))
     .sort((a, b) => TIER_KEYS.indexOf(a.tier) - TIER_KEYS.indexOf(b.tier) || (a.at || 0) - (b.at || 0));
   ex.forEach(x => rows.push([`굿즈 교환 ${x.tier}등급`, x.name, x.sid, x.goods || `${x.tier}등급 굿즈`, x.status === "done" ? day(x.doneAt || x.at) : ""]));
   if (!rows.length) return toast("인쇄할 명단이 없습니다");
@@ -1124,7 +1091,7 @@ function printReceipt() {
     <thead><tr class="sp"><td colspan="7"></td></tr>
       <tr class="ttl"><td colspan="7"><h1>딩글이 카드도감 경품 수령 확인표</h1>
         <p class="m">미래융합교육혁신원 등대팀 20기 · 출력 ${new Date().toLocaleString("ko-KR", { dateStyle: "long", timeStyle: "short" })}
-        ${fz ? ` · 최종 순위는 ${new Date(fz.at).toLocaleDateString("ko-KR")} 확정 명단 기준` : " · 최종 순위는 출력 시점 순위 기준(확정 전)"} · 총 ${rows.length}건 (수령 표시 ${done}건)</p></td></tr>
+        · 굿즈 교환 (학생별 신청한 등급 중 가장 높은 등급 1개) · 총 ${rows.length}건 (지급 완료 ${done}건)</p></td></tr>
       <tr><th class="no">번호</th><th class="g">구분</th><th>이름</th><th class="sid">학번</th><th>경품</th><th class="d">수령일</th><th class="sg">서명</th></tr></thead>
     <tfoot><tr class="spf"><td colspan="7"></td></tr></tfoot>
     <tbody>${rows.map((r, i) => `<tr><td class="no">${i + 1}</td><td class="g">${esc(r[0])}</td><td><b>${esc(r[1])}</b></td><td class="sid">${esc(r[2])}</td>
@@ -1217,10 +1184,12 @@ function fieldStudent(st) {
   const ex = (D.exchanges || []).filter(x => String(x.sid) === String(st.sid) && x.status !== "cancel");
   const tiers = TIER_KEYS.map(t => {
     const have = tierDone(st, t), all = PER_TIER[t], x = ex.find(y => y.tier === t);
+    const top = exTop(st.sid);
     const state = x ? (x.status === "done" ? `<span class="chip ok">지급 완료</span>`
                      : have < all ? `<span class="chip no">신청했지만 등급 미완성</span>`
+                     : exSuper(x) ? `<span class="chip">상위 등급(${top.tier})으로 대신</span>`
                      : `<button class="btn sm" data-fex="${t}">선물 지급 완료</button>`)
-                    : have === all ? `<span class="chip wait">완성 · 교환 신청 전</span>` : "";
+                    : have === all ? (top && TIER_I(top.tier) > TIER_I(t) ? `<span class="note">상위 등급 신청함</span>` : `<span class="chip wait">완성 · 교환 신청 전</span>`) : "";
     return `<div class="ftier"><b>${t} ${TIERS[t].word}</b><span>${have}/${all}</span>${state}</div>`;
   }).join("");
   const rejected = Object.keys(st.proofs || {}).filter(k => (st.proofs[k] || {}).status === "no").length;
@@ -1239,11 +1208,7 @@ function fieldStudent(st) {
     <div class="fhd"><div><b style="font-size:18px">${esc(st.name)}</b> <span class="note">${esc(st.sid)}</span>
       ${st.adm && st.adm.hide ? `<span class="chip no">순위 제외</span>` : ""}${rejected ? `<span class="chip no">반려 ${rejected}건</span>` : ""}</div>
       <div class="note">보유 <b style="color:var(--foam)">${st.types}/${TOTAL_CARDS}종</b> · 미개봉 ${st.pending}장 · 연락처 ${esc(st.contact) || "-"}</div></div>
-    <div class="fgifts">${giftRow("tabs", "TABS 설문", "전기손난로")}${giftRow("follow", "인스타 팔로우", "단백질 쉐이크")}
-      ${(() => { const r = finalRows().find(z => String(z.x.sid) === String(st.sid)); if (!r) return "";
-        return `<div class="fgift"><div><b>최종 순위 ${r.rank}등</b> <span class="chip ok">경품 대상</span></div>
-          <div>${r.got ? `<span class="chip ok">${FINAL_ITEM} 지급함 · ${when(r.got)}</span> <button class="lnk" data-gu="${FINAL_ITEM}">취소</button>`
-            : `<button class="btn sm" data-gv="${FINAL_ITEM}">${FINAL_ITEM} 지급</button>`}</div></div>`; })()}</div>
+    <div class="fgifts">${giftRow("tabs", "TABS 설문", "전기손난로")}${giftRow("follow", "인스타 팔로우", "단백질 쉐이크")}</div>
     <div class="ftiers">${tiers}</div>
     ${api ? `<div class="frm" style="margin-top:12px">
       <span class="note">카드 지급</span>
@@ -1309,30 +1274,8 @@ function bindField() {
   if (V.tab !== "field") return;
   app.querySelectorAll("[data-fsub]").forEach(b => b.onclick = () => { V.fsub = b.dataset.fsub; render();
     if (V.fsub === "lookup") setTimeout(() => $("fsid") && $("fsid").focus(), 0); });
-  $("finN") && ($("finN").onchange = e => { try { localStorage.setItem("dingle:finalN", String(e.target.value)); } catch (er) {} render(); });
-  const fgift = (sid, on) => { giftNow(sid, FINAL_ITEM, on); toast(on ? "최종 경품 수령 완료" : "수령 표시 취소"); render(); };
-  app.querySelectorAll("[data-fng]").forEach(b => b.onclick = () => fgift(b.dataset.fng, true, b));
-  app.querySelectorAll("[data-fnu]").forEach(b => b.onclick = () => { if (confirm("최종 경품 수령 표시를 취소할까요?")) fgift(b.dataset.fnu, false, b); });
   bindExGroups();
-  $("finset") && ($("finset").onclick = async e => {
-    const n = finalN(), btn = e.currentTarget;
-    if (!confirm(`지금 순위로 상위 ${n}등 명단을 확정할까요?\n확정한 뒤에는 학생이 카드를 더 열어도 경품 명단이 바뀌지 않고,\n학생 화면에 '최종 ○위 (확정)'으로 보입니다.`)) return;
-    btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
-    try { const j = await adminPost({ action: "finalize", mode: "set", n }); D.meta.final = j.final; toast(`상위 ${n}등 명단을 확정했습니다`); }
-    catch (er) { toast(String(er && er.message) === "unknown action" ? "서버가 예전 버전입니다. apps-script.gs를 새 버전으로 배포해 주세요."
-                 : String(er && er.message) === "not closed" ? "이벤트를 먼저 마감해 주세요" : errMsg(er)); }
-    render();
-  });
-  $("finclear") && ($("finclear").onclick = async e => {
-    if (!confirm("최종 순위 확정을 취소할까요?\n명단이 지금 순위 기준으로 돌아가고, 학생 화면의 '확정' 표시도 사라집니다.")) return;
-    const btn = e.currentTarget; btn.disabled = true;
-    try { await adminPost({ action: "finalize", mode: "clear" }); D.meta.final = null; toast("확정을 취소했습니다"); } catch (er) { toast(errMsg(er)); }
-    render();
-  });
   $("rcptprint") && ($("rcptprint").onclick = () => printReceipt());
-  $("fincsv") && ($("fincsv").onclick = () => csv([["등수", "이름", "학번", "보유 종수", "26종 완성", "연락처", "수령"]]
-    .concat(finalRows().map(r => [r.rank, r.x.name, r.x.sid, r.x.types, r.x.done ? new Date(r.x.done).toLocaleString("ko-KR") : "", r.x.contact,
-      r.got ? new Date(r.got).toLocaleString("ko-KR") : ""])), "최종경품명단_" + new Date().toISOString().slice(0, 10)));
   $("fadd") && ($("fadd").onclick = async e => {
     const label = $("fl").value.trim(), cards = parseInt($("fc").value, 10) || 0, u = $("fu").value;
     if (!label) return toast("이벤트 이름을 적어 주세요");
@@ -1619,7 +1562,7 @@ function reportData() {
       cards: g.def && g.def.cards, people: g.people.length }));
   add("주간 퀴즈 '이번 주 한 마디'", D.surveys.filter(x => !pollOf(x)), null, "weekly");
   // ── 더 자세한 항목 ──
-  const tiers = TIER_KEYS.map(t => ({ t, word: TIERS[t].word, all: PER_TIER[t], done: S.filter(x => tierDone(x, t) === PER_TIER[t]).length }));
+  const tiers = TIER_KEYS.map(t => ({ t, word: TIERS[t].word, all: PER_TIER[t], done: S.filter(x => !(x.adm && x.adm.hide) && tierDone(x, t) === PER_TIER[t]).length }));
   const dist = [[0, 0], [1, 5], [6, 10], [11, 15], [16, 20], [21, 25], [26, 26]].map(([lo, hi]) =>
     [lo === hi ? `${lo}종` : `${lo}~${hi}종`, S.filter(x => (x.types || 0) >= lo && (x.types || 0) <= hi).length]);
   const own = {};
@@ -1649,13 +1592,10 @@ function reportData() {
                   quiz: Math.max(stockUsed(KEYRING), BOOTH_FINAL[KEYRING] || 0),
                   handT: stockTotal(HAND), keyT: stockTotal(KEYRING), shakeT: stockTotal(SHAKE) };
   // 교환
-  const exT = TIER_KEYS.map(t => ({ t, word: TIERS[t].word, req: ex.filter(x => x.tier === t && x.status !== "cancel").length, done: ex.filter(x => x.tier === t && x.status === "done").length, ready: tiers.find(z => z.t === t).done }));
+  const exT = TIER_KEYS.map(t => ({ t, word: TIERS[t].word, req: ex.filter(x => x.tier === t && x.status !== "cancel").length, give: ex.filter(x => x.tier === t && (x.status === "done" || (x.status !== "cancel" && !exSuper(x) && !exBroken(x)))).length, done: ex.filter(x => x.tier === t && x.status === "done").length, ready: tiers.find(z => z.t === t).done }));
   // 상위 10명 (이름 가림)
   const mask = n => { n = String(n || ""); return n.length <= 1 ? n : n.length === 2 ? n[0] + "*" : n[0] + "*".repeat(n.length - 2) + n[n.length - 1]; };
-  const fz = D.meta.final;
-  const top = fz ? fz.list.slice(0, 10).map(e => { const x = S.find(z => String(z.sid) === String(e.s)) || {};
-      return { r: e.r, name: mask(x.name || e.n), types: e.t, done: e.a || 0 }; })
-    : S.filter(x => !(x.adm && x.adm.hide)).slice().sort((a, b) => (b.types || 0) - (a.types || 0) || (a.done || 0) - (b.done || 0)).slice(0, 10)
+  const top = S.filter(x => !(x.adm && x.adm.hide)).slice().sort((a, b) => (b.types || 0) - (a.types || 0) || (a.done || 0) - (b.done || 0)).slice(0, 10)
     .map((x, i) => ({ r: i + 1, name: mask(x.name), types: x.types || 0, done: x.done || 0 }));
   // 누적 참여 학생 (주차별)
   let cum = 0; weeks.forEach(w => { cum += w.join; w.cum = cum; });
@@ -1765,9 +1705,9 @@ function reportHTML() {
   /* ── 03 카드·경품 ── */
   const ch3 = chap("03", "카드 수집과 경품",
     `26종 완성 <b>${KO(r.full)}명</b> · 1인 평균 보유 ${r.avgTypes}종 · 굿즈 교환 지급 ${KO(k.exDone)}건`,
-    `<div class="r2">${blk("등급별 완성과 굿즈 교환", tbl(["등급", "완성 학생", "교환 신청", "지급 완료"],
-        r.exT.map(t => [`<b class="tg tg${t.t}">${t.t}</b> ${t.word} <small>(${PER_TIER[t.t]}종)</small>`, `${t.ready}명 <small>${PCT(t.ready, k.total)}%</small>`, t.req + "건", t.done + "건"])),
-        "완성 = 그 등급 카드를 종류별로 모두 가진 학생.")}
+    `<div class="r2">${blk("등급별 완성과 굿즈 교환", tbl(["등급", "완성 학생", "교환 신청", "지급 대상", "지급 완료"],
+        r.exT.map(t => [`<b class="tg tg${t.t}">${t.t}</b> ${t.word} <small>(${PER_TIER[t.t]}종)</small>`, `${t.ready}명 <small>${PCT(t.ready, k.total)}%</small>`, t.req + "건", t.give + "건", t.done + "건"])),
+        "완성 = 그 등급 카드를 종류별로 모두 가진 학생(순위 제외 학생 빼고). 굿즈는 학생이 신청한 등급 중 가장 높은 등급 1개만 주므로, 지급 대상 = 학생별 최고 등급 신청.")}
       ${blk("보유 종수 분포", hbars(r.dist.map(([l, n]) => [l, n, k.total]), "#E3A008"))}</div>` +
     (hasBooth ? blk("더미래페스티벌 부스 이벤트 (11월 10일)", `<div class="rsub r3b">
         ${tile("TABS 설문 인증", KO(r.booth.tabs) + "명", "사전 " + r.booth.pre + "명 · 당일 이후 " + (r.booth.tabs - r.booth.pre) + "명")}
@@ -1775,10 +1715,10 @@ function reportHTML() {
         ${tile("전기손난로 지급", KO(r.booth.hand) + "개", r.booth.handT && r.booth.hand >= r.booth.handT ? "준비 " + r.booth.handT + "개 전부 소진" : r.booth.handT ? "준비 " + r.booth.handT + "개" : "TABS 사전 인증자")}
 </div>`,
         "사전 인증 = 부스 운영일(11월 10일) 0시 전에 TABS 인증을 마친 학생.") : "") +
-    blk(D.meta.final ? `최종 순위 상위 10명 <small style="font-weight:500;color:#7A8599">(${new Date(D.meta.final.at).toLocaleDateString("ko-KR")} 확정)</small>` : "순위 상위 10명", `<div class="rtop10">${tbl(["순위", "이름", "보유", "26종 완성일"],
+    blk("순위 상위 10명", `<div class="rtop10">${tbl(["순위", "이름", "보유", "26종 완성일"],
         r.top.slice(0, 5).map(x => [x.r, x.name, x.types + "종", x.done ? new Date(x.done).toLocaleDateString("ko-KR") : "-"]))}${
         r.top.length > 5 ? tbl(["순위", "이름", "보유", "26종 완성일"], r.top.slice(5).map(x => [x.r, x.name, x.types + "종", x.done ? new Date(x.done).toLocaleDateString("ko-KR") : "-"])) : ""}</div>`,
-      (D.meta.final ? "확정 시점의 보유 종수 기준. " : "") + "순위는 보유 종류 수 → 26종을 먼저 모은 순. 순위에서 제외한 학생은 빠지고, 이름은 가운데를 가렸습니다."), true);
+      "순위는 보유 종류 수 → 26종을 먼저 모은 순. 순위에서 제외한 학생은 빠지고, 이름은 가운데를 가렸습니다."), true);
 
   /* ── 04 설문 ── */
   const qhtml = q => {
@@ -2045,18 +1985,16 @@ const when = ms => ms ? new Date(ms).toLocaleString("ko-KR", { month: "numeric",
 
 /* 이벤트 마무리 순서 — 지금 상태를 보고 무엇이 남았는지 보여 준다 */
 function closeChecklist() {
-  const cl = Number(D.meta.closed) || 0, fz = D.meta.final, bk = D.meta.backup || {};
+  const cl = Number(D.meta.closed) || 0, bk = D.meta.backup || {};
   const wait = D.proofs.filter(p => p.status === "wait").length;
-  const fin = finalRows(), finLeft = fin.filter(r => !r.got).length;
   const exLeft = (D.exchanges || []).filter(exWaiting).length;
   const bkAfter = cl && bk.last && bk.last >= cl;
   const steps = [
     [wait === 0, "검토 대기 인증 처리", wait ? `검토 전 인증 ${wait}건이 남았습니다. 마감 전에 승인·반려해야 학생이 카드를 받습니다.` : "검토 대기 인증이 없습니다.", wait ? `<button class="btn gh sm" data-ckgo="review">인증 검토로</button>` : ""],
     [!!cl, "이벤트 마감", cl ? `${when(cl)}에 마감했습니다.` : "아래 [이벤트 마감하기]를 누르면 학생이 카드를 더 받을 수 없습니다.", ""],
-    [!!fz, "최종 순위 확정", fz ? `${when(fz.at)}에 상위 ${fz.n}등을 확정했습니다.` : cl ? "마감 뒤에도 남은 카드를 열면 순위가 바뀝니다. 경품 연락 전에 확정하세요." : "마감한 뒤에 할 수 있습니다.", !fz && cl ? `<button class="btn gh sm" data-ckgo="final">최종 경품으로</button>` : ""],
-    [!!(fz || cl) && finLeft === 0 && exLeft === 0, "경품·굿즈 지급", `최종 경품 미수령 ${finLeft}명 · 굿즈 교환 대기 ${exLeft}건`, finLeft || exLeft ? `<button class="btn gh sm" data-ckgo="final">최종 경품으로</button>` : ""],
+    [!!cl && exLeft === 0, "굿즈 지급", exLeft ? `굿즈 교환 대기 ${exLeft}건 (학생별 가장 높은 등급 1개)` : "대기 중인 교환 신청이 없습니다.", exLeft ? `<button class="btn gh sm" data-ckgo="final">굿즈 교환으로</button>` : ""],
     [!!bkAfter, "마감 뒤 백업", bk.last ? `마지막 백업 ${when(bk.last)}${cl && !bkAfter ? " (마감 전 백업입니다)" : ""}` : "아직 백업이 없습니다.", ""],
-    [false, "운영 보고서 저장", "보고서 탭에서 [인쇄 · PDF로 저장]으로 최종본을 남깁니다. 경품 수령 확인표는 최종 경품 화면에서 인쇄합니다.", `<button class="btn gh sm" data-ckgo="report">보고서로</button>`],
+    [false, "운영 보고서 저장", "보고서 탭에서 [인쇄 · PDF로 저장]으로 최종본을 남깁니다. 굿즈 수령 확인표는 현장·경품 → 굿즈 교환에서 인쇄합니다.", `<button class="btn gh sm" data-ckgo="report">보고서로</button>`],
   ];
   return `<div class="panel">
     <div class="ph"><h2>이벤트 마무리 순서</h2><span class="sub">위에서부터 차례로 · 지금 상태를 자동으로 확인합니다 (보고서 저장은 직접 확인)</span></div>
@@ -2471,7 +2409,21 @@ async function grantCards(sid, n, reason, btn) {
 /* ── 교환 ── */
 window.addEventListener("beforeunload", e => { if (V.inflight) { e.preventDefault(); e.returnValue = ""; } });
 /* 교환 신청 상태: req(대기) · done(지급) · cancel(회수로 등급이 깨져 취소) */
-const exWaiting = x => x.status !== "done" && x.status !== "cancel";
+const exWaiting = x => x.status !== "done" && x.status !== "cancel" && !exSuper(x);
+/* 굿즈는 학생이 신청한 등급 중 가장 높은 등급 1개만 준다.
+   exTop: 그 학생의 유효한 신청(지급 완료, 또는 지금도 등급을 갖춘 대기) 중 가장 높은 등급
+   exSuper: 더 높은 등급 신청이 있어서 대신 주지 않는 신청 (대기 목록에서 빠짐) */
+const TIER_I = t => TIER_KEYS.indexOf(t);
+function exTop(sid) {
+  let best = null;
+  (D.exchanges || []).forEach(x => {
+    if (String(x.sid) !== String(sid) || x.status === "cancel") return;
+    if (x.status !== "done" && exBroken(x)) return;
+    if (!best || TIER_I(x.tier) > TIER_I(best.tier)) best = x;
+  });
+  return best;
+}
+function exSuper(x) { const t = exTop(x.sid); return !!t && t !== x && TIER_I(t.tier) > TIER_I(x.tier); }
 /* 신청한 등급을 지금도 다 갖고 있는지 (반려·회수로 깨졌을 수 있음) */
 function exBroken(x) {
   const st = D.students.find(s => String(s.sid) === String(x.sid));
@@ -2539,10 +2491,14 @@ function exGroupTable(groups, emptyMsg) {
       <td style="color:var(--mist)">${esc(g.sid)}</td>
       <td><a class="tel" href="tel:${esc(String(g.contact).replace(/[^0-9+]/g, ""))}">${esc(g.contact) || "-"}</a></td>
       <td><div class="exi">${g.items.map(x => { const br = exBroken(x);
+        const lowDone = (D.exchanges || []).filter(y => String(y.sid) === g.sid && y.status === "done" && TIER_I(y.tier) < TIER_I(x.tier)).map(y => y.tier);
         return `<span class="${br ? "brk" : ""}"><span class="chip ${esc(x.tier)}">${esc(x.tier)}</span> ${esc(x.goods || (TIERS[x.tier] ? TIERS[x.tier].goods : ""))}
+        ${lowDone.length ? `<span class="chip wait" title="한 학생은 가장 높은 등급 1개만 받습니다">이미 ${lowDone.join("·")} 받음</span>` : ""}
         ${br ? `<span class="chip no" title="반려·회수로 이 등급 카드가 모자랍니다">등급 미완성</span>
                 ${api ? `<button class="btn gh sm" data-gxc="${esc(g.sid)}|${esc(x.tier)}">신청 취소</button>` : ""}`
-             : api ? `<button class="btn sm" data-gx="${esc(g.sid)}|${esc(x.tier)}">지급 완료</button>` : ""}</span>`; }).join("")}</div></td>
+             : api ? `<button class="btn sm" data-gx="${esc(g.sid)}|${esc(x.tier)}">지급 완료</button>` : ""}</span>`; }).join("")}
+        ${(() => { const sup = (D.exchanges || []).filter(y => String(y.sid) === g.sid && y.status === "req" && exSuper(y)).map(y => y.tier);
+          return sup.length ? `<span class="note">${sup.join("·")} 신청은 상위 등급으로 대신 (지급 안 함)</span>` : ""; })()}</div></td>
       <td style="color:var(--mist);white-space:nowrap">${w(g.at)}</td>
       <td class="num">${api && g.items.filter(x => !exBroken(x)).length > 1 ? `<button class="btn gh sm" data-gxall="${esc(g.sid)}">전부 지급 완료</button>` : ""}</td>
     </tr>`).join("") : `<tr><td colspan="6"><div class="empty">${emptyMsg}</div></td></tr>`}</tbody></table>`;
@@ -2585,11 +2541,14 @@ function viewExchange() {
 
   // 등급은 완성했지만 아직 신청하지 않은 학생
   const notYet = [];
-  D.students.forEach(st => TIER_KEYS.forEach(t => {
-    if (tierDone(st, t) !== PER_TIER[t]) return;
-    if (ex.some(x => x.sid === st.sid && x.tier === t)) return;
-    notYet.push({ st, t });
-  }));
+  D.students.forEach(st => {
+    const t = TIER_KEYS.slice().reverse().find(k => tierDone(st, k) === PER_TIER[k]);   // 가장 높은 완성 등급
+    if (!t) return;
+    const top = exTop(st.sid);
+    if (top && TIER_I(top.tier) >= TIER_I(t)) return;
+    if (ex.some(x => String(x.sid) === String(st.sid) && x.tier === t && x.status !== "cancel")) return;
+    notYet.push({ st, t, low: top ? top.tier : "" });
+  });
   notYet.sort((a, b) => TIER_KEYS.indexOf(b.t) - TIER_KEYS.indexOf(a.t));
 
   const when = ms => {
@@ -2634,7 +2593,7 @@ function viewExchange() {
 
     <div class="panel">
       <div class="ph"><h2>완성했지만 미신청</h2>
-        <span class="sub">등급을 다 모았는데 아직 신청하지 않은 학생 ${notYet.length}건</span>
+        <span class="sub">가장 높은 완성 등급을 아직 신청하지 않은 학생 ${notYet.length}명 · 신청해야 그 등급으로 받습니다</span>
       </div>
       <div class="pb flush"><div class="scroll" style="max-height:300px">
         <table>
@@ -2642,7 +2601,7 @@ function viewExchange() {
           <tbody>
             ${notYet.length ? notYet.map(r => `<tr>
               <td>${esc(r.st.name)}</td><td style="color:var(--mist)">${esc(r.st.sid)}</td>
-              <td><span class="chip ${r.t}">${r.t} ${TIERS[r.t].word}</span></td>
+              <td><span class="chip ${r.t}">${r.t} ${TIERS[r.t].word}</span>${r.low ? ` <span class="note">(지금 ${r.low} 신청)</span>` : ""}</td>
               <td>${TIERS[r.t].goods}</td></tr>`).join("")
               : `<tr><td colspan="4"><div class="empty">해당하는 학생이 없습니다.</div></td></tr>`}
           </tbody>
@@ -2650,7 +2609,7 @@ function viewExchange() {
       </div></div>
     </div>
 
-    <p class="note">학생이 보관함에서 교환을 신청하면 여기에 쌓입니다.
+    <p class="note"><b style="color:var(--beam)">한 학생은 신청한 등급 중 가장 높은 등급 1개만 받습니다.</b> 더 낮은 등급 신청은 '상위 등급으로 대신'으로 표시되고 대기·연락 명단에서 빠집니다.<br>학생이 보관함에서 교환을 신청하면 여기에 쌓입니다.
     연락처로 안내한 뒤 [지급 완료]를 누르면 학생 화면에도 '지급 완료'로 표시됩니다.</p>`);
 }
 
@@ -2735,7 +2694,7 @@ function bindOps() {
   });
   $("evopen") && ($("evopen").onclick = async e => {
     const btn = e.currentTarget;
-    if (!confirm("마감을 취소하고 이벤트를 다시 열까요?" + (D.meta.final ? "\n확정한 최종 순위 명단도 함께 풀립니다." : ""))) return;
+    if (!confirm("마감을 취소하고 이벤트를 다시 열까요?")) return;
     const j = await go(btn, { action: "closeEvent", closed: false }, "이벤트를 다시 열었습니다");
     if (j) { D.meta.closed = 0; D.meta.final = null; render(); }
   });

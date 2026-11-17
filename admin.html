@@ -301,12 +301,17 @@ const TOTAL_CARDS = TIER_KEYS.reduce((a, t) => a + PER_TIER[t], 0);
 const PROGRAMS = [
   { id: "p1", name: "학습동아리" },
   { id: "p2", name: "학습튜터링" },
-  { id: "p3", name: "학습법 특강" },
+  { id: "p3", name: "학습법특강(11.19(목) 온라인학습법 워크숍)", aka: ["학습법 특강", "학습법특강(11.19(목) 온라인학습법 워크숍 예정)"] },
   { id: "p4", name: "학습코칭 상담" },
   { id: "p5", name: "의사소통코칭" },
-  { id: "p6", name: "의사소통 워크숍" },
+  { id: "p6", name: "의사소통 워크숍(11.23(월) 온라인의사소통 워크숍)", aka: ["의사소통 워크숍", "의사소통 워크숍(11.23(목) 온라인의사소통 워크숍 예정)", "의사소통 워크숍(11.23(월) 온라인의사소통 워크숍 예정)"] },
 ];
 
+/* 프로그램 이름을 바꾸기 전에 남긴 만족도(예전 이름 저장)를 지금 이름으로 맞춘다 */
+function progAka(r) {
+  const p = PROGRAMS.find(x => (x.aka || []).indexOf(r.program) >= 0);
+  return p ? Object.assign({}, r, { program: p.name }) : r;
+}
 const api = CONFIG.API_URL && CONFIG.API_URL.indexOf("http") === 0;
 /* 인증 항목별 지급 장수. 같은 사이트의 학생 앱(index.html) 설정을 읽어 덮어쓴다 */
 let REWARD = { follow: 7, apply: 7, done: 10, tabs: 7 };
@@ -320,7 +325,7 @@ function rewardFor(st, key) {
 }
 const rewardOf = key => key === "follow" ? REWARD.follow : key === "tabs" ? (REWARD.tabs || 7)
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-11-14c";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-11-17";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -398,7 +403,7 @@ async function load(silent) {
         return render();
       }
       D = { students: j.students || [], proofs: j.proofs || [], surveys: j.surveys || [],
-            ratings: j.ratings || [], exchanges: j.exchanges || [], grants: j.grants || [],
+            ratings: (j.ratings || []).map(progAka), exchanges: j.exchanges || [], grants: j.grants || [],
             pollSheets: j.pollSheets || [],
             meta: { v: j.v || "", epoch: j.epoch || "", notice: j.notice || null,
                     sheetName: j.sheetName || "", sheetUrl: j.sheetUrl || "",

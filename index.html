@@ -824,6 +824,7 @@
     .pchk,.pbar i,.prow2{transition:none!important}
     *{scroll-behavior:auto!important}
   }
+.prow .pn .psub{display:block;font-size:11.5px;font-weight:500;opacity:.7;margin-top:2px;line-height:1.35;word-break:keep-all}
 </style>
 </head>
 <body>
@@ -882,7 +883,7 @@ const CONFIG = {
     welcome: 5,      // 처음 시작할 때 바로 주는 카드 (0으로 두면 지급하지 않음)
     follow: 7, quiz: 5, apply: 7, done: 10,
     tabs: 7,         // TABS 설문 완료 인증 (더미래페스티벌 부스 이벤트)
-    daily: 0,        // 출석 보너스: 하루 한 번 접속하면 (0으로 두면 지급하지 않음)   // 2026-10-27부터 (이전: 팔로우 5 · 신청 5 · 완료 7)
+    daily: 1,        // 출석 보너스: 하루 한 번 접속하면 (0으로 두면 지급하지 않음)   // 2026-10-27부터 (이전: 팔로우 5 · 신청 5 · 완료 7)
     invited: 5,      // 추천인을 입력하고 가입한 학생이 받는 카드
     referrer: 5,     // 추천한 학생이 받는 카드 (추천받은 사람이 프로그램을 인증해야 지급)
   },
@@ -1041,10 +1042,10 @@ const POLLS = [
 const PROGRAMS = [
   { id:"p1", name:"학습동아리" },
   { id:"p2", name:"학습튜터링" },
-  { id:"p3", name:"학습법 특강" },
+  { id:"p3", name:"학습법특강(11.19(목) 온라인학습법 워크숍)" },
   { id:"p4", name:"학습코칭 상담" },
   { id:"p5", name:"의사소통코칭" },
-  { id:"p6", name:"의사소통 워크숍" },
+  { id:"p6", name:"의사소통 워크숍(11.23(월) 온라인의사소통 워크숍)" },
 ];
 
 // 현장 퀴즈 문항 (이벤트마다 교체)
@@ -2015,7 +2016,7 @@ function viewGet() {
       <div class="meta"><b>신청</b> With Yonsei 신청 완료 화면 캡처 · ${R.apply}장<br>
         <b>완료</b> 활동 후 WithYONSEI 참여기록 캡처 · ${R.done}장 · 프로그램마다 각 1회</div>
       <div class="plist">
-        ${PROGRAMS.map(p => `<div class="prow"><div class="pn">${p.name}</div>
+        ${PROGRAMS.map(p => `<div class="prow"><div class="pn">${progLabel(p.name)}</div>
           ${stepBtn("apply:" + p.id, "신청", R.apply)}${stepBtn("done:" + p.id, "완료", R.done)}</div>`).join("")}
       </div>
       <p class="note" style="margin-top:10px">카드는 제출하자마자 받아요. 등대팀이 캡처를 확인하고, 다른 화면이나 다른 사람의 캡처는 반려되며 그 인증으로 받은 카드는 회수돼요.</p>
@@ -2271,6 +2272,11 @@ function viewRank() {
       <button class="lnk" id="rankrefresh" style="margin-left:auto">새로고침</button>
     </p>
     ${rows ? `<div class="ranklist">${rows}</div>` : `<p class="lead">아직 참여자가 없습니다.</p>`}`);
+}
+/* "이름(일정)" → 이름 + 작은 글씨 일정 */
+function progLabel(n) {
+  const i = String(n).indexOf("(");
+  return i > 0 ? `${esc(n.slice(0, i))}<small class="psub">${esc(n.slice(i))}</small>` : esc(n);
 }
 function mask(n) {
   if (!n) return "";

@@ -326,7 +326,7 @@ function rewardFor(st, key) {
 }
 const rewardOf = key => key === "follow" ? REWARD.follow : key === "tabs" ? (REWARD.tabs || 7)
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-11-17c";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-11-17d";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -1188,7 +1188,7 @@ function fieldStudent(st) {
     const top = exTop(st.sid);
     const state = x ? (x.status === "done" ? `<span class="chip ok">지급 완료</span>`
                      : have < all ? `<span class="chip no">신청했지만 등급 미완성</span>`
-                     : exSuper(x) ? `<span class="chip">상위 등급(${top.tier})으로 대신</span>`
+                     : exSuper(x) ? `<span class="chip wait">신청함 · ${top.tier} ${top.status === "done" ? "이미 지급" : "신청 중"}이라 지급 안 함</span>`
                      : `<button class="btn sm" data-fex="${t}">선물 지급 완료</button>`)
                     : have === all ? (top && TIER_I(top.tier) > TIER_I(t) ? `<span class="note">상위 등급 신청함</span>` : `<span class="chip wait">완성 · 교환 신청 전</span>`) : "";
     return `<div class="ftier"><b>${t} ${TIERS[t].word}</b><span>${have}/${all}</span>${state}</div>`;
@@ -2532,6 +2532,20 @@ function bindExGroups() {
     items.forEach(x => exDoneNow(sid, x.tier));
     toast("모두 지급 완료"); render();
   });
+  app.querySelectorAll("[data-gxs]").forEach(b => b.onclick = () => {
+    const [sid, tier] = b.dataset.gxs.split("|");
+    if (!confirm(`${tier}등급 교환 신청을 취소할까요?\n이 학생은 더 높은 등급으로 받으므로 규칙상 이 등급은 주지 않습니다.`)) return;
+    const src = (D.exchanges || []).find(x => String(x.sid) === sid && x.tier === tier);
+    if (!src) return;
+    const prev = src.status; src.status = "cancel";
+    saveBehind(() => exchangeDone(sid, tier, "cancel"), () => { src.status = prev; }, `${tier}등급 신청 취소를 저장하지 못했습니다`);
+    toast(`${tier}등급 신청을 취소했습니다`); render();
+  });
+  app.querySelectorAll("[data-gxf]").forEach(b => b.onclick = () => {
+    const [sid, tier] = b.dataset.gxf.split("|");
+    if (!confirm(`규칙(가장 높은 등급 1개)과 다르게 ${tier}등급도 지급 완료로 처리할까요?`)) return;
+    exDoneNow(sid, tier); toast(`${tier}등급 지급 완료`); render();
+  });
   $("excopy") && ($("excopy").onclick = () => copyContacts(exGroups((D.exchanges || []).filter(x => exWaiting(x) && !exBroken(x)))));
 }
 
@@ -2539,6 +2553,7 @@ function viewExchange() {
   const ex = (D.exchanges || []).slice();
   const waiting = ex.filter(exWaiting).sort((a, b) => (a.at || 0) - (b.at || 0));
   const paid    = ex.filter(x => x.status === "done").sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
+  const superList = ex.filter(x => x.status === "req" && exSuper(x)).sort((a, b) => (b.at || 0) - (a.at || 0));   // 숨기지 않고 따로 보여 준다
 
   // 등급은 완성했지만 아직 신청하지 않은 학생
   const notYet = [];
@@ -2624,6 +2639,17 @@ function viewExchange() {
     </div>
 
     <div class="panel">
+      <div class="ph"><h2>상위 등급으로 대신한 신청</h2><span class="sub">같은 학생이 더 높은 등급을 이미 받았거나 신청해서, 위 대기 목록에서 뺀 신청 ${superList.length}건 · 규칙상 지급하지 않음</span></div>
+      <div class="pb flush">${superList.length ? `<table><thead><tr><th>이름</th><th>학번</th><th>신청한 등급</th><th>대신하는 등급</th><th>연락처</th><th>신청</th><th class="num">처리</th></tr></thead><tbody>
+        ${superList.map(x => { const t = exTop(x.sid); return `<tr><td><b>${esc(x.name)}</b></td><td>${esc(x.sid)}</td>
+          <td><span class="chip ${esc(x.tier)}">${esc(x.tier)} ${TIERS[x.tier] ? TIERS[x.tier].word : ""}</span></td>
+          <td><span class="chip ${esc(t.tier)}">${esc(t.tier)}</span> <span class="note">${t.status === "done" ? "이미 지급함" : "지급 대기"}</span></td>
+          <td style="color:var(--mist)">${esc(x.contact) || "-"}</td><td class="note">${x.at ? when(x.at) : "-"}</td>
+          <td class="num">${api ? `<button class="btn gh sm" data-gxs="${esc(x.sid)}|${esc(x.tier)}">신청 취소</button> <button class="btn gh sm" data-gxf="${esc(x.sid)}|${esc(x.tier)}">그래도 지급</button>` : ""}</td></tr>`; }).join("")}
+        </tbody></table>` : `<p class="note" style="padding:14px 16px;margin:0">없습니다.</p>`}</div>
+    </div>
+
+    <div class="panel">
       <div class="ph"><h2>완성했지만 미신청</h2>
         <span class="sub">가장 높은 완성 등급을 아직 신청하지 않은 학생 ${notYet.length}명 · 신청해야 그 등급으로 받습니다</span>
       </div>
@@ -2641,7 +2667,7 @@ function viewExchange() {
       </div></div>
     </div>
 
-    <p class="note"><b style="color:var(--beam)">한 학생은 신청한 등급 중 가장 높은 등급 1개만 받습니다.</b> 더 낮은 등급 신청은 '상위 등급으로 대신'으로 표시되고 대기·연락 명단에서 빠집니다.<br>학생이 보관함에서 교환을 신청하면 여기에 쌓입니다.
+    <p class="note"><b style="color:var(--beam)">한 학생은 신청한 등급 중 가장 높은 등급 1개만 받습니다.</b> 더 낮은 등급 신청은 대기·연락 명단에서 빠지고, 아래 '상위 등급으로 대신한 신청'에 따로 모입니다${superList.length ? ` (지금 ${superList.length}건)` : ""}.<br>학생이 보관함에서 교환을 신청하면 여기에 쌓입니다.
     연락처로 안내한 뒤 [지급 완료]를 누르면 학생 화면에도 '지급 완료'로 표시됩니다.</p>`);
 }
 

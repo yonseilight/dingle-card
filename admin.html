@@ -67,6 +67,7 @@
   a.btn{text-decoration:none;display:inline-flex;align-items:center}
   .pb{padding:16px}
   .pb.flush{padding:0}
+  .prept .sumr td{border-top:2px solid var(--line);background:rgba(255,255,255,.03)}
   .fzbar{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;border-bottom:1px solid var(--line);padding:12px 16px}
   .ckl{list-style:none;margin:0;padding:0}.ckl li{display:grid;grid-template-columns:26px 1fr auto;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
   .ckl li:first-child{border-top:0}.ckl .ck{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;background:rgba(255,255,255,.07);color:var(--mist)}
@@ -325,7 +326,7 @@ function rewardFor(st, key) {
 }
 const rewardOf = key => key === "follow" ? REWARD.follow : key === "tabs" ? (REWARD.tabs || 7)
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-11-17b";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-11-17c";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -2487,7 +2488,7 @@ function exGroupTable(groups, emptyMsg) {
   return `<table>
     <thead><tr><th>이름</th><th>학번</th><th>연락처</th><th>신청한 등급 · 선물</th><th>첫 신청</th><th class="num">처리</th></tr></thead>
     <tbody>${groups.length ? groups.map(g => `<tr>
-      <td><b>${esc(g.name)}</b>${g.items.length > 1 ? ` <span class="chip wait">${g.items.length}건</span>` : ""}</td>
+      <td><b>${esc(g.name)}</b>${g.items.length > 1 ? ` <span class="chip wait">${g.items.length}건</span>` : ""}${(() => { const st = D.students.find(x => String(x.sid) === g.sid); return st && st.adm && st.adm.hide ? ` <span class="chip no" title="인증 기준 미준수로 경품 대상에서 제외된 학생">순위 제외</span>` : ""; })()}</td>
       <td style="color:var(--mist)">${esc(g.sid)}</td>
       <td><a class="tel" href="tel:${esc(String(g.contact).replace(/[^0-9+]/g, ""))}">${esc(g.contact) || "-"}</a></td>
       <td><div class="exi">${g.items.map(x => { const br = exBroken(x);
@@ -2549,6 +2550,20 @@ function viewExchange() {
     if (ex.some(x => String(x.sid) === String(st.sid) && x.tier === t && x.status !== "cancel")) return;
     notYet.push({ st, t, low: top ? top.tier : "" });
   });
+  /* 준비할 굿즈 수량 (등급별) — 학생 1명당 신청한 등급 중 가장 높은 1개 기준
+     지급 완료 + 지급 대기 = 지금 준비할 수량 · 미신청 완성자는 더 신청할 수 있는 최대치.
+     순위 제외(제재) 학생은 경품 대상에서 빠지므로 따로 센다 */
+  const hidOf = sid => { const st = D.students.find(x => String(x.sid) === String(sid)); return !!(st && st.adm && st.adm.hide); };
+  const prep = TIER_KEYS.map(t => {
+    const mine = ex.filter(x => x.tier === t);
+    const done = mine.filter(x => x.status === "done").length;
+    const wait = mine.filter(x => exWaiting(x) && !exBroken(x) && !hidOf(x.sid)).length;
+    const hidW = mine.filter(x => exWaiting(x) && !exBroken(x) && hidOf(x.sid)).length;
+    const more = notYet.filter(r => r.t === t && !(r.st.adm && r.st.adm.hide)).length;
+    const shift = notYet.filter(r => r.low && r.t === t && !(r.st.adm && r.st.adm.hide)).length;   // 낮은 등급을 신청해 둔 채 더 높은 등급을 완성한 학생
+    return { t, done, wait, hidW, more, shift, now: done + wait };
+  });
+  const sumP = f => prep.reduce((a, r) => a + r[f], 0);
   notYet.sort((a, b) => TIER_KEYS.indexOf(b.t) - TIER_KEYS.indexOf(a.t));
 
   const when = ms => {
@@ -2559,6 +2574,23 @@ function viewExchange() {
   };
 
   return shell(`
+    <div class="panel">
+      <div class="ph"><h2>준비할 굿즈 수량</h2><span class="sub">학생 1명당 신청한 등급 중 가장 높은 1개 기준 · 순위 제외 학생 빼고</span></div>
+      <div class="pb flush"><table class="prept">
+        <thead><tr><th>등급</th><th class="num">이미 지급</th><th class="num">지급 대기</th><th class="num">지금 필요한 수량</th><th class="num">미신청 완성자</th><th class="num">최대 (모두 신청 시)</th></tr></thead>
+        <tbody>${prep.map(r => `<tr>
+          <td><span class="chip ${r.t}">${r.t} ${TIERS[r.t].word}</span> <span class="note">${esc(TIERS[r.t].goods)}</span></td>
+          <td class="num">${r.done}</td><td class="num">${r.wait}${r.hidW ? ` <span class="note">(+순위 제외 ${r.hidW})</span>` : ""}</td>
+          <td class="num"><b style="font-size:16px;color:var(--beam)">${r.now}</b>개</td>
+          <td class="num">${r.more ? "+" + r.more : "-"}</td><td class="num">${r.now + r.more}개</td></tr>`).join("")}
+          <tr class="sumr"><td><b>합계</b></td><td class="num">${sumP("done")}</td><td class="num">${sumP("wait")}</td>
+            <td class="num"><b style="font-size:16px;color:var(--beam)">${sumP("now")}</b>개</td><td class="num">${sumP("more") ? "+" + sumP("more") : "-"}</td><td class="num">${sumP("now") + sumP("more")}개</td></tr>
+        </tbody></table></div>
+      <div class="pb"><p class="note" style="margin:0">지금 필요한 수량 = 이미 지급 + 지급 대기(등급을 지금도 갖춘 신청만). 미신청 완성자 = 가장 높은 완성 등급을 아직 신청하지 않은 학생으로, 신청하면 그만큼 늘어납니다.${
+        sumP("shift") ? ` 이 중 <b style="color:var(--foam)">${sumP("shift")}명</b>은 낮은 등급을 이미 신청해 둔 학생이라, 높은 등급으로 바꿔 신청하면 낮은 등급 수량은 그만큼 줄어듭니다(그래서 '최대'는 넉넉히 잡은 값).` : ""}${
+        prep.some(r => r.hidW) ? " 순위 제외 학생의 신청은 수량에서 뺐습니다." : ""}</p></div>
+    </div>
+
     <div class="panel">
       <div class="ph"><h2>교환 신청</h2>
         <span class="sub">연락해서 선물을 전달할 차례 · ${waiting.length}건 · 학생 ${exGroups(waiting).length}명 (같은 학생의 여러 등급은 한 줄)</span>

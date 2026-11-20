@@ -231,6 +231,10 @@
     background:rgba(255,201,74,.07);border:1px solid rgba(255,201,74,.25)}
   .fgift.off{background:rgba(0,0,0,.15);border-color:var(--line)}
   .fgift .lnk{background:none;border:none;color:var(--mist);text-decoration:underline;cursor:pointer;font-size:12px}
+  .fplan{margin-top:12px;padding:14px 16px;border-radius:12px;border:1.5px solid rgba(255,201,74,.45);background:rgba(255,201,74,.08);display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;justify-content:space-between}
+  .fplan.ok{border-color:rgba(78,216,160,.45);background:rgba(78,216,160,.08)} .fplan.none{border-color:var(--line);background:rgba(255,255,255,.03)}
+  .fplan .pl{display:flex;flex-direction:column;gap:3px} .fplan .pl b{font-size:17px} .fplan .pa{display:flex;gap:8px;flex-wrap:wrap}
+  .fplan .btn.big{font-size:16px;padding:12px 20px}
   .ftiers{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:12px}
   .ftier{display:flex;flex-direction:column;gap:4px;padding:10px 12px;border-radius:10px;background:rgba(0,0,0,.18)}
   .ftier span{font-size:20px;font-weight:800;color:var(--foam)}
@@ -326,7 +330,7 @@ function rewardFor(st, key) {
 }
 const rewardOf = key => key === "follow" ? REWARD.follow : key === "tabs" ? (REWARD.tabs || 7)
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-11-17d";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-11-20c";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -835,7 +839,7 @@ function viewSurvey() {
   return shell(`
     <div class="panel">
       <div class="ph"><h2>설문 응답</h2>
-        <span class="sub">퀴즈 뒤 '이번 주 한 마디' 응답 ${quiz.length}건 · 문항 ${keys.length}개${nPoll ? ` · 기간 설문 ${nPoll}건은 '기간 설문' 탭에 따로 모았습니다` : ""}</span>
+        <span class="sub">퀴즈 뒤 '한 마디' 응답 ${quiz.length}건 · 문항 ${keys.length}개${nPoll ? ` · 기간 설문 ${nPoll}건은 '기간 설문' 탭에 따로 모았습니다` : ""}</span>
         <div class="right"><button class="btn gh sm" id="csvsv">CSV 내려받기</button></div>
       </div>
       <div class="pb">
@@ -845,7 +849,7 @@ function viewSurvey() {
           const max = Math.max(1, ...opts.map(o => g.ans[o]));
           return `<div class="qcard">
             <h3>${esc(q)}</h3>
-            <div class="meta">응답 ${g.total}건 · ${Object.keys(g.weeks).length}개 주차</div>
+            <div class="meta">응답 ${g.total}건 · ${Object.keys(g.weeks).length}개 회차</div>
             ${opts.map(o => {
               const n = g.ans[o], pct = Math.round(n / g.total * 100);
               return `<div class="row"><div class="lb">${esc(o)}</div>
@@ -858,7 +862,7 @@ function viewSurvey() {
               ${g.etc.length > 30 ? `<div class="note">외 ${g.etc.length - 30}건 — CSV에서 전체를 볼 수 있습니다</div>` : ""}
             </div>` : ""}
           </div>`;
-        }).join("") : `<div class="empty">아직 퀴즈 설문 응답이 없습니다.<br>학생이 퀴즈를 풀고 '이번 주 한 마디'에 답하면 이곳에 쌓입니다.</div>`}
+        }).join("") : `<div class="empty">아직 퀴즈 설문 응답이 없습니다.<br>학생이 퀴즈를 풀고 '한 마디'에 답하면 이곳에 쌓입니다.</div>`}
       </div>
     </div>`);
 }
@@ -905,7 +909,7 @@ function viewPoll() {
       <div class="kpi"><div class="l">문항</div><div class="v">${g.qs.length}</div><div class="s">설문 ${esc(g.id)}</div></div>
       <div class="kpi"><div class="l">직접 입력을 남긴 학생</div><div class="v">${etcN}</div></div>
       <div class="kpi"><div class="l">마지막 응답</div><div class="v" style="font-size:17px;margin-top:5px">
-        ${g.people[0] && g.people[0].at ? new Date(g.people[0].at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "-"}</div></div>
+        ${g.people[0] && g.people[0].at ? FMT_MDHM.format(new Date(g.people[0].at)) : "-"}</div></div>
     </div>
     <div class="panel">
       <div class="ph"><h2>${g.def ? esc(g.def.title) + " (" + esc(g.def.from || g.id) + (g.def.until ? " ~ " + esc(g.def.until) : "") + ")" : "기간 설문 " + esc(g.id)} · 문항별 결과</h2>
@@ -955,7 +959,7 @@ function viewPoll() {
             ${g.people.map(p => `<tr>
               <td>${esc(p.name)}</td>
               <td style="color:var(--mist)">${esc(p.sid)}</td>
-              <td style="color:var(--mist);white-space:nowrap">${p.at ? new Date(p.at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "-"}</td>
+              <td style="color:var(--mist);white-space:nowrap">${p.at ? FMT_MDHM.format(new Date(p.at)) : "-"}</td>
               ${g.qs.map(q => { const a = p.a[q] || {};
                 return `<td>${esc(a.answer || "")}${a.etc ? `${a.answer ? "<br>" : ""}<span style="color:var(--mist)">✎ ${esc(a.etc)}</span>` : ""}${!a.answer && !a.etc ? "-" : ""}</td>`; }).join("")}
             </tr>`).join("")}
@@ -1057,11 +1061,30 @@ function viewField() {
     ${body}`);
 }
 
+/* 수령 안내 문구 — 이 컴퓨터에 저장해 두고 문자·학생 앱 공지에 같이 쓴다 */
+const PICKUP_DEFAULT = "[연세대 미래캠 등대팀] 딩글이 카드도감 굿즈 수령 안내\n일시: 11월 ○일(○) ○○:○○~○○:○○\n장소: \n카드도감 앱 도감 탭의 '수령증'을 보여 주세요. 굿즈는 1인 1개, 완성한 가장 높은 등급으로 드립니다.";
+function pickupMsg() { try { return localStorage.getItem("dingle:pickupMsg") || PICKUP_DEFAULT; } catch (e) { return PICKUP_DEFAULT; } }
+function pickupHTML() {
+  const nt = D.meta.notice, m = pickupMsg();
+  return `<div class="panel">
+      <div class="ph"><h2>수령 안내</h2><span class="sub">한 번 적어 두면 문자 복사와 학생 앱 공지에 같이 씁니다 · 이 컴퓨터에 저장</span></div>
+      <div class="pb">
+        <div class="frm"><textarea id="pkmsg" rows="5" maxlength="300">${esc(m)}</textarea></div>
+        <div class="frm" style="margin-top:8px">
+          <button class="btn sm" id="pkcopy">문자 내용 복사</button>
+          <button class="btn gh sm" id="excopy2">대기 학생 연락처 복사</button>
+          ${api ? `<button class="btn gh sm" id="pknotice">학생 앱 공지로 올리기</button>` : ""}
+          <span class="note" id="pklen">${m.length}/300자</span>
+        </div>
+        <p class="note" style="margin:8px 0 0">지금 학생 앱 공지: ${nt ? `<b style="color:var(--foam)">${esc(nt.t.slice(0, 60))}${nt.t.length > 60 ? "…" : ""}</b> · ${when(nt.at)}` : "없음"} — 공지는 모든 학생에게 보이고, 운영 탭에서 내릴 수 있습니다.</p>
+        ${/○/.test(m) ? `<p class="note" style="margin:6px 0 0;color:var(--beam)">○ 자리(날짜·시간·장소)를 채운 뒤 보내 주세요.</p>` : ""}
+      </div></div>`;
+}
 /* 굿즈 교환 (현장·경품 탭): 아직 안 준 교환 신청. 순위 보상은 없앴다 */
 function exFieldHTML() {
   const ex = (D.exchanges || []).filter(exWaiting).slice().sort((a, b) => (a.at || 0) - (b.at || 0));
-  return `<div class="panel">
-      <div class="ph"><h2>굿즈 교환 대기</h2><span class="sub">학생별 한 줄 · 오래된 순 · 신청한 등급 중 가장 높은 등급 1개만 지급</span>
+  return `${pickupHTML()}<div class="panel">
+      <div class="ph"><h2>굿즈 교환 대기</h2><span class="sub">학생별 한 줄 · 오래된 순 · 1인 1개, 완성한 가장 높은 등급으로 자동 상향</span>
         <div class="right"><button class="btn gh sm" id="rcptprint">수령 확인표 인쇄</button><button class="btn gh sm" id="excopy">연락 명단 복사</button></div></div>
       <div class="pb flush">${exGroupTable(exGroups(ex), "대기 중인 교환 신청이 없습니다.")}</div>
     </div>`;
@@ -1073,7 +1096,8 @@ function printReceipt() {
   // 이미 지급한 것은 모두 + 아직 안 준 것은 학생별 가장 높은 등급 1건만 (지금도 등급을 갖춘 대기)
   const ex = (D.exchanges || []).filter(x => x.status === "done" || (x.status !== "cancel" && !exSuper(x) && !exBroken(x)))
     .sort((a, b) => TIER_KEYS.indexOf(a.tier) - TIER_KEYS.indexOf(b.tier) || (a.at || 0) - (b.at || 0));
-  ex.forEach(x => rows.push([`굿즈 교환 ${x.tier}등급`, x.name, x.sid, x.goods || `${x.tier}등급 굿즈`, x.status === "done" ? day(x.doneAt || x.at) : ""]));
+  ex.forEach(x => { const ef = exEff(x);
+    rows.push([`굿즈 교환 ${ef}등급${ef !== x.tier ? ` (${x.tier} 신청→상향)` : ""}`, x.name, x.sid, ef !== x.tier ? TIERS[ef].goods : (x.goods || `${x.tier}등급 굿즈`), x.status === "done" ? day(x.doneAt || x.at) : ""]); });
   if (!rows.length) return toast("인쇄할 명단이 없습니다");
   const w = window.open("", "_blank");
   if (!w) return toast("팝업이 막혔습니다. 브라우저에서 이 사이트 팝업을 허용해 주세요");
@@ -1092,7 +1116,7 @@ function printReceipt() {
     <thead><tr class="sp"><td colspan="7"></td></tr>
       <tr class="ttl"><td colspan="7"><h1>딩글이 카드도감 경품 수령 확인표</h1>
         <p class="m">미래융합교육혁신원 등대팀 20기 · 출력 ${new Date().toLocaleString("ko-KR", { dateStyle: "long", timeStyle: "short" })}
-        · 굿즈 교환 (학생별 신청한 등급 중 가장 높은 등급 1개) · 총 ${rows.length}건 (지급 완료 ${done}건)</p></td></tr>
+        · 굿즈 교환 (1인 1개 · 아직 안 받은 신청은 완성한 가장 높은 등급) · 총 ${rows.length}건 (지급 완료 ${done}건)</p></td></tr>
       <tr><th class="no">번호</th><th class="g">구분</th><th>이름</th><th class="sid">학번</th><th>경품</th><th class="d">수령일</th><th class="sg">서명</th></tr></thead>
     <tfoot><tr class="spf"><td colspan="7"></td></tr></tfoot>
     <tbody>${rows.map((r, i) => `<tr><td class="no">${i + 1}</td><td class="g">${esc(r[0])}</td><td><b>${esc(r[1])}</b></td><td class="sid">${esc(r[2])}</td>
@@ -1181,6 +1205,46 @@ function recentHTML() {
     <div class="pb">${l.map(g => `<div class="rcn"><span class="note">${when(g.at)}</span> <b>${esc(g.name)}</b> <span class="note">${esc(g.sid)}</span> · ${esc(String(g.reason).replace("[경품] ", ""))}${g.cards ? ` · ${g.cards > 0 ? "+" : ""}${g.cards}장` : ""}</div>`).join("")}</div></div>`;
 }
 
+/* 학생 조회 맨 위: 규칙(신청한 등급 중 가장 높은 1개)대로 지금 무엇을 줘야 하는지 한 줄로 */
+function handoutBox(st) {
+  const hc = TIER_KEYS.slice().reverse().find(k => tierDone(st, k) === PER_TIER[k]) || null;   // 가장 높은 완성 등급
+  const top = exTop(st.sid), hid = !!(st.adm && st.adm.hide);
+  const chip = t => `<span class="chip ${t}">${t} ${TIERS[t].word}</span>`;
+  const hidNote = hid ? `<span class="chip no">순위 제외 학생 · 경품 대상인지 확인</span>` : "";
+  const spot = (t, primary) => api ? `<button class="btn ${primary ? "big" : "gh sm"}" data-fspot="${t}">${t} 현장 신청 + 지급</button>` : "";
+  const higher = hc && top && TIER_I(hc) > TIER_I(top.tier) && !(D.exchanges || []).some(x => String(x.sid) === String(st.sid) && x.tier === hc && x.status !== "cancel");
+  if (top && top.status === "req") { const ef = exEff(top);
+    return `<div class="fplan">
+      <div class="pl"><span class="note">지급할 굿즈 ${hidNote}</span><b>${chip(ef)} ${esc(ef !== top.tier ? TIERS[ef].goods : (top.goods || TIERS[top.tier].goods))}</b>
+        ${ef !== top.tier ? `<span class="note" style="color:var(--beam)">${top.tier}로 신청했지만 ${ef}까지 완성해서 ${ef}로 자동 상향했습니다.</span>` : ""}</div>
+      <div class="pa"><button class="btn big" data-fex="${ef}">${ef} 지급 완료</button></div></div>`; }
+  if (top && top.status === "done") return `<div class="fplan ok">
+      <div class="pl"><span class="note">굿즈 지급 완료 ${hidNote}</span><b>${chip(top.tier)} ${top.doneAt ? when(top.doneAt) : ""}</b>
+        ${higher ? `<span class="note">${hc} 등급도 완성했지만 이미 ${top.tier}를 받은 학생입니다 (가장 높은 등급 1개 규칙).</span>` : ""}</div>
+      <div class="pa">${higher ? spot(hc, false) : ""}</div></div>`;
+  if (hc) return `<div class="fplan">
+      <div class="pl"><span class="note">교환 신청 없음 ${hidNote}</span><b>가장 높은 완성 등급 ${chip(hc)}</b>
+        <span class="note">누르면 이 학생 이름으로 ${hc}등급 교환을 신청하고 바로 지급 완료로 기록합니다.</span></div>
+      <div class="pa">${spot(hc, true)}</div></div>`;
+  const broken = (D.exchanges || []).some(x => String(x.sid) === String(st.sid) && x.status === "req" && exBroken(x));
+  return `<div class="fplan none"><div class="pl"><span class="note">지급할 굿즈 없음 ${hidNote}</span>
+      <b style="font-size:15px">${broken ? "신청한 등급이 지금은 미완성입니다 (카드 회수 등)" : "아직 완성한 등급이 없습니다"}</b></div></div>`;
+}
+/* 현장 신청 + 지급: 신청하지 않은 학생도 부스에서 바로 처리 (학생 신청과 같은 서버 기능을 쓴다) */
+function spotExchange(sid, tier) {
+  const st = stuOf(sid); if (!st) return Promise.resolve(false);
+  D.exchanges = D.exchanges || [];
+  let x = D.exchanges.find(y => String(y.sid) === String(sid) && y.tier === tier);
+  const created = !x;
+  if (!x) { x = { sid: String(sid), name: st.name || "", tier, goods: TIERS[tier].goods, contact: st.contact || "", at: Date.now(), status: "req", doneAt: 0 }; D.exchanges.push(x); }
+  const prev = { status: x.status, doneAt: x.doneAt };
+  x.status = "done"; x.doneAt = Date.now();
+  return saveBehind(async () => {
+      if (api) await adminPost({ action: "exchange", sid: String(sid), tier, goods: x.goods, contact: st.contact || "", name: st.name || "" });
+      await exchangeDone(String(sid), tier, "done");
+    }, () => { if (created) D.exchanges.splice(D.exchanges.indexOf(x), 1); else { x.status = prev.status; x.doneAt = prev.doneAt; } },
+    `${tier}등급 현장 신청·지급을 저장하지 못했습니다`);
+}
 function fieldStudent(st) {
   const ex = (D.exchanges || []).filter(x => String(x.sid) === String(st.sid) && x.status !== "cancel");
   const tiers = TIER_KEYS.map(t => {
@@ -1209,6 +1273,7 @@ function fieldStudent(st) {
     <div class="fhd"><div><b style="font-size:18px">${esc(st.name)}</b> <span class="note">${esc(st.sid)}</span>
       ${st.adm && st.adm.hide ? `<span class="chip no">순위 제외</span>` : ""}${rejected ? `<span class="chip no">반려 ${rejected}건</span>` : ""}</div>
       <div class="note">보유 <b style="color:var(--foam)">${st.types}/${TOTAL_CARDS}종</b> · 미개봉 ${st.pending}장 · 연락처 ${esc(st.contact) || "-"}</div></div>
+    ${handoutBox(st)}
     <div class="fgifts">${giftRow("tabs", "TABS 설문", "전기손난로")}${giftRow("follow", "인스타 팔로우", "단백질 쉐이크")}</div>
     <div class="ftiers">${tiers}</div>
     ${api ? `<div class="frm" style="margin-top:12px">
@@ -1277,6 +1342,25 @@ function bindField() {
     if (V.fsub === "lookup") setTimeout(() => $("fsid") && $("fsid").focus(), 0); });
   bindExGroups();
   $("rcptprint") && ($("rcptprint").onclick = () => printReceipt());
+  if ($("pkmsg")) {
+    const save = () => { const v = $("pkmsg").value; try { localStorage.setItem("dingle:pickupMsg", v); } catch (e) {} $("pklen").textContent = v.length + "/300자"; };
+    $("pkmsg").oninput = save;
+    $("pkcopy").onclick = async () => {
+      const v = $("pkmsg").value.trim(); if (!v) return toast("안내 문구를 적어 주세요");
+      if (/○/.test(v) && !confirm("아직 ○ 자리가 남아 있습니다. 그대로 복사할까요?")) return;
+      try { await navigator.clipboard.writeText(v); toast("문자 내용을 복사했습니다"); } catch (e) { $("pkmsg").select(); toast("복사가 막혀 있어 글을 선택해 두었습니다. Ctrl+C로 복사해 주세요"); }
+    };
+    $("excopy2").onclick = () => copyContacts(exGroups((D.exchanges || []).filter(exWaiting)));
+    $("pknotice") && ($("pknotice").onclick = async e => {
+      const v = $("pkmsg").value.trim(); if (!v) return toast("안내 문구를 적어 주세요");
+      if (/○/.test(v)) return toast("○ 자리(날짜·시간·장소)를 먼저 채워 주세요");
+      if (!confirm("이 안내를 학생 앱 맨 위 공지로 올릴까요? (지금 공지가 있으면 바뀝니다)")) return;
+      const b = e.currentTarget; b.disabled = true;
+      try { await adminPost({ action: "notice", text: v.slice(0, 300) }); D.meta.notice = { t: v.slice(0, 300), at: Date.now() }; toast("학생 앱 공지로 올렸습니다"); }
+      catch (err) { toast(errMsg(err)); }
+      render();
+    });
+  }
   $("fadd") && ($("fadd").onclick = async e => {
     const label = $("fl").value.trim(), cards = parseInt($("fc").value, 10) || 0, u = $("fu").value;
     if (!label) return toast("이벤트 이름을 적어 주세요");
@@ -1317,7 +1401,16 @@ function bindField() {
   app.querySelectorAll("[data-gv]").forEach(b => b.onclick = () => gift(b.dataset.gv, true));
   app.querySelectorAll("[data-gu]").forEach(b => b.onclick = () => { if (confirm("경품 지급 표시를 취소할까요?")) gift(b.dataset.gu, false); });
   app.querySelectorAll("[data-fex]").forEach(b => b.onclick = () => {
-    const t = b.dataset.fex; exDoneNow(V.fsid, t); toast(`${t}등급 선물 지급 완료`); render();
+    const t = b.dataset.fex, st = stuOf(V.fsid);
+    if (st && st.adm && st.adm.hide && !confirm(`${st.name} 학생은 순위 제외(인증 기준 미준수) 학생입니다.\n그래도 ${t}등급 굿즈를 지급 완료로 기록할까요?`)) return;
+    giveTier(V.fsid, t); toast(`${t}등급 선물 지급 완료`); render();
+  });
+  app.querySelectorAll("[data-fspot]").forEach(b => b.onclick = () => {
+    const t = b.dataset.fspot, st = stuOf(V.fsid); if (!st) return;
+    const got = (D.exchanges || []).filter(x => String(x.sid) === String(st.sid) && x.status === "done").map(x => x.tier);
+    const warn = (st.adm && st.adm.hide ? "\n⚠ 순위 제외(인증 기준 미준수) 학생입니다." : "") + (got.length ? `\n⚠ 이미 ${got.join("·")}등급을 받은 학생입니다 (가장 높은 등급 1개 규칙).` : "");
+    if (!confirm(`${st.name} (${st.sid})\n${t}등급 교환을 현장에서 신청하고 바로 지급 완료로 기록할까요?${warn}`)) return;
+    spotExchange(st.sid, t); toast(`${t}등급 현장 신청 + 지급 완료`); render();
   });
 }
 
@@ -1385,7 +1478,7 @@ function tabsRows() {
              hand: g[HAND] || 0, shake: g["단백질 쉐이크"] || 0, follow: !!(st.claims || {}).follow, contact: st.contact || "" };
   }).sort((a, b) => (b.at || 0) - (a.at || 0));
 }
-function viewTabs() { return shell(tabsInner()); }
+
 function tabsCtlHTML() {
   const te = Number(D.meta.tabsEnd) || 0;
   return `<div class="panel tbctl">
@@ -1539,7 +1632,7 @@ function reportData() {
     const t = Date.parse(String(x.week) + "T12:00:00+09:00"); const r = !isNaN(t) && at(t); if (r) r.quiz++;
   });
   // 참여 경로
-  const route = [["인스타그램 팔로우", "follow"], ["TABS 설문 인증", "tabs"], ["출석 보너스", "daily:"], ["주간 퀴즈", null], ["프로그램 신청", "apply:"], ["활동 완료", "done:"],
+  const route = [["인스타그램 팔로우", "follow"], ["TABS 설문 인증", "tabs"], ["출석 보너스", "daily:"], ["퀴즈", null], ["프로그램 신청", "apply:"], ["활동 완료", "done:"],
                  ["이벤트 코드", "event:"], ["기간 설문", "survey:"], ["친구 추천으로 가입", "ref"]]
     .map(([l, pre]) => [l, pre === null ? k.quizStu : pre === "ref" ? k.ref : S.filter(x => has(x, pre)).length]);
   // 만족도
@@ -1561,7 +1654,7 @@ function reportData() {
     D.surveys.filter(x => pollOf(x) === g.id), g.def, "poll",
     { id: g.id, title: g.def ? g.def.title : "이벤트 설문", from: g.def && g.def.from, until: g.def && g.def.until,
       cards: g.def && g.def.cards, people: g.people.length }));
-  add("주간 퀴즈 '이번 주 한 마디'", D.surveys.filter(x => !pollOf(x)), null, "weekly");
+  add("퀴즈 '한 마디'", D.surveys.filter(x => !pollOf(x)), null, "weekly");
   // ── 더 자세한 항목 ──
   const tiers = TIER_KEYS.map(t => ({ t, word: TIERS[t].word, all: PER_TIER[t], done: S.filter(x => !(x.adm && x.adm.hide) && tierDone(x, t) === PER_TIER[t]).length }));
   const dist = [[0, 0], [1, 5], [6, 10], [11, 15], [16, 20], [21, 25], [26, 26]].map(([lo, hi]) =>
@@ -1593,7 +1686,7 @@ function reportData() {
                   quiz: Math.max(stockUsed(KEYRING), BOOTH_FINAL[KEYRING] || 0),
                   handT: stockTotal(HAND), keyT: stockTotal(KEYRING), shakeT: stockTotal(SHAKE) };
   // 교환
-  const exT = TIER_KEYS.map(t => ({ t, word: TIERS[t].word, req: ex.filter(x => x.tier === t && x.status !== "cancel").length, give: ex.filter(x => x.tier === t && (x.status === "done" || (x.status !== "cancel" && !exSuper(x) && !exBroken(x)))).length, done: ex.filter(x => x.tier === t && x.status === "done").length, ready: tiers.find(z => z.t === t).done }));
+  const exT = TIER_KEYS.map(t => ({ t, word: TIERS[t].word, req: ex.filter(x => x.tier === t && x.status !== "cancel").length, give: ex.filter(x => (x.status === "done" ? x.tier === t : x.status !== "cancel" && !exSuper(x) && !exBroken(x) && exEff(x) === t)).length, done: ex.filter(x => x.tier === t && x.status === "done").length, ready: tiers.find(z => z.t === t).done }));
   // 상위 10명 (이름 가림)
   const mask = n => { n = String(n || ""); return n.length <= 1 ? n : n.length === 2 ? n[0] + "*" : n[0] + "*".repeat(n.length - 2) + n[n.length - 1]; };
   const top = S.filter(x => !(x.adm && x.adm.hide)).slice().sort((a, b) => (b.types || 0) - (a.types || 0) || (a.done || 0) - (b.done || 0)).slice(0, 10)
@@ -1657,7 +1750,7 @@ function reportHTML() {
   const finds = [
     `카드도감에 <b>${KO(k.total)}명</b>이 참여했고, 그중 <b>${KO(k.proofStu)}명(${PCT(k.proofStu, k.total)}%)</b>이 팔로우·TABS·프로그램 인증을 1회 이상 했습니다.`,
     `학습지원 프로그램 <b>신청 인증 ${KO(sumP("apply"))}건</b> 중 <b>${KO(sumP("both"))}건(${convAll}%)</b>이 활동 완료 인증까지 이어졌습니다.${bestProg && bestProg.apply ? ` 신청이 가장 많은 프로그램은 <b>${esc(bestProg.name)}</b>(${bestProg.apply}명)입니다.` : ""}`,
-    `주간 퀴즈 참여 <b>${KO(k.quiz)}회</b>(${KO(k.quizStu)}명) · 26종을 모두 모은 학생 <b>${KO(r.full)}명</b> · 1인 평균 보유 ${r.avgTypes}종.`,
+    `퀴즈 참여 <b>${KO(k.quiz)}회</b>(${KO(k.quizStu)}명) · 26종을 모두 모은 학생 <b>${KO(r.full)}명</b> · 1인 평균 보유 ${r.avgTypes}종.`,
     hasBooth ? `더미래페스티벌 부스: TABS 설문 인증 <b>${KO(r.booth.tabs)}명</b>, 학습지원 프로그램 퀴즈 <b>${KO(r.booth.quiz)}명</b> 참여, 전기손난로 ${KO(r.booth.hand)}개 지급.` : "",
     pollQ ? `이벤트 설문 '${esc(pollQ.q)}'에서 가장 많이 고른 답은 <b>${esc(topAns(pollQ))}</b>입니다(응답 ${pollQ.n}명 중 ${pollQ.cnt[topAns(pollQ)]}명).` : "",
   ].filter(Boolean);
@@ -1679,7 +1772,7 @@ function reportHTML() {
           <span class="rfn">${KO(n)}명<small>${PCT(n, k.total)}%</small></span></div>`).join("")}</div>`,
         "비율은 모두 참여 학생 대비. 인증은 반려되지 않은 것만 셉니다.")}
       ${blk("그 밖의 지표", `<div class="rsub">
-        ${tile("주간 퀴즈", KO(k.quiz) + "회", KO(k.quizStu) + "명 참여")}
+        ${tile("퀴즈 참여", KO(k.quiz) + "회", KO(k.quizStu) + "명 참여")}
         ${tile("지급된 카드", KO(k.cards) + "장", "평균 " + r.avgTypes + "종 보유")}
         ${tile("굿즈 교환", KO(k.exDone) + "건", "신청 " + KO(k.exReq) + "건")}
         ${tile("프로그램 만족도", k.rateAvg + (k.rateN ? "<em>/5</em>" : ""), KO(k.rateN) + "건 응답")}</div>`)}
@@ -1708,7 +1801,7 @@ function reportHTML() {
     `26종 완성 <b>${KO(r.full)}명</b> · 1인 평균 보유 ${r.avgTypes}종 · 굿즈 교환 지급 ${KO(k.exDone)}건`,
     `<div class="r2">${blk("등급별 완성과 굿즈 교환", tbl(["등급", "완성 학생", "교환 신청", "지급 대상", "지급 완료"],
         r.exT.map(t => [`<b class="tg tg${t.t}">${t.t}</b> ${t.word} <small>(${PER_TIER[t.t]}종)</small>`, `${t.ready}명 <small>${PCT(t.ready, k.total)}%</small>`, t.req + "건", t.give + "건", t.done + "건"])),
-        "완성 = 그 등급 카드를 종류별로 모두 가진 학생(순위 제외 학생 빼고). 굿즈는 학생이 신청한 등급 중 가장 높은 등급 1개만 주므로, 지급 대상 = 학생별 최고 등급 신청.")}
+        "완성 = 그 등급 카드를 종류별로 모두 가진 학생(순위 제외 학생 빼고). 굿즈는 학생별 1개이고, 아직 안 받은 신청은 완성한 가장 높은 등급으로 자동 상향해 지급 대상에 셉니다.")}
       ${blk("보유 종수 분포", hbars(r.dist.map(([l, n]) => [l, n, k.total]), "#E3A008"))}</div>` +
     (hasBooth ? blk("더미래페스티벌 부스 이벤트 (11월 10일)", `<div class="rsub r3b">
         ${tile("TABS 설문 인증", KO(r.booth.tabs) + "명", "사전 " + r.booth.pre + "명 · 당일 이후 " + (r.booth.tabs - r.booth.pre) + "명")}
@@ -1740,8 +1833,8 @@ function reportHTML() {
         <span>${g.meta && g.meta.from ? md(g.meta.from) + (g.meta.until ? " ~ " + md(g.meta.until) : "") + " · " : ""}참여 ${g.meta ? g.meta.people : "-"}명${g.meta && g.meta.cards ? " · 참여 보상 카드 " + g.meta.cards + "장" : ""}</span></div>
         <div class="rqg">${g.list.map(qhtml).join("")}</div></div>`).join("") : `<p class="rn">진행한 이벤트 설문이 없습니다.</p>`,
       "카드 얻기 화면에서 기간을 정해 연 설문(참여하면 카드 지급). 학생 1명당 1회 응답.") +
-    blk("주간 퀴즈 '이번 주 한 마디'", weekly.length ? `<div class="rqg">${weekly.map(qhtml).join("")}</div>` : `<p class="rn">아직 주간 설문 응답이 없습니다.</p>`,
-      "주간 퀴즈를 푼 뒤 받는 한 문항 설문. 학생마다 참여 순서대로 다른 문항이 나오므로 문항별 응답 수가 다릅니다."), true);
+    blk("퀴즈 '한 마디'", weekly.length ? `<div class="rqg">${weekly.map(qhtml).join("")}</div>` : `<p class="rn">아직 퀴즈 설문 응답이 없습니다.</p>`,
+      "퀴즈(11월 19일까지 주 1회, 11월 20일부터 3일에 1회)를 푼 뒤 받는 한 문항 설문. 학생마다 참여 순서대로 다른 문항이 나오므로 문항별 응답 수가 다릅니다."), true);
 
   /* ── 부록 ── */
   const cardGrid = TIER_KEYS.map(t => `<div class="cg"><div class="cgh"><b class="tg tg${t}">${t}</b> ${TIERS[t].word}</div><div class="cgr">${
@@ -1982,7 +2075,9 @@ function errMsg(e) {
     : m === "nothing" ? "회수할 카드를 골라 주세요" : m === "already" ? "이미 회수했습니다 (학생이 아직 재인증하지 않았어요)" : m === "no data" ? "이 학생의 카드 기록을 읽지 못했습니다"
     : "처리하지 못했습니다" + (m ? " (" + m + ")" : "");
 }
-const when = ms => ms ? new Date(ms).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "-";
+const FMT_MDHM = new Intl.DateTimeFormat("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+const FMT_MD = new Intl.DateTimeFormat("ko-KR", { month: "numeric", day: "numeric" });
+const when = ms => ms ? FMT_MDHM.format(new Date(ms)) : "-";
 
 /* 이벤트 마무리 순서 — 지금 상태를 보고 무엇이 남았는지 보여 준다 */
 function closeChecklist() {
@@ -1993,6 +2088,7 @@ function closeChecklist() {
   const steps = [
     [wait === 0, "검토 대기 인증 처리", wait ? `검토 전 인증 ${wait}건이 남았습니다. 마감 전에 승인·반려해야 학생이 카드를 받습니다.` : "검토 대기 인증이 없습니다.", wait ? `<button class="btn gh sm" data-ckgo="review">인증 검토로</button>` : ""],
     [!!cl, "이벤트 마감", cl ? `${when(cl)}에 마감했습니다.` : "아래 [이벤트 마감하기]를 누르면 학생이 카드를 더 받을 수 없습니다.", ""],
+    [!!D.meta.notice, "수령 안내 공지", D.meta.notice ? `학생 앱 공지: ${esc(D.meta.notice.t.slice(0, 40))}${D.meta.notice.t.length > 40 ? "…" : ""}` : "수령 일시·장소를 학생 앱 공지와 문자로 알립니다 (현장·경품 → 굿즈 교환 → 수령 안내).", D.meta.notice ? "" : `<button class="btn gh sm" data-ckgo="final">수령 안내로</button>`],
     [!!cl && exLeft === 0, "굿즈 지급", exLeft ? `굿즈 교환 대기 ${exLeft}건 (학생별 가장 높은 등급 1개)` : "대기 중인 교환 신청이 없습니다.", exLeft ? `<button class="btn gh sm" data-ckgo="final">굿즈 교환으로</button>` : ""],
     [!!bkAfter, "마감 뒤 백업", bk.last ? `마지막 백업 ${when(bk.last)}${cl && !bkAfter ? " (마감 전 백업입니다)" : ""}` : "아직 백업이 없습니다.", ""],
     [false, "운영 보고서 저장", "보고서 탭에서 [인쇄 · PDF로 저장]으로 최종본을 남깁니다. 굿즈 수령 확인표는 현장·경품 → 굿즈 교환에서 인쇄합니다.", `<button class="btn gh sm" data-ckgo="report">보고서로</button>`],
@@ -2217,7 +2313,7 @@ function logText(e) {
   const key = String(e.key || "");
   if (key.indexOf("daily:") === 0) return `카드 ${e.n}장 받음 · 출석 (${esc(key.slice(6))})`;
   const what = key === "welcome" ? "시작 카드" : key === "invited" ? "추천인 입력" : key === "server" ? "추천·등대팀 지급"
-    : key.indexOf("quiz:") === 0 ? "주간 퀴즈" : key.indexOf("event:") === 0 ? "이벤트 코드 " + esc(key.slice(6))
+    : key.indexOf("quiz:") === 0 ? "퀴즈" : key.indexOf("event:") === 0 ? "이벤트 코드 " + esc(key.slice(6))
     : key.indexOf("survey:") === 0 ? "기간 설문" : key === "follow" || key.indexOf(":") > 0 ? proofLabel(key) + " 인증" : esc(key);
   return `카드 ${e.n}장 받음 · ${what}`;
 }
@@ -2415,19 +2511,48 @@ const exWaiting = x => x.status !== "done" && x.status !== "cancel" && !exSuper(
    exTop: 그 학생의 유효한 신청(지급 완료, 또는 지금도 등급을 갖춘 대기) 중 가장 높은 등급
    exSuper: 더 높은 등급 신청이 있어서 대신 주지 않는 신청 (대기 목록에서 빠짐) */
 const TIER_I = t => TIER_KEYS.indexOf(t);
-function exTop(sid) {
-  let best = null;
-  (D.exchanges || []).forEach(x => {
-    if (String(x.sid) !== String(sid) || x.status === "cancel") return;
+/* 학생별 최고 등급 표를 한 번만 만들고, 신청 상태·학생 데이터가 바뀌면 다시 만든다 (신청이 많아도 빠르게) */
+let _exTopCache = { ex: null, st: null, sig: "", map: null };
+function exTopMap() {
+  const c = _exTopCache;
+  if (c.map && c.live) return c.map;                 // 같은 화면을 그리는 동안은 그대로 쓴다
+  const ex = D.exchanges || [], sig = ex.length + ":" + ex.map(x => x.status).join("");
+  if (c.map && c.ex === ex && c.st === D.students && c.sig === sig) { c.live = true; queueMicrotask(() => { c.live = false; }); return c.map; }
+  const map = new Map();
+  ex.forEach(x => {
+    if (x.status === "cancel") return;
     if (x.status !== "done" && exBroken(x)) return;
-    if (!best || TIER_I(x.tier) > TIER_I(best.tier)) best = x;
+    const k = String(x.sid), best = map.get(k);
+    if (!best || TIER_I(x.tier) > TIER_I(best.tier)) map.set(k, x);
   });
-  return best;
+  _exTopCache = { ex, st: D.students, sig, map, live: true };
+  queueMicrotask(() => { _exTopCache.live = false; });   // 클릭으로 상태가 바뀐 뒤 다음 화면에서는 다시 확인
+  return map;
+}
+function exTop(sid) { return exTopMap().get(String(sid)) || null; }
+/* 자동 상향: 아직 안 받은 신청은 학생이 완성한 가장 높은 등급으로 준다 (예: B 신청 + S 완성 → S) */
+function hiDone(st) { return TIER_KEYS.slice().reverse().find(k => tierDone(st, k) === PER_TIER[k]) || null; }
+function exEff(x) {
+  if (!x || x.status !== "req") return x ? x.tier : null;
+  const st = stuOf(x.sid), hc = st && hiDone(st);
+  return hc && TIER_I(hc) > TIER_I(x.tier) ? hc : x.tier;
+}
+/* 이 등급을 지급 완료로: 그 등급 신청이 있으면 그대로, 없으면(자동 상향) 그 등급으로 신청을 만들고 지급 */
+function giveTier(sid, tier) {
+  const x = (D.exchanges || []).find(y => String(y.sid) === String(sid) && y.tier === tier);
+  return x && x.status === "req" ? exDoneNow(sid, tier) : spotExchange(sid, tier);
 }
 function exSuper(x) { const t = exTop(x.sid); return !!t && t !== x && TIER_I(t.tier) > TIER_I(x.tier); }
 /* 신청한 등급을 지금도 다 갖고 있는지 (반려·회수로 깨졌을 수 있음) */
+/* 학번 → 학생 (학생 목록이 바뀌면 다시 만든다) */
+let _stuIdx = { arr: null, n: -1, map: null };
+function stuOf(sid) {
+  const a = D.students || [];
+  if (_stuIdx.arr !== a || _stuIdx.n !== a.length) _stuIdx = { arr: a, n: a.length, map: new Map(a.map(s => [String(s.sid), s])) };
+  return _stuIdx.map.get(String(sid)) || null;
+}
 function exBroken(x) {
-  const st = D.students.find(s => String(s.sid) === String(x.sid));
+  const st = stuOf(x.sid);
   return !!(st && PER_TIER[x.tier] && tierDone(st, x.tier) < PER_TIER[x.tier]);
 }
 /* ───────── 즉시 반영 ─────────
@@ -2484,20 +2609,22 @@ function exGroups(list) {
     .sort((a, b) => (a.at || 0) - (b.at || 0));
 }
 function exGroupTable(groups, emptyMsg) {
-  const w = ms => ms ? new Date(ms).toLocaleString("ko-KR", { month: "numeric", day: "numeric" }) : "-";
+  const w = ms => ms ? FMT_MD.format(new Date(ms)) : "-";
   return `<table>
     <thead><tr><th>이름</th><th>학번</th><th>연락처</th><th>신청한 등급 · 선물</th><th>첫 신청</th><th class="num">처리</th></tr></thead>
     <tbody>${groups.length ? groups.map(g => `<tr>
-      <td><b>${esc(g.name)}</b>${g.items.length > 1 ? ` <span class="chip wait">${g.items.length}건</span>` : ""}${(() => { const st = D.students.find(x => String(x.sid) === g.sid); return st && st.adm && st.adm.hide ? ` <span class="chip no" title="인증 기준 미준수로 경품 대상에서 제외된 학생">순위 제외</span>` : ""; })()}</td>
+      <td><b>${esc(g.name)}</b>${g.items.length > 1 ? ` <span class="chip wait">${g.items.length}건</span>` : ""}${(() => { const st = stuOf(g.sid); return st && st.adm && st.adm.hide ? ` <span class="chip no" title="인증 기준 미준수로 경품 대상에서 제외된 학생">순위 제외</span>` : ""; })()}</td>
       <td style="color:var(--mist)">${esc(g.sid)}</td>
       <td><a class="tel" href="tel:${esc(String(g.contact).replace(/[^0-9+]/g, ""))}">${esc(g.contact) || "-"}</a></td>
       <td><div class="exi">${g.items.map(x => { const br = exBroken(x);
         const lowDone = (D.exchanges || []).filter(y => String(y.sid) === g.sid && y.status === "done" && TIER_I(y.tier) < TIER_I(x.tier)).map(y => y.tier);
-        return `<span class="${br ? "brk" : ""}"><span class="chip ${esc(x.tier)}">${esc(x.tier)}</span> ${esc(x.goods || (TIERS[x.tier] ? TIERS[x.tier].goods : ""))}
+        const ef = br ? x.tier : exEff(x), up = ef !== x.tier;
+        return `<span class="${br ? "brk" : ""}"><span class="chip ${esc(ef)}">${esc(ef)}</span> ${esc(up ? TIERS[ef].goods : (x.goods || (TIERS[x.tier] ? TIERS[x.tier].goods : "")))}
+        ${up ? `<span class="chip wait" title="아직 안 받은 신청은 완성한 가장 높은 등급으로 자동으로 올려 줍니다">${esc(x.tier)} 신청 → ${ef} 자동 상향</span>` : ""}
         ${lowDone.length ? `<span class="chip wait" title="한 학생은 가장 높은 등급 1개만 받습니다">이미 ${lowDone.join("·")} 받음</span>` : ""}
         ${br ? `<span class="chip no" title="반려·회수로 이 등급 카드가 모자랍니다">등급 미완성</span>
                 ${api ? `<button class="btn gh sm" data-gxc="${esc(g.sid)}|${esc(x.tier)}">신청 취소</button>` : ""}`
-             : api ? `<button class="btn sm" data-gx="${esc(g.sid)}|${esc(x.tier)}">지급 완료</button>` : ""}</span>`; }).join("")}
+             : api ? `<button class="btn sm" data-gx="${esc(g.sid)}|${esc(ef)}">${up ? ef + " " : ""}지급 완료</button>` : ""}</span>`; }).join("")}
         ${(() => { const sup = (D.exchanges || []).filter(y => String(y.sid) === g.sid && y.status === "req" && exSuper(y)).map(y => y.tier);
           return sup.length ? `<span class="note">${sup.join("·")} 신청은 상위 등급으로 대신 (지급 안 함)</span>` : ""; })()}</div></td>
       <td style="color:var(--mist);white-space:nowrap">${w(g.at)}</td>
@@ -2507,14 +2634,14 @@ function exGroupTable(groups, emptyMsg) {
 /* 연락 명단 복사: "이름 연락처 등급" 한 줄씩 (문자 발송용) */
 function copyContacts(groups) {
   groups = groups.map(g => Object.assign({}, g, { items: g.items.filter(x => !exBroken(x)) })).filter(g => g.items.length);
-  const lines = groups.map(g => `${g.name}\t${g.contact || "(연락처 없음)"}\t${g.items.map(x => x.tier).join("·")}`);
+  const lines = groups.map(g => `${g.name}\t${g.contact || "(연락처 없음)"}\t${g.items.map(x => exEff(x)).join("·")}`);
   if (!lines.length) return toast("복사할 명단이 없습니다");
   navigator.clipboard.writeText(lines.join("\n")).then(() => toast(`${lines.length}명 연락 명단을 복사했습니다 (이름·연락처·등급)`), () => toast("복사하지 못했습니다"));
 }
 function bindExGroups() {
   app.querySelectorAll("[data-gx]").forEach(b => b.onclick = () => {
     const [sid, tier] = b.dataset.gx.split("|");
-    exDoneNow(sid, tier); toast(`${tier}등급 지급 완료`); render();
+    giveTier(sid, tier); toast(`${tier}등급 지급 완료`); render();
   });
   app.querySelectorAll("[data-gxc]").forEach(b => b.onclick = () => {
     const [sid, tier] = b.dataset.gxc.split("|");
@@ -2562,18 +2689,20 @@ function viewExchange() {
     if (!t) return;
     const top = exTop(st.sid);
     if (top && TIER_I(top.tier) >= TIER_I(t)) return;
+    if (top && top.status === "req") return;     // 대기 중인 신청이 있으면 지급할 때 자동으로 높은 등급을 준다
     if (ex.some(x => String(x.sid) === String(st.sid) && x.tier === t && x.status !== "cancel")) return;
     notYet.push({ st, t, low: top ? top.tier : "" });
   });
   /* 준비할 굿즈 수량 (등급별) — 학생 1명당 신청한 등급 중 가장 높은 1개 기준
      지급 완료 + 지급 대기 = 지금 준비할 수량 · 미신청 완성자는 더 신청할 수 있는 최대치.
      순위 제외(제재) 학생은 경품 대상에서 빠지므로 따로 센다 */
-  const hidOf = sid => { const st = D.students.find(x => String(x.sid) === String(sid)); return !!(st && st.adm && st.adm.hide); };
+  const hidOf = sid => { const st = stuOf(sid); return !!(st && st.adm && st.adm.hide); };
   const prep = TIER_KEYS.map(t => {
     const mine = ex.filter(x => x.tier === t);
     const done = mine.filter(x => x.status === "done").length;
-    const wait = mine.filter(x => exWaiting(x) && !exBroken(x) && !hidOf(x.sid)).length;
-    const hidW = mine.filter(x => exWaiting(x) && !exBroken(x) && hidOf(x.sid)).length;
+    const pend = ex.filter(x => exWaiting(x) && !exBroken(x) && exEff(x) === t);   // 자동 상향 반영
+    const wait = pend.filter(x => !hidOf(x.sid)).length;
+    const hidW = pend.filter(x => hidOf(x.sid)).length;
     const more = notYet.filter(r => r.t === t && !(r.st.adm && r.st.adm.hide)).length;
     const shift = notYet.filter(r => r.low && r.t === t && !(r.st.adm && r.st.adm.hide)).length;   // 낮은 등급을 신청해 둔 채 더 높은 등급을 완성한 학생
     return { t, done, wait, hidW, more, shift, now: done + wait };
@@ -2602,7 +2731,7 @@ function viewExchange() {
             <td class="num"><b style="font-size:16px;color:var(--beam)">${sumP("now")}</b>개</td><td class="num">${sumP("more") ? "+" + sumP("more") : "-"}</td><td class="num">${sumP("now") + sumP("more")}개</td></tr>
         </tbody></table></div>
       <div class="pb"><p class="note" style="margin:0">지금 필요한 수량 = 이미 지급 + 지급 대기(등급을 지금도 갖춘 신청만). 미신청 완성자 = 가장 높은 완성 등급을 아직 신청하지 않은 학생으로, 신청하면 그만큼 늘어납니다.${
-        sumP("shift") ? ` 이 중 <b style="color:var(--foam)">${sumP("shift")}명</b>은 낮은 등급을 이미 신청해 둔 학생이라, 높은 등급으로 바꿔 신청하면 낮은 등급 수량은 그만큼 줄어듭니다(그래서 '최대'는 넉넉히 잡은 값).` : ""}${
+        sumP("shift") ? ` 이 중 <b style="color:var(--foam)">${sumP("shift")}명</b>은 낮은 등급 굿즈를 이미 받은 학생이라, 더 줄지는 등대팀이 정해 주세요(최대에 포함).` : ""}${
         prep.some(r => r.hidW) ? " 순위 제외 학생의 신청은 수량에서 뺐습니다." : ""}</p></div>
     </div>
 
@@ -2659,7 +2788,7 @@ function viewExchange() {
           <tbody>
             ${notYet.length ? notYet.map(r => `<tr>
               <td>${esc(r.st.name)}</td><td style="color:var(--mist)">${esc(r.st.sid)}</td>
-              <td><span class="chip ${r.t}">${r.t} ${TIERS[r.t].word}</span>${r.low ? ` <span class="note">(지금 ${r.low} 신청)</span>` : ""}</td>
+              <td><span class="chip ${r.t}">${r.t} ${TIERS[r.t].word}</span>${r.low ? ` <span class="note">(이미 ${r.low} 받음)</span>` : ""}</td>
               <td>${TIERS[r.t].goods}</td></tr>`).join("")
               : `<tr><td colspan="4"><div class="empty">해당하는 학생이 없습니다.</div></td></tr>`}
           </tbody>
@@ -2667,7 +2796,7 @@ function viewExchange() {
       </div></div>
     </div>
 
-    <p class="note"><b style="color:var(--beam)">한 학생은 신청한 등급 중 가장 높은 등급 1개만 받습니다.</b> 더 낮은 등급 신청은 대기·연락 명단에서 빠지고, 아래 '상위 등급으로 대신한 신청'에 따로 모입니다${superList.length ? ` (지금 ${superList.length}건)` : ""}.<br>학생이 보관함에서 교환을 신청하면 여기에 쌓입니다.
+    <p class="note"><b style="color:var(--beam)">한 학생은 굿즈 1개만 받습니다.</b> 아직 안 받은 신청은 학생이 완성한 가장 높은 등급으로 <b>자동 상향</b>됩니다(예: B 신청 + S 완성 → S 지급). 더 낮은 등급 신청은 대기·연락 명단에서 빠지고, 아래 '상위 등급으로 대신한 신청'에 따로 모입니다${superList.length ? ` (지금 ${superList.length}건)` : ""}.<br>학생이 보관함에서 교환을 신청하면 여기에 쌓입니다.
     연락처로 안내한 뒤 [지급 완료]를 누르면 학생 화면에도 '지급 완료'로 표시됩니다.</p>`);
 }
 
@@ -2688,6 +2817,7 @@ function csv(rows, name) {
 /* ── 렌더 ── */
 let authed = false;
 function render() {
+  _exTopCache.live = false;   // 그리기 전에 교환 상태가 바뀌었을 수 있으니 한 번은 다시 확인
   if (!authed) { app.innerHTML = viewGate(); return bindGate(); }
   if (V.tab === "review") app.innerHTML = viewReview();
   else if (V.tab === "students") app.innerHTML = viewStudents();

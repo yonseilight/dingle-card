@@ -825,6 +825,18 @@
     *{scroll-behavior:auto!important}
   }
 .prow .pn .psub{display:block;font-size:11.5px;font-weight:500;opacity:.7;margin-top:2px;line-height:1.35;word-break:keep-all}
+  .passov{position:fixed;inset:0;z-index:300;background:rgba(3,6,14,.92);display:flex;align-items:center;justify-content:center;padding:18px}
+  .passcard{width:min(420px,100%);border-radius:22px;padding:26px 22px 20px;text-align:center;background:linear-gradient(160deg,#16244A,#0C1530);border:2px solid var(--beam);box-shadow:0 0 0 6px rgba(255,201,74,.12)}
+  .passcard.done{border-color:#4ED8A0;box-shadow:0 0 0 6px rgba(78,216,160,.12)}
+  .passcard .pk{font-size:13px;color:var(--beam);font-weight:700;letter-spacing:.02em}
+  .passcard .pn{font-size:34px;font-weight:800;margin:12px 0 2px;color:#fff;word-break:keep-all}
+  .passcard .ps{font-size:22px;font-weight:700;letter-spacing:.06em;color:var(--mist)}
+  .passcard .pt{display:flex;gap:8px;align-items:center;justify-content:center;margin:16px 0 6px;font-size:16px;flex-wrap:wrap}
+  .passcard .pbadge{font-size:15px;font-weight:800;padding:4px 12px;border-radius:999px;color:#0B1530}
+  .passcard .pst{font-size:18px;font-weight:800;color:var(--beam)} .passcard.done .pst{color:#7FE9C0}
+  .passcard .pclock{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;margin:12px 0 4px;color:#fff}
+  .passcard .pnt{font-size:13px;line-height:1.55;white-space:pre-wrap;text-align:left;background:rgba(255,201,74,.1);border-radius:10px;padding:10px 12px;margin:10px 0 0;color:var(--beam2)}
+  .passcard .pnote{font-size:12.5px;color:var(--mist);line-height:1.55;margin:10px 0 14px}
 </style>
 </head>
 <body>
@@ -881,7 +893,7 @@ const CONFIG = {
     welcome: 5,      // 처음 시작할 때 바로 주는 카드 (0으로 두면 지급하지 않음)
     follow: 7, quiz: 5, apply: 7, done: 10,
     tabs: 7,         // TABS 설문 완료 인증 (더미래페스티벌 부스 이벤트)
-    daily: 0,        // 출석 보너스: 하루 한 번 접속하면 (0으로 두면 지급하지 않음)   // 2026-10-27부터 (이전: 팔로우 5 · 신청 5 · 완료 7)
+    daily: 0,        // 2026-11-20 출석 보상 없앰 (이전 1) · 출석 보너스: 하루 한 번 접속하면 (0으로 두면 지급하지 않음)   // 2026-10-27부터 (이전: 팔로우 5 · 신청 5 · 완료 7)
     invited: 5,      // 추천인을 입력하고 가입한 학생이 받는 카드
     referrer: 5,     // 추천한 학생이 받는 카드 (추천받은 사람이 프로그램을 인증해야 지급)
   },
@@ -971,7 +983,7 @@ const SURVEY = [
   },
   {
     q: "카드도감에서 가장 재미있는 것은 무엇인가요?",
-    opts: ["카드 뽑기", "도감 채우기", "순위 경쟁", "주간 퀴즈", "굿즈 교환"],
+    opts: ["카드 뽑기", "도감 채우기", "순위 경쟁", "퀴즈", "굿즈 교환"],
   },
   {
     q: "카드도감을 쓰면서 불편했던 점이 있나요?",
@@ -1113,7 +1125,7 @@ const QUIZ = [
     q: "한 등급의 카드를 모두 모으면 무엇을 할 수 있을까요?",
     opts: ["굿즈 교환 신청", "순위 점수 2배", "학점 인정", "카드 무제한 뽑기"],
     a: 0,
-    why: "도감에서 [교환 신청]을 누르고 연락처를 남기면 등대팀이 선물을 전해 드려요. 굿즈는 신청한 등급 중 가장 높은 등급 1개를 드려요.",
+    why: "도감에서 [교환 신청]을 누르고 연락처를 남기면 등대팀이 선물을 전해 드려요. 굿즈는 1인 1개이고, 신청 뒤에 더 높은 등급을 완성하면 자동으로 높은 등급으로 드려요.",
   },
   {
     q: "카드도감 이벤트는 언제까지 운영될까요?",
@@ -1913,7 +1925,7 @@ function viewGet() {
       <ul class="endl">
         <li>${S.pending ? `아직 열지 않은 카드 <b>${S.pending}장</b>은 <b>뽑기</b> 탭에서 계속 열 수 있어요.` : "받은 카드는 모두 열었어요."}</li>
         <li>등급을 모두 모았다면 <b>도감</b> 탭에서 굿즈 교환을 신청할 수 있어요.</li>
-        <li>굿즈는 신청한 등급 중 <b>가장 높은 등급 1개</b>를 드려요. 수령 방법은 등대팀이 연락드려요.</li>
+        <li>굿즈는 <b>1인 1개</b>, 완성한 가장 높은 등급으로 드려요. 수령 방법은 등대팀이 연락드려요.</li>
       </ul>
       ${S.pending ? `<button class="btn" data-tab="draw" style="margin-top:14px">남은 카드 열러 가기</button>` : ""}
     </div>
@@ -1944,7 +1956,7 @@ function viewGet() {
           </div>
           ${sv ? `
             <div class="svbox">
-              <div class="svtag">이번 주 한 마디</div>
+              <div class="svtag">오늘의 한 마디</div>
               <p class="svq">${sv.q}</p>
               ${sv.opts.map((o, i) => `<button class="svo ${V.svPick === i ? "on" : ""}" data-sv="${i}">${o}</button>`).join("")}
               ${sv.etc ? `<input class="svetc" id="svetc" placeholder="직접 입력 (선택)" value="${esc(V.svEtc || "")}" maxlength="100" autocomplete="off">` : ""}
@@ -1996,12 +2008,12 @@ function viewGet() {
 
     <div class="src">
       <div class="hd"><div class="ttl">딩글이 퀴즈</div>
-        ${quizAvailable() ? `<span class="st ok">참여 가능</span>` : `<span class="st wait">이번 주 완료</span>`}
+        ${quizAvailable() ? `<span class="st ok">참여 가능</span>` : `<span class="st wait">이번 회차 완료</span>`}
         <div class="amt">${R.quiz}장</div></div>
-      <div class="meta">일주일에 한 번 참여할 수 있어요 · 지금까지 ${quizCount}회 참여</div>
+      <div class="meta">3일에 한 번 새 퀴즈가 열려요 · 지금까지 ${quizCount}회 참여</div>
       <div class="act">
         <button id="quizstart" class="${quizAvailable() ? "" : "done"}" ${quizAvailable() ? "" : "disabled"}>
-          ${quizAvailable() ? "이번 주 퀴즈 풀기" : nextMonday() + "에 다시"}
+          ${quizAvailable() ? "퀴즈 풀기" : nextQuizDay() + "에 다시"}
         </button>
       </div>
       ${quiz}
@@ -2111,11 +2123,56 @@ function topReq() {
   return b;
 }
 const belowReq = t => { const b = topReq(); return b !== null && ORDER[t] < ORDER[b]; };
+/* 자동 상향: 낮은 등급을 신청해 두고(아직 안 받음) 더 높은 등급을 완성하면, 같은 연락처로 높은 등급 신청을 자동으로 보낸다.
+   이미 받은 경우(지급 완료)는 등대팀이 정하므로 건드리지 않는다. 보내지 못하면 다음에 앱을 열 때 다시 한다 */
+let _upBusy = false;
+async function autoUpgradeExchange() {
+  if (!S || _upBusy) return;
+  const t = topReq(), cur = t && S.exchanged[t];
+  if (!cur || cur.status !== "req") return;
+  const hi = Object.keys(TIERS).filter(k => ORDER[k] > ORDER[t] && tierHave(k) === CARDS.filter(c => c.tier === k).length)
+    .sort((a, b) => ORDER[b] - ORDER[a])[0];
+  if (!hi) return;
+  const contact = cur.contact || S.contact || "";
+  _upBusy = true;
+  try {
+    const st = await store.requestExchange(S.sid, hi, contact, TIERS[hi].goods, S.name);
+    S.exchanged[hi] = { at: Date.now(), status: st, contact };
+    await persist(true);
+    toast(`${hi} 등급을 완성해서 굿즈 신청을 ${hi} 등급으로 올렸어요!`, 3800);
+    if (!document.getElementById("stage")) render();
+  } catch (e) { /* 다음에 다시 */ }
+  finally { _upBusy = false; }
+}
 /* 교환을 권할 등급: 완성했고, 아직 신청 안 했고, 지금 신청한 등급보다 높은 것 중 가장 높은 1개 */
 function bestToRequest() {
   const ok = Object.keys(TIERS).filter(t => tierHave(t) === CARDS.filter(c => c.tier === t).length
     && !(S.exchanged[t] && S.exchanged[t].status !== "cancel") && !belowReq(t));
   return ok.length ? ok.sort((a, b) => ORDER[b] - ORDER[a])[0] : null;
+}
+
+/* 수령증: 부스에서 보여 주는 전체 화면. 이름·학번·받을 등급과 지금 시각(초 단위로 움직임)을 크게 보여 준다 */
+function showPass() {
+  const t = topReq(); if (!t) return;
+  const x = S.exchanged[t], done = x.status === "done";
+  const z = document.createElement("div"); z.className = "passov"; z.id = "passov";
+  z.innerHTML = `<div class="passcard ${done ? "done" : ""}" role="dialog" aria-label="굿즈 수령증">
+      <div class="pk">딩글이 카드도감 · 굿즈 ${done ? "수령 기록" : "수령증"}</div>
+      <div class="pn">${esc(S.name || "")}</div>
+      <div class="ps">${esc(S.sid || "")}</div>
+      <div class="pt"><span class="pbadge" style="background:${TIERS[t].color}">${t} ${TIERS[t].word}</span><b>${esc(TIERS[t].goods || "")}</b></div>
+      <div class="pst">${done ? "✓ 지급 완료" + (x.doneAt ? " · " + new Date(x.doneAt).toLocaleDateString("ko-KR") : "") : "수령 대기"}</div>
+      <div class="pclock" id="pclock"></div>
+      ${!done && store.notice ? `<p class="pnt">${esc(store.notice.t)}</p>` : ""}
+      <p class="pnote">${done ? "이미 굿즈를 받았어요. 참여해 주셔서 고마워요!" : "등대팀 부스에서 이 화면을 보여 주세요. 굿즈는 1인 1개, 완성한 가장 높은 등급으로 드려요."}</p>
+      <button class="btn" id="passclose">닫기</button></div>`;
+  document.body.appendChild(z);
+  const tick = () => { const c = document.getElementById("pclock"); if (!c) return clearInterval(iv);
+    c.textContent = new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }); };
+  const iv = setInterval(tick, 1000); tick();
+  const close = () => { clearInterval(iv); z.remove(); };
+  z.querySelector("#passclose").onclick = close;
+  z.onclick = e => { if (e.target === z) close(); };
 }
 
 /* ───────── 10. 화면: 보관함 ───────── */
@@ -2170,7 +2227,8 @@ function viewAlbum() {
   return shell(`
     <div class="panel">
       <h3>등급을 완성하면 교환할 수 있어요</h3>
-      <p>한 등급을 모두 모으면 교환을 신청할 수 있어요. 연락처를 남기면 등대팀이 확인 후 연락드려요.<br><b>굿즈는 신청한 등급 중 가장 높은 등급 1개만 드려요.</b> 여러 등급을 완성했다면 가장 높은 등급으로 신청하세요.</p>
+      <p>한 등급을 모두 모으면 교환을 신청할 수 있어요. 연락처를 남기면 등대팀이 확인 후 연락드려요.<br><b>굿즈는 1개만 드려요.</b> 신청한 뒤에 더 높은 등급을 완성하면 신청이 <b>자동으로 높은 등급으로 바뀌어요.</b></p>
+      ${topReq() ? `<button class="btn" id="passbtn" style="margin-top:10px">${S.exchanged[topReq()].status === "done" ? "수령 기록 보기" : "수령증 보기 (부스에서 보여 주세요)"}</button>` : ""}
     </div>
     ${progHTML()}
     ${sections}`);
@@ -2266,7 +2324,7 @@ function viewRank() {
   const finalBox = over ? `<div class="src final">
       <div class="hd"><div class="ttl">최종 결과</div><span class="st wait">${closedLabel()} 마감</span></div>
       <div class="fbig">${hiddenMe ? `<b style="color:var(--bad)">집계 제외</b>` : `<b>${myRank + 1}위</b><span>${types()}종 · 참여 ${list.length}명 중</span>`}</div>
-      <p class="note" style="margin-top:8px">순위는 기록으로 남겨요. 굿즈는 도감 탭에서 등급 교환으로 신청할 수 있어요 (신청한 등급 중 가장 높은 등급 1개).</p>
+      <p class="note" style="margin-top:8px">순위는 기록으로 남겨요. 굿즈는 도감 탭에서 등급 교환으로 신청할 수 있어요 (1인 1개, 완성한 가장 높은 등급).</p>
     </div>` : "";
   return shell(`
     ${finalBox}
@@ -2459,7 +2517,7 @@ function tabsHero(T, st, pr, done, state) {
 /* 하루 한 번 TABS 안내 창 (부스 날짜까지, 아직 인증 안 한 학생에게만) */
 function promoTabs() {
   if (!S || !boothAhead() || S.claims.tabs || eventOver() || window.__noPromo) return;
-  if (document.querySelector(".celebrate, .modal, #stage, #proofModal, .sheet")) { setTimeout(promoTabs, 4000); return; }
+  if (document.querySelector(".celebrate, .modal, #stage, #proofModal, .sheet, #passov")) { setTimeout(promoTabs, 4000); return; }
   const key = "dingle:tabspromo:" + S.sid, mark = todayStr();
   try { if (localStorage.getItem(key) === mark) return; } catch (e) {}
   const T = CONFIG.TABS;
@@ -2529,7 +2587,21 @@ function weekKey(d) {
   t.setDate(t.getDate() - day);              // 그 주 월요일
   return t.getFullYear() + "-" + String(t.getMonth() + 1).padStart(2, "0") + "-" + String(t.getDate()).padStart(2, "0");
 }
-function quizAvailable() { return S.quizWeek !== weekKey(); }
+/* 퀴즈 회차 키 — 2026-11-20(금)부터 3일마다 새로 열린다 (그 전은 월요일 시작 1주).
+   한국 날짜 기준. 회차가 시작하는 날짜(YYYY-MM-DD)를 키로 쓴다 → 서버·관리자는 기존 주차 칸에 그대로 저장 */
+const QUIZ_FROM = "2026-11-20", QUIZ_EVERY = 3;
+function quizKey(d) {
+  const ymd = new Date((d ? new Date(d).getTime() : Date.now()) + 9 * 3600e3).toISOString().slice(0, 10);
+  if (ymd < QUIZ_FROM) return weekKey(d);
+  const base = Date.parse(QUIZ_FROM + "T00:00:00Z"), diff = Math.floor((Date.parse(ymd + "T00:00:00Z") - base) / 864e5);
+  return new Date(base + (diff - diff % QUIZ_EVERY) * 864e5).toISOString().slice(0, 10);
+}
+/* 다음 회차가 열리는 날 (예: 11월 23일(월)) */
+function nextQuizDay() {
+  const start = Date.parse(quizKey() + "T00:00:00Z") + QUIZ_EVERY * 864e5;
+  return mdLabel(new Date(start).toISOString().slice(0, 10));
+}
+function quizAvailable() { return S.quizWeek !== quizKey(); }
 
 /* ── 기간 설문 ── */
 /* 오늘 날짜(한국 시간). 폰의 시간대 설정이 달라도 설문 기간은 한국 날짜로 판단한다 */
@@ -2616,12 +2688,6 @@ function pollSync(p) {
   if (hint) hint.textContent = left ? `${left}개 문항이 남았어요` : "모두 답했어요";
 }
 
-function nextMonday() {
-  const d = new Date();
-  const add = (8 - ((d.getDay() + 6) % 7 + 1)) % 7 || 7;
-  d.setDate(d.getDate() + add);
-  return (d.getMonth() + 1) + "월 " + d.getDate() + "일(월)";
-}
 
 const Proof = {
   key: null, data: null, busy: false,
@@ -3328,6 +3394,7 @@ const Stage = {
     if (V.newDone && V.newDone.length) {
       const t = V.newDone; V.newDone = null;
       window.setTimeout(() => celebrate(t), 380);
+      window.setTimeout(autoUpgradeExchange, 600);   // 낮은 등급을 신청해 둔 학생이면 자동으로 올린다
     }
   },
 };
@@ -3391,7 +3458,7 @@ function remindExchange() {
   if (!S) return;
   const best = bestToRequest(), ready = best ? [best] : [];   // 가장 높은 등급 1개만 권한다
   if (!ready.length) return;
-  if (document.querySelector(".celebrate, .modal, #stage, #proofModal, .sheet")) { setTimeout(remindExchange, 4000); return; }
+  if (document.querySelector(".celebrate, .modal, #stage, #proofModal, .sheet, #passov")) { setTimeout(remindExchange, 4000); return; }
   const mark = todayStr() + ":" + ready.join("");
   const key = "dingle:xremind:" + S.sid;
   try { if (localStorage.getItem(key) === mark) return; } catch (e) {}
@@ -3403,7 +3470,8 @@ function remindExchange() {
       <div class="cmedal"><span style="background:${main.color}">${ready[0]}</span></div>
       <p class="ceyebrow">교환 신청을 기다리고 있어요</p>
       <h3>${ready.map(t => TIERS[t].label + " · " + TIERS[t].word).join(" / ")} 등급을 완성했어요</h3>
-      <p class="cdesc">${ready.map(t => TIERS[t].goods).join(", ")}<br>아직 교환을 신청하지 않았어요. 연락처를 남기면 등대팀이 선물을 전해 드려요.${topReq() ? `<br><small>지금 신청한 ${topReq()} 등급 대신 이 등급으로 받게 돼요 (가장 높은 등급 1개).</small>` : ""}</p>
+      <p class="cdesc">${ready.map(t => TIERS[t].goods).join(", ")}<br>아직 교환을 신청하지 않았어요. 연락처를 남기면 등대팀이 선물을 전해 드려요.${topReq() && S.exchanged[topReq()].status !== "done" ? `<br><small>지금 신청한 ${topReq()} 등급 대신 이 등급으로 받게 돼요 (가장 높은 등급 1개).</small>`
+          : topReq() ? `<br><small>${topReq()} 등급 굿즈는 이미 받았어요. 신청하면 등대팀이 확인한 뒤 연락드려요.</small>` : ""}</p>
       <button class="btn" data-rgo="1">지금 신청하기</button>
       <button class="lnk" data-rlater="1">나중에 하기</button>
     </div>`;
@@ -3506,7 +3574,7 @@ function bindLogin() {
       V.tab = "get";
       render();
       window.scrollTo(0, 0);
-      setTimeout(() => UpQ.run(), 3000); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(remindExchange, 2800); setTimeout(promoTabs, 3400);
+      setTimeout(() => UpQ.run(), 3000); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(autoUpgradeExchange, 1800); setTimeout(remindExchange, 2800); setTimeout(promoTabs, 3400);
       toast(mine ? "서버가 붐벼서 이 기기에 남은 기록으로 시작해요. 연결되면 자동으로 맞춰집니다."
                  : "서버가 붐벼서 임시로 시작해요. 연결되면 기존 기록이 있는지 확인해 자동으로 맞춰집니다.", 3800);
       return;
@@ -3550,7 +3618,7 @@ function bindLogin() {
     render();
     window.scrollTo(0, 0);
     if (msg) toast(msg, 3400);
-    setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(remindExchange, 2800); setTimeout(promoTabs, 3400);      // 지난번에 못 올린 인증 사진이 있으면 이어서 올린다
+    setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(autoUpgradeExchange, 1800); setTimeout(remindExchange, 2800); setTimeout(promoTabs, 3400);      // 지난번에 못 올린 인증 사진이 있으면 이어서 올린다
   };
   [$("sid"), $("nm")].forEach(el => el.onkeydown = e => { if (e.key === "Enter") go.click(); });
 }
@@ -3653,7 +3721,7 @@ function bind() {
     if (eventOver()) return endedToast();
     if (!quizAvailable()) return;
     V.quizOpen = true; V.quizPick = null;
-    V.quizIdx = S.quizDone.length % QUIZ.length;   // 매주 다음 문항
+    V.quizIdx = S.quizDone.length % QUIZ.length;   // 회차마다 다음 문항
     render();
   });
   app.querySelectorAll("[data-opt]").forEach(el => el.onclick = () => {
@@ -3673,7 +3741,7 @@ function bind() {
       const etc = etcEl ? etcEl.value.trim() : "";
       if (sv && (V.svPick !== null || etc)) {
         S.surveys.push({
-          week: weekKey(),
+          week: quizKey(),
           q: sv.q,
           answer: V.svPick !== null ? sv.opts[V.svPick] : "",
           etc: etc,
@@ -3682,13 +3750,13 @@ function bind() {
         V.needSync = true; S.syncDue = true;   // 다음 저장 때 설문을 시트로 옮긴다
       }
       S.quizDone.push(V.quizIdx);
-      S.quizWeek = weekKey();
+      S.quizWeek = quizKey();
       S.pending += CONFIG.REWARD.quiz;
       logPush({ k: "g", n: CONFIG.REWARD.quiz, key: "quiz:" + S.quizWeek });
       persist(true);
     }
     V.quizOpen = false; V.quizPick = null; V.svPick = null; V.svEtc = "";
-    toast(gained ? `카드 ${CONFIG.REWARD.quiz}장을 받았습니다!` : "이번 주 퀴즈는 이미 참여했어요.");
+    toast(gained ? `카드 ${CONFIG.REWARD.quiz}장을 받았습니다!` : "이번 회차 퀴즈는 이미 참여했어요.");
     render();
   });
 
@@ -3774,6 +3842,7 @@ function bind() {
   $("replay") && ($("replay").onclick = () => Stage.start(V.drawn));
 
   // 교환
+  const pb = app.querySelector("#passbtn"); if (pb) pb.onclick = showPass;
   app.querySelectorAll("[data-x]").forEach(el => el.onclick = () => {
     V.codeOpen = el.dataset.x; V.codeErr = false; V.codeMsg = ""; render();
     setTimeout(() => $("xcontact") && $("xcontact").focus(), 30);
@@ -3845,6 +3914,7 @@ async function loadRank() {
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   const cz = document.querySelector(".cardzoom"); if (cz) { cz.remove(); return unlockScroll(); }
+  const pv = document.getElementById("passov");   if (pv) { pv.querySelector("#passclose").click(); return; }
   const cb = document.querySelector(".celebrate"); if (cb) { cb.remove(); return unlockScroll(); }
   const zm = document.querySelector(".zoom");      if (zm) { zm.remove(); return unlockScroll(); }
   if (document.getElementById("stage")) return;    // 연출 중에는 건너뛰기 버튼으로만
@@ -3864,7 +3934,7 @@ async function boot() {
       S = normalize(d);
       if (last.name) S.name = last.name;
       V.tab = "get";
-      setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(remindExchange, 2800); setTimeout(promoTabs, 3400);
+      setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(autoUpgradeExchange, 1800); setTimeout(remindExchange, 2800); setTimeout(promoTabs, 3400);
       return render();
     }
   } catch (e) {

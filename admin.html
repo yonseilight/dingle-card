@@ -330,7 +330,7 @@ function rewardFor(st, key) {
 }
 const rewardOf = key => key === "follow" ? REWARD.follow : key === "tabs" ? (REWARD.tabs || 7)
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-11-20c";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-11-20d";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -1858,6 +1858,276 @@ function reportHTML() {
     </td></tr></tbody></table></article>`;
 }
 
+/* ───────── 최종 결과보고서 (상위기관 제출용) ─────────
+   마감하면 보고서 탭이 이 화면으로 열린다. 숫자는 데이터에서, 글(목적·추진 경과·개선 방향 등)은
+   기본 문안을 채워 두고 화면 위 편집 칸에서 고칠 수 있다(이 컴퓨터에 저장, 인쇄에는 편집 칸이 나오지 않음). */
+const EVENT_START = "2026-09-23";
+const EVENT_URL = "https://yonseilight.github.io/dingle-card/";
+const FR_KEY = "dingle:finalRep";
+const progShort = n => String(n).split("(")[0].trim();
+function frDate(t) { const d = new Date(t); return `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}.(${"일월화수목금토"[d.getDay()]})`; }
+function frYmd(ymd) { return frDate(new Date(ymd + "T12:00:00+09:00")); }
+function frDefaults() {
+  const r = reportData(), cl = Number(D.meta.closed) || 0;
+  const progs = PROGRAMS.map(p => progShort(p.name)).join("·");
+  const polls = pollGroups().filter(g => g.def && g.def.from).map(g => `${frYmd(g.def.from)}${g.def.until ? " ~ " + frYmd(g.def.until).replace(/^\d+\. /, "") : ""} 이벤트 설문 '${g.def.title}' 진행 (참여 ${g.people.length}명)`);
+  const timeline = [
+    `${frYmd(EVENT_START)} 카드도감 운영 시작`,
+    ...polls,
+    `${frYmd("2026-10-27")} 인증 보상 카드 상향 (팔로우·프로그램 신청 5→7장, 활동 완료 7→10장)`,
+    `${frYmd("2026-11-10")} 더미래페스티벌 등대팀 부스 이벤트 (TABS 설문 인증·학습지원 프로그램 퀴즈)`,
+    `${frYmd("2026-11-20")} 퀴즈 주기 단축(주 1회 → 3일 1회), 출석 보상 종료`,
+    cl ? `${frDate(cl)} 운영 마감` : "(마감 후 마감일이 자동으로 들어갑니다)",
+  ];
+  // 개선 방향: 데이터에서 바로 보이는 것만 기본 문안으로 (고쳐 쓰기)
+  const imp = [];
+  r.pr.filter(x => x.n >= 5 && PCT(x.no, x.n) >= 15).sort((a, b) => PCT(b.no, b.n) - PCT(a.no, a.n)).slice(0, 2)
+    .forEach(x => imp.push(`'${progShort(x.label)}' 인증 반려율 ${PCT(x.no, x.n)}% — 인증 화면 예시를 미리 안내해 반려를 줄일 필요`));
+  r.prog.filter(p => p.apply >= 5 && p.conv < 50).sort((a, b) => a.conv - b.conv).slice(0, 2)
+    .forEach(p => imp.push(`'${progShort(p.name)}' 신청 후 활동 완료 전환율 ${p.conv}% — 신청 이후 참여를 이어 가도록 중간 안내 필요`));
+  const left = (D.exchanges || []).filter(x => exWaiting(x) && !exBroken(x)).length;
+  if (left) imp.push(`굿즈 미수령 ${left}건 — 수령 기간 이후 개별 연락으로 마무리`);
+  return {
+    author: "미래융합교육혁신원 등대팀(Lighthouse Team) 20기",
+    target: "연세대학교 미래캠퍼스 재학생",
+    purpose: `미래융합교육혁신원 학습지원 프로그램(${progs})에 대한 학생 참여를 높이기 위해, 프로그램 신청·참여를 인증하면 딩글이 카드를 모을 수 있는 웹 기반 카드 수집 이벤트를 운영함.`,
+    timeline: timeline.join("\n"),
+    etc: "",
+    achieve: "",
+    improve: imp.join("\n"),
+    price: { C: 5000, B: 10000, A: 20000, S: 50000 },
+    boothPrice: { hand: "", key: "" },
+    showCost: true,
+  };
+}
+function frLoad() {
+  const d = frDefaults();
+  let s = {}; try { s = JSON.parse(localStorage.getItem(FR_KEY) || "{}") || {}; } catch (e) { s = {}; }
+  const o = Object.assign({}, d, s);
+  o.price = Object.assign({}, d.price, s.price || {}); o.boothPrice = Object.assign({}, d.boothPrice, s.boothPrice || {});
+  // 마감 전에 저장한 추진 경과에는 마감일이 없으니, 마감 뒤에는 그 줄만 바꿔 준다
+  if (D.meta.closed && /\(마감 후 마감일이 자동으로 들어갑니다\)/.test(o.timeline)) o.timeline = o.timeline.replace("(마감 후 마감일이 자동으로 들어갑니다)", `${frDate(D.meta.closed)} 운영 마감`);
+  return o;
+}
+function frSave(o) { try { localStorage.setItem(FR_KEY, JSON.stringify(o)); } catch (e) {} }
+const WON = n => (Number(n) || 0).toLocaleString("ko-KR");
+
+function finalReportHTML() {
+  const r = reportData(), k = r.k, f = frLoad(), cl = Number(D.meta.closed) || 0;
+  const sumP = key => r.prog.reduce((a, p) => a + p[key], 0);
+  const convAll = PCT(sumP("both"), sumP("apply"));
+  const lines = t => String(t || "").split("\n").map(x => x.trim()).filter(Boolean);
+  const ft = (head, rows, sum, cls) => `<table class="ft ${cls || ""}"><thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>
+    ${rows.map(rw => `<tr>${rw.map(c => `<td>${c}</td>`).join("")}</tr>`).join("")}${sum ? `<tr class="sum">${sum.map(c => `<td>${c}</td>`).join("")}</tr>` : ""}</tbody></table>`;
+  const H1 = (no, t, brk) => `<h2 class="fh1${brk ? " fbrk" : ""}"><span>${no}.</span> ${t}</h2>`;
+  const H2 = (no, t) => `<h3 class="fh2">${no}. ${t}</h3>`;
+  const note = t => `<p class="fnote">※ ${t}</p>`;
+  const rate = p => { const o = r.rp[p.name]; return o && o.n ? `${(o.sum / o.n).toFixed(1)} (${o.n}명)` : "-"; };
+  const hasBooth = !!(r.booth.tabs || r.booth.quiz);
+  const R = Object.assign({ welcome: 5, quiz: 5, invited: 5, referrer: 5 }, REWARD);
+  const period = `${frYmd(EVENT_START)} ~ ${cl ? frDate(cl) : frDate(r.now) + " (운영 중)"}`;
+  const left = (D.exchanges || []).filter(x => exWaiting(x) && !exBroken(x));
+  const leftBy = t => left.filter(x => exEff(x) === t).length;
+
+  /* 표지 + 기본 정보 + 성과 요약 */
+  const cover = `<div class="fcov">
+      <div class="forg">미래융합교육혁신원 등대팀(Lighthouse Team) 20기</div>
+      <h1>「딩글이 카드도감」 운영 결과보고서</h1>
+      <div class="fsubt">학습지원 프로그램 연계 참여 독려 이벤트</div>
+    </div>
+    ${ft(["구분", "내용"], [
+      ["사업명", "딩글이 카드도감 — “미융원 프로그램 참여하고 카드 받자!”"],
+      ["운영 주체", esc(f.author)],
+      ["운영 기간", period],
+      ["운영 방식", `웹 기반 카드 수집 이벤트 (${EVENT_URL})`],
+      ["참여 대상", esc(f.target)],
+      ["작성일", frDate(Date.now())],
+    ], null, "finfo")}
+    ${H1("", "주요 성과 요약").replace("<span>.</span> ", "")}
+    <div class="fkpi">
+      <div><span>참여 학생</span><b>${KO(k.total)}<em>명</em></b></div>
+      <div><span>프로그램 신청 인증</span><b>${KO(sumP("apply"))}<em>건</em></b><small>${KO(k.applyStu)}명</small></div>
+      <div><span>활동 완료 인증</span><b>${KO(sumP("done"))}<em>건</em></b><small>신청 → 완료 ${convAll}%</small></div>
+      <div><span>굿즈 지급</span><b>${KO(k.exDone)}<em>개</em></b><small>${left.length ? "미수령 " + left.length + "건" : "전원 수령"}</small></div>
+    </div>
+    <ol class="fsum">
+      <li>운영 기간 중 <b>${KO(k.total)}명</b>이 참여했으며, 이 중 <b>${KO(k.proofStu)}명(${PCT(k.proofStu, k.total)}%)</b>이 팔로우·TABS·학습지원 프로그램 인증을 1회 이상 함.</li>
+      <li>학습지원 프로그램 <b>신청 인증 ${KO(sumP("apply"))}건</b>(${KO(k.applyStu)}명), <b>활동 완료 인증 ${KO(sumP("done"))}건</b>(${KO(k.doneStu)}명) — 신청한 학생의 ${convAll}%가 활동 완료까지 인증함.</li>
+      <li>프로그램 만족도 평균 <b>${k.rateAvg}${k.rateN ? "점" : ""}</b>(5점 만점, ${KO(k.rateN)}명 응답), 퀴즈 참여 ${KO(k.quiz)}회(${KO(k.quizStu)}명).</li>
+      <li>등급 완성 굿즈 <b>${KO(k.exDone)}개 지급</b>${left.length ? `(미수령 ${left.length}건)` : ""}, 26종 전체 수집 ${KO(r.full)}명.</li>
+      ${hasBooth ? `<li>더미래페스티벌 부스 이벤트: TABS 설문 인증 ${KO(r.booth.tabs)}명, 학습지원 프로그램 퀴즈 ${KO(r.booth.quiz)}명 참여.</li>` : ""}
+    </ol>`;
+
+  /* Ⅰ. 사업 개요 */
+  const ways = [
+    ["처음 참여(가입)", R.welcome + "장", "-"],
+    ["인스타그램 팔로우 인증", R.follow + "장", "10월 27일 전 5장"],
+    ["학습지원 프로그램 신청 인증", R.apply + "장", "프로그램별 · 10월 27일 전 5장"],
+    ["학습지원 프로그램 활동 완료 인증", R.done + "장", "프로그램별 · 10월 27일 전 7장"],
+    ["퀴즈 + 한 문항 설문", R.quiz + "장", "11월 19일까지 주 1회, 11월 20일부터 3일 1회"],
+    ["TABS 설문 인증", (R.tabs || 7) + "장", "더미래페스티벌 연계"],
+    ["친구 추천", `${R.invited}장 + ${R.referrer}장`, "추천받은 학생 · 추천한 학생"],
+    ["출석", "1장/일", "11월 19일 종료"],
+    ["이벤트 코드 · 현장 QR · 기간 설문", "회차별", "부스·행사 운영 시"],
+  ];
+  const s1 = `${H1("Ⅰ", "사업 개요", true)}
+    ${H2(1, "목적")}<p class="fp">${esc(f.purpose)}</p>
+    ${H2(2, "운영 방법")}
+    <p class="fp">학생이 카드도감 웹사이트에 학번·이름으로 참여하고, 아래 활동을 인증하면 딩글이 카드를 받아 26종(C 7 · B 7 · A 7 · S 5)을 수집함. 인증 사진은 등대팀이 검토하여 기준에 맞지 않으면 반려·회수함.</p>
+    ${ft(["카드 받는 방법", "지급 카드", "비고"], ways, null, "fway")}
+    ${H2(3, "보상 체계")}
+    <ul class="fl">
+      <li>한 등급의 카드를 모두 모으면 등급 굿즈로 교환 신청 (C 일반 · B 희귀 · A 영웅 · S 전설)</li>
+      <li>굿즈는 <b>학생 1명당 1개</b>이며, 완성한 가장 높은 등급으로 지급 (신청 후 더 높은 등급을 완성하면 자동 상향)</li>
+      <li>인증 기준에 맞지 않는 방법으로 카드를 받은 경우 경품 지급 대상에서 제외</li>
+    </ul>
+    ${H2(4, "추진 경과")}
+    ${ft(["일자", "내용"], lines(f.timeline).map(l => { const m = l.match(/^(\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.(?:\([^)]*\))?(?:\s*~\s*[\d.\s()월화수목금토일]+)?)\s+(.*)$/); return m ? [m[1], esc(m[2])] : ["", esc(l)]; }), null, "ftime")}
+    ${lines(f.etc).length ? `${H2(5, "기타 운영 사항")}<ul class="fl">${lines(f.etc).map(l => `<li>${esc(l)}</li>`).join("")}</ul>` : ""}`;
+
+  /* Ⅱ. 추진 실적 */
+  const funnel = [["참여 학생", k.total], ["인증 1회 이상", k.proofStu], ["프로그램 신청 인증", k.applyStu], ["활동 완료 인증", k.doneStu]];
+  const goodsRows = TIER_KEYS.map(t => { const x = r.exT.find(z => z.t === t), pr = Number(f.price[t]) || 0;
+    return [`${t} ${TIERS[t].word}`, x.ready + "명", x.done + "개", leftBy(t) + "개", ...(f.showCost ? [pr ? WON(pr) : "-", pr ? WON(pr * x.done) : "-"] : [])]; });
+  const goodsSum = ["합계", "-", k.exDone + "개", left.length + "개", ...(f.showCost ? ["", WON(TIER_KEYS.reduce((a, t) => a + (Number(f.price[t]) || 0) * r.exT.find(z => z.t === t).done, 0))] : [])];
+  const boothRows = hasBooth ? [["전기손난로 (TABS 사전 인증)", r.booth.hand + "개", f.boothPrice.hand], ["인형 키링 (프로그램 퀴즈)", r.booth.quiz + "개", f.boothPrice.key]] : [];
+  const s2 = `${H1("Ⅱ", "추진 실적")}
+    ${H2(1, "참여 현황")}
+    ${ft(["구분", "인원", "참여 학생 대비"], funnel.map(([l, n]) => [l, KO(n) + "명", PCT(n, k.total) + "%"]), null, "fnum")}
+    ${note("인증은 반려되지 않은 것만 셈. 한 학생이 여러 인증을 할 수 있음.")}
+    <div class="r3 fcharts">${miniChart(r.weeks, "join", "주차별 신규 참여", "#2F5BD3")}${miniChart(r.weeks, "proof", "주차별 인증 제출", "#E3A008")}${miniChart(r.weeks, "quiz", "주차별 퀴즈 설문 응답", "#18A36B")}</div>
+    ${H2(2, "학습지원 프로그램 연계 실적")}
+    ${ft(["프로그램", "신청 인증", "활동 완료 인증", "신청 후 완료", "전환율", "만족도(5점)"],
+      r.prog.map(p => [esc(progShort(p.name)), p.apply + "명", p.done + "명", p.both + "명", p.apply ? p.conv + "%" : "-", rate(p)]),
+      ["합계", sumP("apply") + "건", sumP("done") + "건", sumP("both") + "건", convAll + "%", k.rateN ? `${k.rateAvg} (${k.rateN}명)` : "-"], "fnum")}
+    ${note("전환율 = 같은 프로그램을 신청 인증한 학생 중 활동 완료까지 인증한 비율. 인증 수치는 학생이 카드도감에 올린 화면 캡처를 등대팀이 확인한 기준임.")}
+    ${H2(3, "굿즈 지급 실적")}
+    ${ft(["등급", "완성 학생", "지급 완료", "미수령", ...(f.showCost ? ["단가(원)", "금액(원)"] : [])], goodsRows, goodsSum, "fnum")}
+    ${note("완성 학생 = 그 등급 카드를 모두 모은 학생(인증 기준 미준수로 제외된 학생 제외). 굿즈는 학생 1명당 1개." + (f.showCost ? " 금액 = 지급 완료 × 단가." : ""))}
+    ${hasBooth ? `${H2(4, "더미래페스티벌 부스 이벤트 (2026. 11. 10.)")}
+      ${ft(["구분", "실적", ...(boothRows.some(b => b[2]) && f.showCost ? ["금액(원)"] : [])],
+        [["TABS 설문 인증", r.booth.tabs + "명 (사전 " + r.booth.pre + "명)", ...(boothRows.some(b => b[2]) && f.showCost ? ["-"] : [])],
+         ...boothRows.map(b => [b[0] + " 지급", b[1], ...(boothRows.some(z => z[2]) && f.showCost ? [b[2] ? WON(Number(b[2]) * parseInt(b[1], 10)) : "-"] : [])])], null, "fnum")}
+      ${note("준비 수량(전기손난로 30개 · 인형 키링 155개)을 모두 지급함.")}` : ""}`;
+
+  /* Ⅲ. 설문 결과 */
+  const qblock = q => { const opts = Object.keys(q.cnt).sort((a, b) => q.cnt[b] - q.cnt[a]); const tot = opts.reduce((a, o) => a + q.cnt[o], 0);
+    return `<div class="fq"><h4>${esc(q.q)} <small>(응답 ${q.n}명)</small></h4>
+      ${ft(["응답", "인원", "비율"], opts.filter(o => q.cnt[o] > 0).map(o => [esc(o), q.cnt[o] + "명", PCT(q.cnt[o], tot) + "%"]), null, "fnum fsm")}
+      ${q.etc.length ? `<p class="fnote">직접 입력: ${q.etc.slice(0, 5).map(esc).join(" · ")}${q.etc.length > 5 ? ` 외 ${q.etc.length - 5}건` : ""}</p>` : ""}</div>`; };
+  const polls = r.qs.filter(q => q.kind === "poll"), weekly = r.qs.filter(q => q.kind !== "poll").sort((a, b) => b.n - a.n);
+  const s3 = `${H1("Ⅲ", "설문 결과")}
+    ${polls.length ? `${H2(1, "이벤트 설문")}<div class="fqg">${polls.map(qblock).join("")}</div>` : ""}
+    ${weekly.length ? `${H2(polls.length ? 2 : 1, "퀴즈 참여 후 한 문항 설문")}<div class="fqg">${weekly.map(qblock).join("")}</div>
+      ${note("퀴즈를 푼 학생에게 회차마다 다른 문항을 한 개씩 물었음(응답 선택). 문항별 응답 수가 다름.")}` : ""}`;
+
+  /* Ⅳ. 성과 및 개선 방향 */
+  const auto = [
+    `학습지원 프로그램 신청 인증 ${KO(sumP("apply"))}건, 활동 완료 인증 ${KO(sumP("done"))}건으로 프로그램 참여를 카드 수집과 연결함.`,
+    `참여 학생 ${KO(k.total)}명 중 ${PCT(k.proofStu, k.total)}%가 인증 활동에 참여함.`,
+    k.rateN ? `프로그램 만족도 평균 ${k.rateAvg}점(5점 만점, ${KO(k.rateN)}명 응답).` : "",
+  ].filter(Boolean);
+  const s4 = `${H1("Ⅳ", "성과 및 개선 방향")}
+    ${H2(1, "성과")}<ul class="fl">${auto.concat(lines(f.achieve)).map(l => `<li>${esc(l)}</li>`).join("")}</ul>
+    ${lines(f.improve).length ? `${H2(2, "개선 방향")}<ul class="fl">${lines(f.improve).map(l => `<li>${esc(l)}</li>`).join("")}</ul>` : ""}`;
+
+  /* 붙임 */
+  const ap = `${H1("붙임", "세부 자료", true).replace("<span>붙임.</span>", "<span>붙임</span>")}
+    ${H2(1, "주차별 참여 현황")}
+    ${ft(["주차 (월요일)", "신규 참여", "누적 참여", "인증 제출", "퀴즈 설문 응답"], r.weeks.map(w => [wkLabel(w.w), w.join, w.cum, w.proof, w.quiz]), null, "fnum fsm")}
+    ${r.pr.length ? `${H2(2, "인증 항목별 검토 결과")}
+    ${ft(["인증 항목", "제출", "승인", "검토 전", "반려", "반려율"], r.pr.map(x => { const ps = x.label.split(" · "), suf = ps.length > 1 ? ps.pop() : ""; return [esc(progShort(ps.join(" · ")) + (suf ? " · " + suf : "")), x.n, x.ok, x.wait, x.no, PCT(x.no, x.n) + "%"]; }),
+      ["합계", ...["n", "ok", "wait", "no"].map(q => r.pr.reduce((a, x) => a + x[q], 0)), PCT(r.pr.reduce((a, x) => a + x.no, 0), r.pr.reduce((a, x) => a + x.n, 0)) + "%"], "fnum fsm")}` : ""}`;
+
+  return `<article class="rep fin" id="report"><table class="rpage"><thead><tr><td><div class="rrh"><span>「딩글이 카드도감」 운영 결과보고서</span><span>미래융합교육혁신원 등대팀 20기</span></div></td></tr></thead>
+    <tfoot><tr><td><div class="rrf"></div></td></tr></tfoot><tbody><tr><td class="rbody">
+    ${cover}${s1}${s2}${s3}${s4}${ap}
+    <div class="fend">— 끝 —</div>
+    </td></tr></tbody></table></article>`;
+}
+const FINAL_CSS = `
+.rep.fin{font-size:12.5px;line-height:1.65;color:#1A1F2B}
+.rep.fin p,.rep.fin td,.rep.fin span,.rep.fin small{color:inherit}.rep.fin ol,.rep.fin ul,.rep.fin li,.rep.fin .fsum,.rep.fin .fl{color:#1A1F2B}.rep.fin b,.rep.fin strong{color:#0F1F3D}
+.rep.fin .fnote,.rep.fin .fq h4 small,.rep.fin .fcov .forg,.rep.fin .fcov .fsubt{color:#4A5568}
+.fcov{text-align:center;padding:18px 0 22px;margin-bottom:18px;border-top:4px solid #0F1F3D;border-bottom:1px solid #0F1F3D}
+.fcov .forg{font-size:12.5px;color:#4A5568;font-weight:600}
+.rep.fin .fcov h1{font-size:26px;margin:10px 0 6px;color:#0F1F3D;letter-spacing:-.02em}
+.fcov .fsubt{font-size:13.5px;color:#4A5568}
+.ft{width:100%;border-collapse:collapse;margin:6px 0 4px;font-size:12px;border-top:2px solid #0F1F3D}
+.ft th{background:#EEF1F6;color:#1A1F2B;font-weight:700;padding:7px 8px;border:1px solid #B8C0CE;text-align:center}
+.ft td{padding:6px 8px;border:1px solid #C9D0DC;vertical-align:middle}
+.ft tr{break-inside:avoid}.ft thead{display:table-header-group}
+.ft tr.sum td{font-weight:800;background:#F6F8FB}
+.ft.fnum td:not(:first-child){text-align:right}.ft.fnum td:first-child{text-align:left}
+.ft.finfo th:first-child,.ft.finfo td:first-child{width:22%;text-align:center;background:#F6F8FB;font-weight:700}
+.ft.finfo thead{display:none}.ft.finfo{border-top:2px solid #0F1F3D}
+.ft.fway td:nth-child(2){text-align:center;width:16%;font-weight:700}.ft.fway td:nth-child(3){color:#4A5568;width:38%}
+.ft.ftime td:first-child{width:34%;white-space:nowrap}
+.ft.fsm{font-size:11.5px}.ft.fsm td,.ft.fsm th{padding:5px 7px}
+.fh1{font-size:17px;color:#0F1F3D;margin:22px 0 10px;padding-bottom:6px;border-bottom:2px solid #0F1F3D;break-after:avoid;page-break-after:avoid}
+.fh1 span{margin-right:2px}
+.fh2{font-size:14px;color:#0F1F3D;margin:16px 0 6px;break-after:avoid;page-break-after:avoid}
+.fp{margin:4px 0 8px;text-align:justify}
+.fl{margin:4px 0 8px;padding-left:20px}.fl li{margin:3px 0}
+.fnote{font-size:11px;color:#5A6478;margin:4px 0 10px}
+.fkpi{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid #B8C0CE;border-top:2px solid #0F1F3D;margin:6px 0 12px}
+.fkpi div{padding:12px 10px;text-align:center;border-left:1px solid #C9D0DC;display:flex;flex-direction:column;gap:2px}.fkpi div:first-child{border-left:0}
+.fkpi span{font-size:11.5px;color:#4A5568;font-weight:600}.fkpi b{font-size:24px;color:#0F1F3D;line-height:1.2}.fkpi b em{font-style:normal;font-size:13px;margin-left:2px}
+.fkpi small{font-size:11px;color:#5A6478}
+.fsum{margin:0;padding:12px 16px 12px 34px;background:#F6F8FB;border:1px solid #DCE1EA}.fsum li{margin:4px 0}
+.fcharts{margin:10px 0 4px}
+.fqg{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px}.fq{break-inside:avoid;page-break-inside:avoid}
+.fq h4{font-size:12.5px;margin:8px 0 2px;color:#0F1F3D}.fq h4 small{font-weight:500;color:#5A6478}
+.fend{text-align:center;margin:26px 0 6px;font-size:12px;color:#4A5568;letter-spacing:.2em}
+@media print{ .rep.fin .fbrk{break-before:page;page-break-before:always;margin-top:0} }
+@media (max-width:640px){ .fkpi{grid-template-columns:1fr 1fr} .fkpi div:nth-child(3){border-left:0} .fqg{grid-template-columns:1fr} .rep.fin .fcov h1{font-size:20px} .ft{display:block;overflow-x:auto} }
+`;
+/* 편집 칸 (화면에만 보임) */
+function frEditorHTML() {
+  const f = frLoad(), cl = Number(D.meta.closed) || 0;
+  const ta = (id, label, v, rows, hint) => `<label class="fre"><span>${label}${hint ? ` <i>${hint}</i>` : ""}</span><textarea id="fr_${id}" rows="${rows}">${esc(v)}</textarea></label>`;
+  const inp = (id, label, v, hint) => `<label class="fre"><span>${label}${hint ? ` <i>${hint}</i>` : ""}</span><input id="fr_${id}" value="${esc(v)}"></label>`;
+  return `<div class="panel">
+    <div class="ph"><h2>최종 결과보고서</h2>
+      <span class="sub">${cl ? `${when(cl)} 마감 기준 · 숫자는 자동, 아래 글은 고칠 수 있습니다` : `<b style="color:var(--beam)">미리보기</b> — 아직 마감 전이라 숫자가 바뀔 수 있습니다`}</span>
+      <div class="right"><button class="btn sm" id="repprint">인쇄 · PDF로 저장</button><button class="btn gh sm" id="rephtml">HTML로 저장</button></div></div>
+    <div class="pb">
+      <details class="fred" ${V.frOpen ? "open" : ""} id="fred"><summary>보고서 글 고치기 (작성 주체·목적·추진 경과·개선 방향·단가)</summary>
+        <div class="fregrid">
+          ${inp("author", "운영 주체", f.author)}
+          ${inp("target", "참여 대상", f.target)}
+          ${ta("purpose", "목적", f.purpose, 3)}
+          ${ta("timeline", "추진 경과", f.timeline, 6, "한 줄에 하나 · '2026. 11. 10.(화) 내용' 형식")}
+          ${ta("improve", "개선 방향", f.improve, 4, "한 줄에 하나 · 데이터로 자동 작성한 초안")}
+          ${ta("achieve", "성과 (추가)", f.achieve, 3, "자동 성과 아래에 붙습니다 · 비워 두면 자동 성과만")}
+          ${ta("etc", "기타 운영 사항", f.etc, 3, "예: 실물 카드팩 배포 · 비워 두면 빠짐")}
+          <div class="fre"><span>굿즈 단가(원) <i style="color:var(--beam)">예산 기준값입니다 — 실제 구매 단가로 고쳐 주세요</i></span>
+            <div class="frm">${TIER_KEYS.map(t => `<label class="note">${t} <input id="fr_p${t}" type="number" min="0" step="100" value="${esc(f.price[t])}" style="width:90px"></label>`).join("")}
+              <label class="note">손난로 <input id="fr_bh" type="number" min="0" step="100" value="${esc(f.boothPrice.hand)}" style="width:90px"></label>
+              <label class="note">키링 <input id="fr_bk" type="number" min="0" step="100" value="${esc(f.boothPrice.key)}" style="width:90px"></label>
+              <label class="note"><input id="fr_cost" type="checkbox" ${f.showCost ? "checked" : ""}> 금액 넣기</label></div></div>
+        </div>
+        <div class="frm" style="margin-top:8px"><button class="btn gh sm" id="fr_reset">기본 문안으로 되돌리기</button><span class="note">이 컴퓨터에 자동 저장됩니다</span></div>
+      </details>
+    </div></div>`;
+}
+function bindFinalEditor() {
+  const ids = ["author", "target", "purpose", "timeline", "improve", "achieve", "etc"];
+  const read = () => {
+    const o = frLoad();
+    ids.forEach(i => { const el = $("fr_" + i); if (el) o[i] = el.value; });
+    TIER_KEYS.forEach(t => { const el = $("fr_p" + t); if (el) o.price[t] = el.value === "" ? "" : Number(el.value); });
+    if ($("fr_bh")) o.boothPrice.hand = $("fr_bh").value; if ($("fr_bk")) o.boothPrice.key = $("fr_bk").value;
+    if ($("fr_cost")) o.showCost = $("fr_cost").checked;
+    return o;
+  };
+  let tmr = 0;
+  const redraw = () => { frSave(read()); clearTimeout(tmr); tmr = setTimeout(() => { const el = $("report"); if (el) el.outerHTML = finalReportHTML(); }, 250); };
+  app.querySelectorAll("[id^=fr_]").forEach(el => { if (el.id !== "fr_reset") { el.oninput = redraw; el.onchange = redraw; } });
+  $("fred") && ($("fred").ontoggle = e => { V.frOpen = e.currentTarget.open; });
+  $("fr_reset") && ($("fr_reset").onclick = () => { if (!confirm("고친 글을 지우고 기본 문안으로 되돌릴까요?")) return; try { localStorage.removeItem(FR_KEY); } catch (e) {} render(); });
+}
+
 const REPORT_CSS = `
 .rep{background:#fff;color:#1D2433;border-radius:14px;padding:30px 36px;font-family:"Pretendard","Apple SD Gothic Neo","Noto Sans KR",sans-serif;line-height:1.55;max-width:880px;margin:0 auto;font-size:12.5px}
 .rep *{box-sizing:border-box}
@@ -1941,25 +2211,43 @@ const REPORT_CSS = `
   .rep .rt{display:block;overflow-x:auto;white-space:nowrap} .rep svg{max-width:100%} }
 `;
 
+/* 마감하면 최종 결과보고서가 기본, 마감 전에는 운영 현황 보고서가 기본 (위 버튼으로 바꿔 볼 수 있음) */
+const repFinal = () => V.repMode ? V.repMode === "final" : !!Number(D.meta.closed);
 function viewReport() {
-  return shell(`
-    <div class="panel"><div class="ph"><h2>운영 보고서</h2>
+  const fin = repFinal();
+  const sw = `<div class="frm repsw" style="margin:0 0 10px">
+      <button class="btn sm ${fin ? "" : "gh"}" data-repmode="final">최종 결과보고서${Number(D.meta.closed) ? "" : " (미리보기)"}</button>
+      <button class="btn sm ${fin ? "gh" : ""}" data-repmode="ops">운영 현황 보고서</button></div>`;
+  return shell(`${sw}
+    ${fin ? frEditorHTML() : `<div class="panel"><div class="ph"><h2>운영 현황 보고서</h2>
       <span class="sub">지금 불러온 데이터로 만든 보고서입니다. 최신으로 만들려면 [새로고침] 후 다시 보세요.</span>
-      <div class="right"><button class="btn sm" id="repprint">인쇄 · PDF로 저장</button><button class="btn gh sm" id="rephtml">HTML로 저장</button></div></div></div>
-    <style>${REPORT_CSS}
-      @media print{ body{background:#fff!important} .top,.tabbar,.panel,.toast,.vwarn{display:none!important}
+      <div class="right"><button class="btn sm" id="repprint">인쇄 · PDF로 저장</button><button class="btn gh sm" id="rephtml">HTML로 저장</button></div></div></div>`}
+    <style>${REPORT_CSS}${FINAL_CSS}
+      .fred summary{cursor:pointer;font-weight:700;color:var(--foam)} .fregrid{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin-top:10px}
+      .fre{display:flex;flex-direction:column;gap:4px;font-size:13px} .fre span{color:var(--mist)} .fre i{font-style:normal;font-size:11.5px;opacity:.85}
+      .fre textarea,.fre input:not([type=checkbox]){padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--foam);font:inherit;resize:vertical}
+      @media (max-width:760px){ .fregrid{grid-template-columns:1fr} }
+      @media print{ body{background:#fff!important} .top,.tabbar,.panel,.toast,.vwarn,.repsw{display:none!important}
         .wrap{padding:0!important;max-width:none!important} }</style>
-    ${reportHTML()}`);
+    ${fin ? finalReportHTML() : reportHTML()}`);
 }
 function bindReport() {
-  $("repprint") && ($("repprint").onclick = () => window.print());
+  const fin = repFinal();
+  const fname = () => (fin ? "딩글이카드도감_운영결과보고서_" : "딩글이카드도감_운영현황보고서_") + new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10).replace(/-/g, "");
+  app.querySelectorAll("[data-repmode]").forEach(b => b.onclick = () => { V.repMode = b.dataset.repmode; render(); });
+  if (fin) bindFinalEditor();
+  $("repprint") && ($("repprint").onclick = () => {
+    const t0 = document.title; document.title = fname();          // 'PDF로 저장' 기본 파일 이름
+    const back = () => { document.title = t0; window.removeEventListener("afterprint", back); };
+    window.addEventListener("afterprint", back); window.print(); setTimeout(back, 60000);
+  });
   $("rephtml") && ($("rephtml").onclick = () => {
     const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-      <title>딩글이 카드도감 운영 보고서</title><style>body{background:#EEF1F6;margin:0;padding:24px}${REPORT_CSS}@media print{body{background:#fff;padding:0}}</style></head>
+      <title>${fname()}</title><style>body{background:#EEF1F6;margin:0;padding:24px}${REPORT_CSS}${FINAL_CSS}@media print{body{background:#fff;padding:0}}</style></head>
       <body>${$("report").outerHTML}</body></html>`;
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
-    a.download = "카드도감_운영보고서_" + new Date().toISOString().slice(0, 10) + ".html";
+    a.download = fname() + ".html";
     document.body.appendChild(a); a.click(); a.remove();
   });
 }
@@ -2091,7 +2379,7 @@ function closeChecklist() {
     [!!D.meta.notice, "수령 안내 공지", D.meta.notice ? `학생 앱 공지: ${esc(D.meta.notice.t.slice(0, 40))}${D.meta.notice.t.length > 40 ? "…" : ""}` : "수령 일시·장소를 학생 앱 공지와 문자로 알립니다 (현장·경품 → 굿즈 교환 → 수령 안내).", D.meta.notice ? "" : `<button class="btn gh sm" data-ckgo="final">수령 안내로</button>`],
     [!!cl && exLeft === 0, "굿즈 지급", exLeft ? `굿즈 교환 대기 ${exLeft}건 (학생별 가장 높은 등급 1개)` : "대기 중인 교환 신청이 없습니다.", exLeft ? `<button class="btn gh sm" data-ckgo="final">굿즈 교환으로</button>` : ""],
     [!!bkAfter, "마감 뒤 백업", bk.last ? `마지막 백업 ${when(bk.last)}${cl && !bkAfter ? " (마감 전 백업입니다)" : ""}` : "아직 백업이 없습니다.", ""],
-    [false, "운영 보고서 저장", "보고서 탭에서 [인쇄 · PDF로 저장]으로 최종본을 남깁니다. 굿즈 수령 확인표는 현장·경품 → 굿즈 교환에서 인쇄합니다.", `<button class="btn gh sm" data-ckgo="report">보고서로</button>`],
+    [false, "최종 결과보고서 저장", "마감하면 보고서 탭에 최종 결과보고서가 열립니다. 글을 확인·수정하고 [인쇄 · PDF로 저장]으로 제출본을 만듭니다. 굿즈 수령 확인표는 현장·경품 → 굿즈 교환에서 인쇄합니다.", `<button class="btn gh sm" data-ckgo="report">보고서로</button>`],
   ];
   return `<div class="panel">
     <div class="ph"><h2>이벤트 마무리 순서</h2><span class="sub">위에서부터 차례로 · 지금 상태를 자동으로 확인합니다 (보고서 저장은 직접 확인)</span></div>
@@ -2878,7 +3166,11 @@ function bindOps() {
     if (r === null) return;
     if (r.trim() !== "마감") return toast("'마감'이라고 정확히 입력해야 마감됩니다");
     const j = await go(btn, { action: "closeEvent", closed: true }, "이벤트를 마감했습니다");
-    if (j) { D.meta.closed = j.closed; render(); }
+    if (j) {
+      D.meta.closed = j.closed;
+      V.tab = "report"; V.repMode = "final"; render(); window.scrollTo(0, 0);   // 마감 → 최종 결과보고서
+      toast("최종 결과보고서를 만들었습니다. 내용을 확인하고 [인쇄 · PDF로 저장]을 누르세요", 5000);
+    }
   });
   $("evopen") && ($("evopen").onclick = async e => {
     const btn = e.currentTarget;

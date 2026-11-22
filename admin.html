@@ -330,7 +330,7 @@ function rewardFor(st, key) {
 }
 const rewardOf = key => key === "follow" ? REWARD.follow : key === "tabs" ? (REWARD.tabs || 7)
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-11-22d";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-11-22e";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -2895,7 +2895,7 @@ function fcSimulate(o) {
   };
   const gain = (p, own) => { const h = hi(own); return h > p.top ? h : -1; };   // 굿즈가 1개 더 필요하면 그 등급, 아니면 -1
 
-  /* 지금 기준(더 뽑지 않을 때) — '준비할 굿즈 수량' 표의 '최대(모두 신청 시)'와 같은 셈 */
+  /* 지금 기준(더 뽑지 않을 때) — '굿즈 신청 현황' 표의 '최대(모두 신청 시)'와 같은 셈 */
   const base = done.slice();
   P.forEach(p => { const g = gain(p, p.own); if (g >= 0) base[g]++; });
 
@@ -3191,27 +3191,19 @@ function viewExchange() {
 
   return shell(`
     <div class="panel">
-      <div class="ph"><h2>준비할 굿즈 수량</h2><span class="sub">학생 1명당 신청한 등급 중 가장 높은 1개 기준 · 순위 제외 학생 빼고</span></div>
+      <div class="ph"><h2>굿즈 신청 현황</h2><span class="sub">학생 1명당 신청한 등급 중 가장 높은 1개 기준 · 순위 제외 학생 빼고</span></div>
       <div class="pb flush"><table class="prept">
-        <thead><tr><th>등급</th><th class="num">이미 지급</th><th class="num">지급 대기</th><th class="num">지금 필요한 수량</th><th class="num">미신청 완성자</th><th class="num">최대 (모두 신청 시)</th><th class="num">주문 수량</th><th class="num">남는 수량</th></tr></thead>
+        <thead><tr><th>등급</th><th class="num">이미 지급</th><th class="num">지급 대기</th><th class="num">지금 필요한 수량</th><th class="num">미신청 완성자</th><th class="num">최대 (모두 신청 시)</th></tr></thead>
         <tbody>${prep.map(r => {
-          const pool = GOODS_POOL.indexOf(r.t) >= 0, first = pool && GOODS_POOL.indexOf(r.t) === 0;
-          const grp = pool ? prep.filter(z => GOODS_POOL.indexOf(z.t) >= 0) : [r];
-          const ord = grp.reduce((a, z) => a + (GOODS_ORDER[z.t] || 0), 0), need = grp.reduce((a, z) => a + z.now, 0), mx = grp.reduce((a, z) => a + z.now + z.more, 0);
-          const leftNow = ord - need, leftMax = ord - mx, span = pool ? ` rowspan="${grp.length}"` : "";
-          const stockCells = !pool || first ? `<td class="num"${span}>${ord}개${pool ? `<div class="note">${GOODS_POOL.join("·")} 합산 (${grp.map(z => z.t + " " + (GOODS_ORDER[z.t] || 0)).join(" + ")})</div>` : ""}</td>
-            <td class="num"${span}><b style="color:${leftNow < 0 ? "#FF8A8A" : leftMax < 0 ? "var(--beam)" : "#7FE9C0"}">${leftNow < 0 ? "부족 " + (-leftNow) : leftNow}</b>개
-              <div class="note">${leftMax < 0 ? `모두 신청하면 ${-leftMax}개 부족` : `모두 신청해도 ${leftMax}개 남음`}</div></td>` : "";
           return `<tr>
           <td><span class="chip ${r.t}">${r.t} ${TIERS[r.t].word}</span> <span class="note">${esc(TIERS[r.t].goods)}</span></td>
           <td class="num">${r.done}</td><td class="num">${r.wait}${r.hidW ? ` <span class="note">(+순위 제외 ${r.hidW})</span>` : ""}</td>
           <td class="num"><b style="font-size:16px;color:var(--beam)">${r.now}</b>개</td>
-          <td class="num">${r.more ? "+" + r.more : "-"}</td><td class="num">${r.now + r.more}개</td>${stockCells}</tr>`; }).join("")}
+          <td class="num">${r.more ? "+" + r.more : "-"}</td><td class="num">${r.now + r.more}개</td></tr>`; }).join("")}
           <tr class="sumr"><td><b>합계</b></td><td class="num">${sumP("done")}</td><td class="num">${sumP("wait")}</td>
-            <td class="num"><b style="font-size:16px;color:var(--beam)">${sumP("now")}</b>개</td><td class="num">${sumP("more") ? "+" + sumP("more") : "-"}</td><td class="num">${sumP("now") + sumP("more")}개</td>
-            <td class="num">${TIER_KEYS.reduce((a, t) => a + (GOODS_ORDER[t] || 0), 0)}개</td><td class="num">${TIER_KEYS.reduce((a, t) => a + (GOODS_ORDER[t] || 0), 0) - sumP("now")}개</td></tr>
+            <td class="num"><b style="font-size:16px;color:var(--beam)">${sumP("now")}</b>개</td><td class="num">${sumP("more") ? "+" + sumP("more") : "-"}</td><td class="num">${sumP("now") + sumP("more")}개</td></tr>
         </tbody></table></div>
-      <div class="pb"><p class="note" style="margin:0"><b style="color:var(--foam)">A·S 선물(스탠리 텀블러·록시땅 핸드크림)은 서로 바꿔 줄 수 있어 재고를 합쳐서 봅니다.</b> 남는 수량 = 주문 수량 − 지금 필요한 수량.<br>지금 필요한 수량 = 이미 지급 + 지급 대기(등급을 지금도 갖춘 신청만). 미신청 완성자 = 가장 높은 완성 등급을 아직 신청하지 않은 학생으로, 신청하면 그만큼 늘어납니다.${
+      <div class="pb"><p class="note" style="margin:0">지금 필요한 수량 = 이미 지급 + 지급 대기(등급을 지금도 갖춘 신청만). 미신청 완성자 = 가장 높은 완성 등급을 아직 신청하지 않은 학생으로, 신청하면 그만큼 늘어납니다.${
         sumP("shift") ? ` 이 중 <b style="color:var(--foam)">${sumP("shift")}명</b>은 낮은 등급 굿즈를 이미 받은 학생이라, 더 줄지는 등대팀이 정해 주세요(최대에 포함).` : ""}${
         prep.some(r => r.hidW) ? " 순위 제외 학생의 신청은 수량에서 뺐습니다." : ""}</p></div>
     </div>

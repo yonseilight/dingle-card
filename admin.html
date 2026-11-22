@@ -330,7 +330,7 @@ function rewardFor(st, key) {
 }
 const rewardOf = key => key === "follow" ? REWARD.follow : key === "tabs" ? (REWARD.tabs || 7)
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-11-20d";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-11-22b";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -868,6 +868,8 @@ function viewSurvey() {
 }
 
 /* ── 기간 설문 ── */
+/* 여러 개 선택(multi) 문항의 답은 '; '로 이어 저장된다 → 보기별로 나눠 센다 */
+const ansSplit = (a, dq) => !a ? [] : dq && dq.multi ? String(a).split("; ").filter(Boolean) : [a];
 let POLL_DEF = {};    // 학생 앱(index.html)의 POLLS 설정. 같은 사이트에 올렸을 때만 읽힌다
 let CODE_EVENTS = []; // 학생 앱의 이벤트 코드 설정 (보고서에 이름을 붙이는 데 쓴다)
 function pollGroups() {
@@ -881,11 +883,13 @@ function pollGroups() {
     p.a[s.q] = { answer: s.answer || "", etc: s.etc || "" };
     p.at = Math.max(p.at, Number(s.at) || 0);
   });
+  // 학생 앱에 설정한 설문은 아직 응답이 없어도 보여 준다 (QR을 미리 뽑을 수 있게)
+  Object.keys(POLL_DEF).forEach(id => { if (!by[id]) by[id] = { id, qs: [], ppl: {} }; });
   return Object.keys(by).sort().reverse().map(id => {
     const g = by[id], def = POLL_DEF[id];
     if (def) {   // 설정의 문항 순서를 따르고, 응답에만 있는 예전 문항은 뒤에 둔다
       const order = def.questions.map(q => q.q);
-      g.qs = order.filter(q => g.qs.indexOf(q) >= 0).concat(g.qs.filter(q => order.indexOf(q) < 0));
+      g.qs = order.concat(g.qs.filter(q => order.indexOf(q) < 0));   // 설정한 문항은 응답이 없어도 모두
       g.def = def;
     }
     g.people = Object.values(g.ppl).sort((a, b) => (b.at || 0) - (a.at || 0));
@@ -917,24 +921,25 @@ function viewPoll() {
         <div class="right">
           ${sheet ? `<a class="btn gh sm" href="${esc(sheet.url)}" target="_blank" rel="noopener">스프레드시트에서 보기</a>` : ""}
           ${sheet && sheet.sumUrl ? `<a class="btn gh sm" href="${esc(sheet.sumUrl)}" target="_blank" rel="noopener">시트 집계표</a>` : ""}
+          ${g.def ? `<button class="btn gh sm" data-pollqr="${esc(g.id)}">설문 QR · 포스터</button>` : ""}
           <button class="btn gh sm" data-pollcsv="${esc(g.id)}">CSV 내려받기</button>
         </div>
       </div>
       <div class="pb">
         ${g.qs.map((q, qi) => {
           const cnt = {}, etc = [];
+          const dq = g.def && g.def.questions.find(x => x.q === q);
           g.people.forEach(p => {
             const a = p.a[q]; if (!a) return;
-            if (a.answer) cnt[a.answer] = (cnt[a.answer] || 0) + 1;
+            ansSplit(a.answer, dq).forEach(v => { cnt[v] = (cnt[v] || 0) + 1; });
             if (a.etc) etc.push({ name: p.name, t: a.etc });
           });
-          const dq = g.def && g.def.questions.find(x => x.q === q);
           (dq ? dq.opts : []).forEach(o => { if (!(o in cnt)) cnt[o] = 0; });   // 아무도 안 고른 보기도 0명으로
           const opts = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a]);
           const answered = g.people.filter(p => p.a[q]).length || 1;
           return `<div class="qcard">
             <h3>질문 ${qi + 1}. ${esc(q)}</h3>
-            <div class="meta">응답 ${g.people.filter(p => p.a[q]).length}명 · 보기 선택 ${opts.reduce((s, o) => s + cnt[o], 0)}명 · 직접 입력 ${etc.length}명</div>
+            <div class="meta">응답 ${g.people.filter(p => p.a[q]).length}명${dq && dq.multi ? " · 여러 개 선택(비율은 응답한 학생 대비)" : " · 보기 선택 " + opts.reduce((s, o) => s + cnt[o], 0) + "명"}${dq && dq.when ? ` · 질문 ${dq.when.q + 1}에서 '${esc(dq.when.is)}'를 고른 학생만` : ""} · 직접 입력 ${etc.length}명</div>
             ${opts.map((o, i) => {
               const c = cnt[o], pct = Math.round(c / answered * 100);
               return `<div class="row"><div class="lb">${esc(o)}</div>
@@ -1284,12 +1289,14 @@ function fieldStudent(st) {
     <div style="margin-top:10px"><button class="btn gh sm" data-st="${esc(st.sid)}">학생 상세 창 열기 (인증·조치·지급 기록)</button></div>
   </div>`;
 }
+/* e: 현장 QR 이벤트 { code, label, cards } 또는 링크 QR { url, label, desc, big, steps, note } (예: 기간 설문) */
+const qrUrl = e => e.url || qrLink(e.code);
 function showQR(e) {
   const z = document.createElement("div");
   z.className = "qrfull";
-  z.innerHTML = `<div class="qrbox">${qrSVG(qrLink(e.code), Math.min(520, innerWidth - 80, innerHeight - 260))}
-    <h2>${esc(e.label)}</h2><p>카메라로 찍으면 딩글이 카드 <b>${e.cards}장</b>!</p>
-    <div class="note" style="word-break:break-all">${esc(qrLink(e.code))}</div>
+  z.innerHTML = `<div class="qrbox">${qrSVG(qrUrl(e), Math.min(520, innerWidth - 80, innerHeight - 260))}
+    <h2>${esc(e.label)}</h2><p>${e.desc || `카메라로 찍으면 딩글이 카드 <b>${e.cards}장</b>!`}</p>
+    <div class="note" style="word-break:break-all">${esc(qrUrl(e))}</div>
     <div class="frm" style="justify-content:center;margin-top:12px"><button class="btn sm" id="qrcopy">링크 복사</button>
       <button class="btn sm" id="qrposter">A4 포스터 인쇄</button>
       <button class="btn gh sm" id="qrprint">QR만 인쇄</button><button class="btn gh sm" id="qrx">닫기</button></div></div>`;
@@ -1298,7 +1305,7 @@ function showQR(e) {
   const close = () => { z.remove(); document.body.classList.remove("qrprint"); };
   z.querySelector("#qrx").onclick = close;
   z.onclick = ev => { if (ev.target === z) close(); };
-  z.querySelector("#qrcopy").onclick = () => navigator.clipboard.writeText(qrLink(e.code)).then(() => toast("링크를 복사했습니다"), () => toast("복사하지 못했습니다"));
+  z.querySelector("#qrcopy").onclick = () => navigator.clipboard.writeText(qrUrl(e)).then(() => toast("링크를 복사했습니다"), () => toast("복사하지 못했습니다"));
   z.querySelector("#qrprint").onclick = () => { pageMargin0(true); window.print(); };
   z.querySelector("#qrposter").onclick = () => printPoster(e);
 }
@@ -1311,15 +1318,13 @@ function printPoster(e) {
     <div class="pp-k">연세대학교 미래캠퍼스 미래융합교육혁신원 · 등대팀</div>
     <h1>딩글이 카드도감</h1>
     <div class="pp-ev">${esc(e.label)}</div>
-    <div class="pp-qr">${qrSVG(qrLink(e.code), 560)}</div>
-    <div class="pp-big">카메라로 QR을 찍으면<br>딩글이 카드 <b>${e.cards}장</b>!</div>
+    <div class="pp-qr">${qrSVG(qrUrl(e), 560)}</div>
+    <div class="pp-big">${e.big || `카메라로 QR을 찍으면<br>딩글이 카드 <b>${e.cards}장</b>!`}</div>
     <ol class="pp-steps">
-      <li>휴대폰 카메라로 QR을 찍어 사이트를 엽니다</li>
-      <li>처음이면 학번·이름을 넣고 [시작]</li>
-      <li>카드가 바로 들어가요 — 뽑기 탭에서 열어 보세요</li>
+      ${(e.steps || ["휴대폰 카메라로 QR을 찍어 사이트를 엽니다", "처음이면 학번·이름을 넣고 [시작]", "카드가 바로 들어가요 — 뽑기 탭에서 열어 보세요"]).map(t => `<li>${esc(t)}</li>`).join("")}
     </ol>
     <div class="pp-url">${esc(siteBase().replace(/^https?:\/\//, "").replace(/\/$/, ""))}</div>
-    <div class="pp-note">한 사람당 1회 · 학습지원 프로그램에 참여하고 인증하면 카드를 더 받을 수 있어요</div>
+    <div class="pp-note">${esc(e.note || "한 사람당 1회 · 학습지원 프로그램에 참여하고 인증하면 카드를 더 받을 수 있어요")}</div>
   </div>`;
   document.body.appendChild(pz);
   document.body.classList.remove("qrprint");
@@ -1643,17 +1648,24 @@ function reportData() {
   const add = (title, list, def, kind, meta) => {
     const by = {};
     list.forEach(x => { const o = by[x.q] || (by[x.q] = { q: x.q, cnt: {}, etc: [], n: 0 }); o.n++;
-      if (x.answer) o.cnt[x.answer] = (o.cnt[x.answer] || 0) + 1; if (x.etc) o.etc.push(x.etc); });
-    Object.values(by).forEach(o => {
+      ansSplit(x.answer, def && def.questions.find(z => z.q === x.q)).forEach(v => { o.cnt[v] = (o.cnt[v] || 0) + 1; }); if (x.etc) o.etc.push(x.etc); });
+    const qIdx = q => { const i = def ? def.questions.findIndex(z => z.q === q) : -1; return i < 0 ? 99 : i; };
+    Object.values(by).sort((a, b) => qIdx(a.q) - qIdx(b.q)).forEach(o => {   // 설정한 문항 순서대로
       const dq = def && def.questions.find(z => z.q === o.q);
+      o.multi = !!(dq && dq.multi);
+      if (dq && dq.when && def.questions[dq.when.q]) o.when = { n: dq.when.q + 1, is: dq.when.is };   // 앞 문항 답에 따라 보인 문항
       (dq ? dq.opts : []).forEach(op => { if (!(op in o.cnt)) o.cnt[op] = 0; });
       qs.push(Object.assign({ group: title, kind: kind || "weekly", meta: meta || null }, o));
     });
   };
+  const kstDay = t => new Date(Number(t) + 9 * 3600e3).toISOString().slice(0, 10);
   pollGroups().forEach(g => add((g.def ? g.def.title : "이벤트 설문") + " (" + g.id + ")",
     D.surveys.filter(x => pollOf(x) === g.id), g.def, "poll",
     { id: g.id, title: g.def ? g.def.title : "이벤트 설문", from: g.def && g.def.from, until: g.def && g.def.until,
-      cards: g.def && g.def.cards, people: g.people.length }));
+      cards: g.def && g.def.cards, people: g.people.length,
+      // 설문 기간에 처음 가입해서 설문에 답한 학생 (설문 때문에 새로 들어온 인원)
+      newbies: g.def && g.def.from ? g.people.filter(pp => { const st = S.find(x => String(x.sid) === String(pp.sid));
+        const d = st && st.created ? kstDay(st.created) : ""; return d && d >= g.def.from && d <= (g.def.until || g.def.from); }).length : 0 }));
   add("퀴즈 '한 마디'", D.surveys.filter(x => !pollOf(x)), null, "weekly");
   // ── 더 자세한 항목 ──
   const tiers = TIER_KEYS.map(t => ({ t, word: TIERS[t].word, all: PER_TIER[t], done: S.filter(x => !(x.adm && x.adm.hide) && tierDone(x, t) === PER_TIER[t]).length }));
@@ -1817,9 +1829,9 @@ function reportHTML() {
   /* ── 04 설문 ── */
   const qhtml = q => {
     const opts = Object.keys(q.cnt).sort((a, b) => q.cnt[b] - q.cnt[a]);
-    const picked = opts.reduce((a, o) => a + q.cnt[o], 0);
+    const picked = q.multi ? q.n : opts.reduce((a, o) => a + q.cnt[o], 0);   // 여러 개 선택은 응답한 학생 대비
     return `<div class="rq"><h4>${esc(q.q)}</h4>
-      <div class="rqm">응답 ${q.n}명${q.etc.length ? ` · 직접 입력 ${q.etc.length}명` : ""}</div>
+      <div class="rqm">응답 ${q.n}명${q.multi ? " · 복수 응답(비율은 응답한 학생 대비)" : ""}${q.when ? ` · ${q.when.n}번에서 '${esc(q.when.is)}'를 고른 학생만` : ""}${q.etc.length ? ` · 직접 입력 ${q.etc.length}명` : ""}</div>
       ${hbars(opts.map(o => [o, q.cnt[o], picked]), q.kind === "poll" ? "#E3A008" : "#18A36B", { top: true })}
       ${q.etc.length ? `<div class="retc"><b>직접 입력</b> ${q.etc.slice(0, 6).map(t => `<span>${esc(t)}</span>`).join("")}${q.etc.length > 6 ? ` <em>외 ${q.etc.length - 6}건</em>` : ""}</div>` : ""}
     </div>`; };
@@ -1830,7 +1842,7 @@ function reportHTML() {
   const ch4 = chap("04", "설문 결과", `막대 옆 %는 그 문항에서 보기를 고른 학생 대비 비율이고, 가장 많이 고른 답을 진하게 표시했습니다.`,
     blk("이벤트 설문", Object.keys(byPoll).length ? Object.values(byPoll).map(g => `
       <div class="rpg"><div class="rpgh"><b>${esc(g.meta ? g.meta.title : "이벤트 설문")}</b>
-        <span>${g.meta && g.meta.from ? md(g.meta.from) + (g.meta.until ? " ~ " + md(g.meta.until) : "") + " · " : ""}참여 ${g.meta ? g.meta.people : "-"}명${g.meta && g.meta.cards ? " · 참여 보상 카드 " + g.meta.cards + "장" : ""}</span></div>
+        <span>${g.meta && g.meta.from ? md(g.meta.from) + (g.meta.until && g.meta.until !== g.meta.from ? " ~ " + md(g.meta.until) : "") + " · " : ""}참여 ${g.meta ? g.meta.people : "-"}명${g.meta && g.meta.newbies ? ` (그 기간 첫 참여 ${g.meta.newbies}명)` : ""}${g.meta && g.meta.cards ? " · 참여 보상 카드 " + g.meta.cards + "장" : ""}</span></div>
         <div class="rqg">${g.list.map(qhtml).join("")}</div></div>`).join("") : `<p class="rn">진행한 이벤트 설문이 없습니다.</p>`,
       "카드 얻기 화면에서 기간을 정해 연 설문(참여하면 카드 지급). 학생 1명당 1회 응답.") +
     blk("퀴즈 '한 마디'", weekly.length ? `<div class="rqg">${weekly.map(qhtml).join("")}</div>` : `<p class="rn">아직 퀴즈 설문 응답이 없습니다.</p>`,
@@ -1870,15 +1882,17 @@ function frYmd(ymd) { return frDate(new Date(ymd + "T12:00:00+09:00")); }
 function frDefaults() {
   const r = reportData(), cl = Number(D.meta.closed) || 0;
   const progs = PROGRAMS.map(p => progShort(p.name)).join("·");
-  const polls = pollGroups().filter(g => g.def && g.def.from).map(g => `${frYmd(g.def.from)}${g.def.until ? " ~ " + frYmd(g.def.until).replace(/^\d+\. /, "") : ""} 이벤트 설문 '${g.def.title}' 진행 (참여 ${g.people.length}명)`);
-  const timeline = [
-    `${frYmd(EVENT_START)} 카드도감 운영 시작`,
-    ...polls,
-    `${frYmd("2026-10-27")} 인증 보상 카드 상향 (팔로우·프로그램 신청 5→7장, 활동 완료 7→10장)`,
-    `${frYmd("2026-11-10")} 더미래페스티벌 등대팀 부스 이벤트 (TABS 설문 인증·학습지원 프로그램 퀴즈)`,
-    `${frYmd("2026-11-20")} 퀴즈 주기 단축(주 1회 → 3일 1회), 출석 보상 종료`,
-    cl ? `${frDate(cl)} 운영 마감` : "(마감 후 마감일이 자동으로 들어갑니다)",
-  ];
+  // 추진 경과: [날짜, 문장] → 날짜 순 (같은 날이면 적은 순서대로), 마감은 맨 끝
+  const items = [
+    [EVENT_START, `${frYmd(EVENT_START)} 카드도감 운영 시작`],
+    ...pollGroups().filter(g => g.def && g.def.from).map(g => [g.def.from,
+      `${frYmd(g.def.from)}${g.def.until && g.def.until !== g.def.from ? " ~ " + frYmd(g.def.until).replace(/^\d+\. /, "") : ""} 기간 설문 '${g.def.title}' 진행 (참여 ${g.people.length}명)`]),
+    ["2026-10-27", `${frYmd("2026-10-27")} 인증 보상 카드 상향 (팔로우·프로그램 신청 5→7장, 활동 완료 7→10장)`],
+    ["2026-11-10", `${frYmd("2026-11-10")} 더미래페스티벌 등대팀 부스 이벤트 (TABS 설문 인증·학습지원 프로그램 퀴즈)`],
+    ["2026-11-20", `${frYmd("2026-11-20")} 퀴즈 주기 단축(주 1회 → 3일 1회), 출석 보상 종료`],
+    ["2026-11-24", `${frYmd("2026-11-24")} ~ ${frYmd("2026-11-25").replace(/^\d+\. /, "")} 굿즈 수령 운영 (11. 24. 13:00~14:00, 11. 25. 12:00~16:00)`],
+  ].map((x, i) => x.concat(i)).sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[2] - b[2]);
+  const timeline = items.map(x => x[1]).concat(cl ? `${frDate(cl)} 운영 마감` : "(마감 후 마감일이 자동으로 들어갑니다)");
   // 개선 방향: 데이터에서 바로 보이는 것만 기본 문안으로 (고쳐 쓰기)
   const imp = [];
   r.pr.filter(x => x.n >= 5 && PCT(x.no, x.n) >= 15).sort((a, b) => PCT(b.no, b.n) - PCT(a.no, a.n)).slice(0, 2)
@@ -1994,7 +2008,8 @@ function finalReportHTML() {
   const s2 = `${H1("Ⅱ", "추진 실적")}
     ${H2(1, "참여 현황")}
     ${ft(["구분", "인원", "참여 학생 대비"], funnel.map(([l, n]) => [l, KO(n) + "명", PCT(n, k.total) + "%"]), null, "fnum")}
-    ${note("인증은 반려되지 않은 것만 셈. 한 학생이 여러 인증을 할 수 있음.")}
+    ${note("인증은 반려되지 않은 것만 셈. 한 학생이 여러 인증을 할 수 있음." + r.qs.filter(q => q.kind === "poll" && q.meta && q.meta.newbies).reduce((a, q) => a.some(x => x.id === q.meta.id) ? a : a.concat(q.meta), [])
+      .map(m => ` 참여 학생에는 '${m.title}'(${frYmd(m.from)}) 때 처음 들어온 ${m.newbies}명이 포함됨.`).join(""))}
     <div class="r3 fcharts">${miniChart(r.weeks, "join", "주차별 신규 참여", "#2F5BD3")}${miniChart(r.weeks, "proof", "주차별 인증 제출", "#E3A008")}${miniChart(r.weeks, "quiz", "주차별 퀴즈 설문 응답", "#18A36B")}</div>
     ${H2(2, "학습지원 프로그램 연계 실적")}
     ${ft(["프로그램", "신청 인증", "활동 완료 인증", "신청 후 완료", "전환율", "만족도(5점)"],
@@ -2011,13 +2026,21 @@ function finalReportHTML() {
       ${note("준비 수량(전기손난로 30개 · 인형 키링 155개)을 모두 지급함.")}` : ""}`;
 
   /* Ⅲ. 설문 결과 */
-  const qblock = q => { const opts = Object.keys(q.cnt).sort((a, b) => q.cnt[b] - q.cnt[a]); const tot = opts.reduce((a, o) => a + q.cnt[o], 0);
-    return `<div class="fq"><h4>${esc(q.q)} <small>(응답 ${q.n}명)</small></h4>
+  const qblock = q => { const opts = Object.keys(q.cnt).sort((a, b) => q.cnt[b] - q.cnt[a]); const tot = q.multi ? q.n : opts.reduce((a, o) => a + q.cnt[o], 0);
+    return `<div class="fq"><h4>${esc(q.q)} <small>(응답 ${q.n}명${q.multi ? " · 복수 응답" : ""})</small></h4>
+      ${q.when ? `<p class="fnote" style="margin:0 0 2px">${q.when.n}번에서 '${esc(q.when.is)}'를 고른 학생만 답함</p>` : ""}
       ${ft(["응답", "인원", "비율"], opts.filter(o => q.cnt[o] > 0).map(o => [esc(o), q.cnt[o] + "명", PCT(q.cnt[o], tot) + "%"]), null, "fnum fsm")}
       ${q.etc.length ? `<p class="fnote">직접 입력: ${q.etc.slice(0, 5).map(esc).join(" · ")}${q.etc.length > 5 ? ` 외 ${q.etc.length - 5}건` : ""}</p>` : ""}</div>`; };
   const polls = r.qs.filter(q => q.kind === "poll"), weekly = r.qs.filter(q => q.kind !== "poll").sort((a, b) => b.n - a.n);
   const s3 = `${H1("Ⅲ", "설문 결과")}
-    ${polls.length ? `${H2(1, "이벤트 설문")}<div class="fqg">${polls.map(qblock).join("")}</div>` : ""}
+    ${polls.length ? `${H2(1, "기간 설문")}${(() => {
+      const groups = []; polls.forEach(q => { const id = q.meta ? q.meta.id : q.group; let g = groups.find(x => x.id === id);
+        if (!g) groups.push(g = { id, meta: q.meta, list: [] }); g.list.push(q); });
+      groups.sort((a, b) => String(a.meta && a.meta.from || a.id) < String(b.meta && b.meta.from || b.id) ? -1 : 1);
+      return groups.map((g, gi) => { const m = g.meta || {};
+        return `<h4 class="fh3">${"가나다라마바"[gi] || gi + 1}. ${esc(m.title || "기간 설문")} <small>(${m.from ? frYmd(m.from) + (m.until && m.until !== m.from ? " ~ " + frYmd(m.until).replace(/^\d+\. /, "") : "") + ", " : ""}참여 ${KO(m.people || 0)}명${m.cards ? `, 참여 카드 ${m.cards}장` : ""})</small></h4>
+          ${m.newbies ? `<p class="fnote">이 설문 기간에 처음 참여(가입)한 학생 ${KO(m.newbies)}명 포함.</p>` : ""}
+          <div class="fqg">${g.list.map(qblock).join("")}</div>`; }).join(""); })()}` : ""}
     ${weekly.length ? `${H2(polls.length ? 2 : 1, "퀴즈 참여 후 한 문항 설문")}<div class="fqg">${weekly.map(qblock).join("")}</div>
       ${note("퀴즈를 푼 학생에게 회차마다 다른 문항을 한 개씩 물었음(응답 선택). 문항별 응답 수가 다름.")}` : ""}`;
 
@@ -2058,7 +2081,7 @@ const FINAL_CSS = `
 .ft td{padding:6px 8px;border:1px solid #C9D0DC;vertical-align:middle}
 .ft tr{break-inside:avoid}.ft thead{display:table-header-group}
 .ft tr.sum td{font-weight:800;background:#F6F8FB}
-.ft.fnum td:not(:first-child){text-align:right}.ft.fnum td:first-child{text-align:left}
+.ft.fnum td:not(:first-child){text-align:right;white-space:nowrap}.ft.fnum td:first-child{text-align:left}
 .ft.finfo th:first-child,.ft.finfo td:first-child{width:22%;text-align:center;background:#F6F8FB;font-weight:700}
 .ft.finfo thead{display:none}.ft.finfo{border-top:2px solid #0F1F3D}
 .ft.fway td:nth-child(2){text-align:center;width:16%;font-weight:700}.ft.fway td:nth-child(3){color:#4A5568;width:38%}
@@ -2077,7 +2100,8 @@ const FINAL_CSS = `
 .fsum{margin:0;padding:12px 16px 12px 34px;background:#F6F8FB;border:1px solid #DCE1EA}.fsum li{margin:4px 0}
 .fcharts{margin:10px 0 4px}
 .fqg{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px}.fq{break-inside:avoid;page-break-inside:avoid}
-.fq h4{font-size:12.5px;margin:8px 0 2px;color:#0F1F3D}.fq h4 small{font-weight:500;color:#5A6478}
+.fq h4{font-size:12.5px;margin:8px 0 2px;color:#0F1F3D}
+.rep.fin .fh3{font-size:13px;color:#0F1F3D;margin:12px 0 4px;break-after:avoid;page-break-after:avoid}.rep.fin .fh3 small{font-weight:500;color:#4A5568}.fq h4 small{font-weight:500;color:#5A6478}
 .fend{text-align:center;margin:26px 0 6px;font-size:12px;color:#4A5568;letter-spacing:.2em}
 @media print{ .rep.fin .fbrk{break-before:page;page-break-before:always;margin-top:0} }
 @media (max-width:640px){ .fkpi{grid-template-columns:1fr 1fr} .fkpi div:nth-child(3){border-left:0} .fqg{grid-template-columns:1fr} .rep.fin .fcov h1{font-size:20px} .ft{display:block;overflow-x:auto} }
@@ -2122,7 +2146,9 @@ function bindFinalEditor() {
     return o;
   };
   let tmr = 0;
-  const redraw = () => { frSave(read()); clearTimeout(tmr); tmr = setTimeout(() => { const el = $("report"); if (el) el.outerHTML = finalReportHTML(); }, 250); };
+  const changed = o => { const d = frDefaults(), out = {};
+    Object.keys(o).forEach(k => { if (JSON.stringify(o[k]) !== JSON.stringify(d[k])) out[k] = o[k]; }); return out; };
+  const redraw = () => { frSave(changed(read())); clearTimeout(tmr); tmr = setTimeout(() => { const el = $("report"); if (el) el.outerHTML = finalReportHTML(); }, 250); };
   app.querySelectorAll("[id^=fr_]").forEach(el => { if (el.id !== "fr_reset") { el.oninput = redraw; el.onchange = redraw; } });
   $("fred") && ($("fred").ontoggle = e => { V.frOpen = e.currentTarget.open; });
   $("fr_reset") && ($("fr_reset").onclick = () => { if (!confirm("고친 글을 지우고 기본 문안으로 되돌릴까요?")) return; try { localStorage.removeItem(FR_KEY); } catch (e) {} render(); });
@@ -2818,6 +2844,10 @@ function exTopMap() {
   return map;
 }
 function exTop(sid) { return exTopMap().get(String(sid)) || null; }
+/* 주문한 굿즈 수량 (2026-11-22 등대팀 주문 기준: S 록시땅 핸드크림 · A 스탠리 텀블러 · B 2027 다이어리 · C 인형 키링)
+   A·S 선물은 서로 바꿔 줄 수 있게 해서 재고를 합쳐서 본다 */
+const GOODS_ORDER = { C: 42, B: 32, A: 14, S: 14 };
+const GOODS_POOL = ["A", "S"];
 /* 자동 상향: 아직 안 받은 신청은 학생이 완성한 가장 높은 등급으로 준다 (예: B 신청 + S 완성 → S) */
 function hiDone(st) { return TIER_KEYS.slice().reverse().find(k => tierDone(st, k) === PER_TIER[k]) || null; }
 function exEff(x) {
@@ -3009,16 +3039,25 @@ function viewExchange() {
     <div class="panel">
       <div class="ph"><h2>준비할 굿즈 수량</h2><span class="sub">학생 1명당 신청한 등급 중 가장 높은 1개 기준 · 순위 제외 학생 빼고</span></div>
       <div class="pb flush"><table class="prept">
-        <thead><tr><th>등급</th><th class="num">이미 지급</th><th class="num">지급 대기</th><th class="num">지금 필요한 수량</th><th class="num">미신청 완성자</th><th class="num">최대 (모두 신청 시)</th></tr></thead>
-        <tbody>${prep.map(r => `<tr>
+        <thead><tr><th>등급</th><th class="num">이미 지급</th><th class="num">지급 대기</th><th class="num">지금 필요한 수량</th><th class="num">미신청 완성자</th><th class="num">최대 (모두 신청 시)</th><th class="num">주문 수량</th><th class="num">남는 수량</th></tr></thead>
+        <tbody>${prep.map(r => {
+          const pool = GOODS_POOL.indexOf(r.t) >= 0, first = pool && GOODS_POOL.indexOf(r.t) === 0;
+          const grp = pool ? prep.filter(z => GOODS_POOL.indexOf(z.t) >= 0) : [r];
+          const ord = grp.reduce((a, z) => a + (GOODS_ORDER[z.t] || 0), 0), need = grp.reduce((a, z) => a + z.now, 0), mx = grp.reduce((a, z) => a + z.now + z.more, 0);
+          const leftNow = ord - need, leftMax = ord - mx, span = pool ? ` rowspan="${grp.length}"` : "";
+          const stockCells = !pool || first ? `<td class="num"${span}>${ord}개${pool ? `<div class="note">${GOODS_POOL.join("·")} 합산 (${grp.map(z => z.t + " " + (GOODS_ORDER[z.t] || 0)).join(" + ")})</div>` : ""}</td>
+            <td class="num"${span}><b style="color:${leftNow < 0 ? "#FF8A8A" : leftMax < 0 ? "var(--beam)" : "#7FE9C0"}">${leftNow < 0 ? "부족 " + (-leftNow) : leftNow}</b>개
+              <div class="note">${leftMax < 0 ? `모두 신청하면 ${-leftMax}개 부족` : `모두 신청해도 ${leftMax}개 남음`}</div></td>` : "";
+          return `<tr>
           <td><span class="chip ${r.t}">${r.t} ${TIERS[r.t].word}</span> <span class="note">${esc(TIERS[r.t].goods)}</span></td>
           <td class="num">${r.done}</td><td class="num">${r.wait}${r.hidW ? ` <span class="note">(+순위 제외 ${r.hidW})</span>` : ""}</td>
           <td class="num"><b style="font-size:16px;color:var(--beam)">${r.now}</b>개</td>
-          <td class="num">${r.more ? "+" + r.more : "-"}</td><td class="num">${r.now + r.more}개</td></tr>`).join("")}
+          <td class="num">${r.more ? "+" + r.more : "-"}</td><td class="num">${r.now + r.more}개</td>${stockCells}</tr>`; }).join("")}
           <tr class="sumr"><td><b>합계</b></td><td class="num">${sumP("done")}</td><td class="num">${sumP("wait")}</td>
-            <td class="num"><b style="font-size:16px;color:var(--beam)">${sumP("now")}</b>개</td><td class="num">${sumP("more") ? "+" + sumP("more") : "-"}</td><td class="num">${sumP("now") + sumP("more")}개</td></tr>
+            <td class="num"><b style="font-size:16px;color:var(--beam)">${sumP("now")}</b>개</td><td class="num">${sumP("more") ? "+" + sumP("more") : "-"}</td><td class="num">${sumP("now") + sumP("more")}개</td>
+            <td class="num">${TIER_KEYS.reduce((a, t) => a + (GOODS_ORDER[t] || 0), 0)}개</td><td class="num">${TIER_KEYS.reduce((a, t) => a + (GOODS_ORDER[t] || 0), 0) - sumP("now")}개</td></tr>
         </tbody></table></div>
-      <div class="pb"><p class="note" style="margin:0">지금 필요한 수량 = 이미 지급 + 지급 대기(등급을 지금도 갖춘 신청만). 미신청 완성자 = 가장 높은 완성 등급을 아직 신청하지 않은 학생으로, 신청하면 그만큼 늘어납니다.${
+      <div class="pb"><p class="note" style="margin:0"><b style="color:var(--foam)">A·S 선물(스탠리 텀블러·록시땅 핸드크림)은 서로 바꿔 줄 수 있어 재고를 합쳐서 봅니다.</b> 남는 수량 = 주문 수량 − 지금 필요한 수량.<br>지금 필요한 수량 = 이미 지급 + 지급 대기(등급을 지금도 갖춘 신청만). 미신청 완성자 = 가장 높은 완성 등급을 아직 신청하지 않은 학생으로, 신청하면 그만큼 늘어납니다.${
         sumP("shift") ? ` 이 중 <b style="color:var(--foam)">${sumP("shift")}명</b>은 낮은 등급 굿즈를 이미 받은 학생이라, 더 줄지는 등대팀이 정해 주세요(최대에 포함).` : ""}${
         prep.some(r => r.hidW) ? " 순위 제외 학생의 신청은 수량에서 뺐습니다." : ""}</p></div>
     </div>
@@ -3357,6 +3396,16 @@ function bind() {
   $("csvsv") && ($("csvsv").onclick = () => csv(
     [["주차", "학번", "이름", "질문", "선택한 답", "직접 입력"]].concat(
       D.surveys.filter(s => !pollOf(s)).map(s => [s.week, s.sid, s.name, s.q, s.answer, s.etc])), "퀴즈설문응답"));
+  app.querySelectorAll("[data-pollqr]").forEach(el => el.onclick = () => {
+    const d = POLL_DEF[el.dataset.pollqr]; if (!d) return;
+    const day = d.from ? `${Number(d.from.slice(5, 7))}월 ${Number(d.from.slice(8, 10))}일` : "";
+    showQR({ url: siteBase() + "#survey", label: d.title + (day ? " · " + day : ""),
+      desc: `카메라로 찍고 설문에 답해 주세요${d.cards ? ` (딩글이 카드 <b>${Number(d.cards)}장</b>)` : ""}`,
+      big: d.doneMsg ? "QR을 찍고 설문에 답하면<br><b>돌림판 1회!</b>" : "QR을 찍고<br><b>설문에 참여해 주세요</b>",
+      steps: ["휴대폰 카메라로 QR을 찍어 사이트를 엽니다", "처음이면 학번·이름을 넣고 [시작] — 설문이 바로 보여요",
+              d.doneMsg ? "제출 뒤 '참여 완료' 화면을 등대팀에게 보여 주세요" : "모든 문항에 답하고 [제출]을 누르세요"],
+      note: "한 사람당 1회 참여" + (d.cards ? ` · 답하면 딩글이 카드 ${Number(d.cards)}장` : "") });
+  });
   app.querySelectorAll("[data-pollcsv]").forEach(el => el.onclick = () => {
     const g = pollGroups().find(x => x.id === el.dataset.pollcsv);
     if (!g) return;

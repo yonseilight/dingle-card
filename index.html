@@ -837,6 +837,12 @@
   .passcard .pclock{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;margin:12px 0 4px;color:#fff}
   .passcard .pnt{font-size:13px;line-height:1.55;white-space:pre-wrap;text-align:left;background:rgba(255,201,74,.1);border-radius:10px;padding:10px 12px;margin:10px 0 0;color:var(--beam2)}
   .passcard .pnote{font-size:12.5px;color:var(--mist);line-height:1.55;margin:10px 0 14px}
+  .pmulti{display:inline-block;margin-left:6px;font-size:11px;font-weight:700;color:var(--beam);background:rgba(255,201,74,.12);border-radius:999px;padding:1px 8px}
+  .poll.pcheck{border:2px solid #4ED8A0;box-shadow:0 0 0 5px rgba(78,216,160,.12)}
+  .poll.pcheck .pwho{font-size:17px;font-weight:800;margin:6px 0 2px;color:#fff}
+  .poll.pcheck .pmsg{font-size:15px;font-weight:800;color:#7FE9C0;margin:4px 0 6px}
+  .notice.lgn{margin:18px 0 0;text-align:left}
+  .notice.lgn p{font-size:14px}
 </style>
 </head>
 <body>
@@ -891,7 +897,7 @@ const CONFIG = {
   // 카드 지급량
   REWARD: {
     welcome: 5,      // 처음 시작할 때 바로 주는 카드 (0으로 두면 지급하지 않음)
-    follow: 7, quiz: 3, apply: 7, done: 10,
+    follow: 7, quiz: 5, apply: 7, done: 10,
     tabs: 7,         // TABS 설문 완료 인증 (더미래페스티벌 부스 이벤트)
     daily: 0,        // 2026-11-20 출석 보상 없앰 (이전 1) · 출석 보너스: 하루 한 번 접속하면 (0으로 두면 지급하지 않음)   // 2026-10-27부터 (이전: 팔로우 5 · 신청 5 · 완료 7)
     invited: 5,      // 추천인을 입력하고 가입한 학생이 받는 카드
@@ -1046,6 +1052,30 @@ const POLLS = [
       },
     ],
   },
+  // 11/25 크리스마스 소원트리 이벤트 — 등대팀 활동 평가 설문 (완료 화면을 보여 주면 돌림판 1회)
+  // 카드도감 마감일과 겹쳐서 카드는 3장만 (새로 들어온 학생이 등급을 완성해 굿즈가 갑자기 늘지 않게)
+  // multi: 여러 개 선택 · only: 다른 보기와 같이 고를 수 없는 보기 · when: 앞 문항이 그 답일 때만 보임
+  // afterClose: 카드도감을 마감해도 이 날은 설문을 받는다 (마감 뒤에는 카드 없이 응답만)
+  {
+    id: "2026-11-25",
+    title: "등대팀 활동 평가 설문",
+    from: "2026-11-25",
+    until: "2026-11-25",
+    cards: 3,
+    afterClose: true,
+    doneMsg: "이 화면을 등대팀에게 보여 주고 돌림판을 돌려 주세요!",
+    questions: [
+      { q: "미래융합교육혁신원을 알고 있나요?", opts: ["이름만 안다", "하는 일까지 안다", "모른다"] },
+      { q: "이번 학기 참여한 등대팀 활동은? (여러 개 선택)", multi: true,
+        opts: ["카드도감", "취창업 박람회 부스", "중간고사 가챠 팝업", "더미래페스티벌 부스"] },
+      { q: "등대팀 활동을 계기로 학습지원 프로그램에 참여한 적이 있나요?",
+        opts: ["등대팀 활동을 계기로 신청·참여했다", "알게 됐지만 신청하지 않았다", "등대팀 활동 이전부터 참여하고 있었다", "학습지원 프로그램을 몰랐다"] },
+      { q: "신청하지 않은 이유는?", when: { q: 2, is: "알게 됐지만 신청하지 않았다" },
+        opts: ["시간이 안 맞아서", "혼자라서 부담돼서", "원하는 프로그램이 없어서", "신청 방법을 몰라서"], etc: true },
+      { q: "등대팀 활동이 학습에 도움이 된 점은? (여러 개 선택)", multi: true, only: ["도움이 되지 않았다"],
+        opts: ["학습지원 프로그램 정보를 알게 됐다", "부스·중간고사 이벤트로 시험 기간에 기분전환이 됐다", "카드도감을 통해 학습지원 활동에 꾸준히 참여하게 됐다", "도움이 되지 않았다"] },
+    ],
+  },
 ];
 
 // 학습지원 프로그램
@@ -1150,7 +1180,8 @@ const store = {
   /* 서버에 있는 기록만 가져온다. 서버가 제대로 답하지 않으면 예외를 던진다.
      (오류 응답을 '기록 없음'으로 읽으면 새 학생으로 취급해 기존 카드를 덮어쓰게 된다) */
   serverEpoch: null,   // 서버의 초기화 회차 (모르면 null)
-  notice: null,        // 등대팀 공지 { t, at }
+  notice: (() => { try { return JSON.parse(localStorage.getItem("dingle:notice") || "null"); } catch (e) { return null; } })(),
+                       // 등대팀 공지 { t, at } — 로그인 화면에서도 바로 보이게 지난번 공지를 기억한다
   events: [],
   tabsEnd: (() => { try { return Number(localStorage.getItem("dingle:tabsEnd")) || 0; } catch (e) { return 0; } })(),
   closedAt: (() => { try { return Number(localStorage.getItem("dingle:closed")) || 0; } catch (e) { return 0; } })(),
@@ -1158,6 +1189,7 @@ const store = {
   takeMeta(j) {        // 서버가 응답마다 실어 보내는 공지·마감 상태
     if (!j || !j.v) return;
     this.notice = j.notice || null;          // 새 서버는 공지가 없으면 notice를 싣지 않는다
+    try { if (this.notice) localStorage.setItem("dingle:notice", JSON.stringify(this.notice)); else localStorage.removeItem("dingle:notice"); } catch (e) {}
     const was = this.closedAt;
     this.closedAt = Number(j.closed) || 0;
     this.events = Array.isArray(j.events) ? j.events : [];      // 등대팀이 만든 현장 이벤트(QR)
@@ -1704,6 +1736,25 @@ function noticeHTML() {
     <button id="noticex" aria-label="공지 닫기">✕</button></div>`;
 }
 
+/* 로그인 화면 공지 — 닫기 없이 항상 보인다 (최종 공지·수령 안내용) */
+function loginNoticeHTML() {
+  const n = store.notice;
+  return n && n.t ? `<div class="notice lgn" id="loginNotice" role="note"><span class="tag">공지</span><p>${esc(n.t)}</p></div>`
+                  : `<div id="loginNotice"></div>`;
+}
+/* 로그인 전에 서버에서 지금 공지를 받아 온다 (없는 학번으로 조회 → 읽기만 하고 공지·마감 상태만 받음) */
+async function refreshLoginNotice() {
+  if (!api) return;
+  try {
+    const r = await fetch(CONFIG.API_URL + "?action=load&sid=-");
+    const j = await r.json();
+    if (!j || !j.v) return;
+    store.takeMeta(j);
+    const el = document.getElementById("loginNotice");
+    if (el && !S) el.outerHTML = loginNoticeHTML();
+  } catch (e) { /* 공지는 못 받아도 로그인에는 지장 없음 */ }
+}
+
 /* 하단 탭 아이콘 */
 const SVG = s => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${s}</svg>`;
@@ -1788,6 +1839,7 @@ function viewLogin() {
           <div><b>6</b><span>참여 방법</span></div>
         </div>
       </div>
+      ${loginNoticeHTML()}
       <div class="card-form" style="margin-top:20px">
       <div class="field">
         <label for="sid">학번</label>
@@ -1929,6 +1981,7 @@ function viewGet() {
       </ul>
       ${S.pending ? `<button class="btn" data-tab="draw" style="margin-top:14px">남은 카드 열러 가기</button>` : ""}
     </div>
+    ${pollsHTML()}
     ${recapHTML()}`);
   const R = CONFIG.REWARD;
   const followed = !!S.claims.follow;
@@ -2516,6 +2569,7 @@ function tabsHero(T, st, pr, done, state) {
 }
 /* 하루 한 번 TABS 안내 창 (부스 날짜까지, 아직 인증 안 한 학생에게만) */
 function promoTabs() {
+  if (FROM_SURVEY) return;   // 설문 QR로 들어온 학생에게는 띄우지 않는다
   if (!S || !boothAhead() || S.claims.tabs || eventOver() || window.__noPromo) return;
   if (document.querySelector(".celebrate, .modal, #stage, #proofModal, .sheet, #passov")) { setTimeout(promoTabs, 4000); return; }
   const key = "dingle:tabspromo:" + S.sid, mark = todayStr();
@@ -2604,13 +2658,34 @@ function nextQuizDay() {
 function quizAvailable() { return S.quizWeek !== quizKey(); }
 
 /* ── 기간 설문 ── */
+/* 설문 QR(주소 끝 #survey)로 들어오면 로그인 뒤 바로 설문으로 내려간다. 알림 팝업은 띄우지 않는다 */
+const FROM_SURVEY = /^#(survey|poll)/i.test(location.hash);
+function jumpSurvey() {
+  if (!FROM_SURVEY || !S) return;
+  const list = openPolls(); const p = list.find(x => !S.claims[pollKey(x)]) || list[0];
+  if (!p) return;
+  if (V.tab !== "get") { V.tab = "get"; render(); }
+  const el = document.getElementById("poll-" + p.id);
+  if (el) el.scrollIntoView({ block: "start", behavior: "smooth" });
+}
 /* 오늘 날짜(한국 시간). 폰의 시간대 설정이 달라도 설문 기간은 한국 날짜로 판단한다 */
 function todayStr() {
   return new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
 }
 const pollKey  = p => "survey:" + p.id;
 const pollOpen = p => { const t = todayStr(); return (!p.from || t >= p.from) && (!p.until || t <= p.until); };
-const openPolls = () => (typeof POLLS === "undefined" || eventOver() ? [] : POLLS).filter(pollOpen);
+const openPolls = () => (typeof POLLS === "undefined" ? [] : POLLS).filter(p => pollOpen(p) && (!eventOver() || p.afterClose));
+const pollCards = p => eventOver() ? 0 : Math.max(0, Number(p.cards) || 0);   // 마감 뒤에는 카드 없이 응답만
+/* 문항이 지금 보이는지 (when: 앞 문항이 그 답일 때만) */
+function pqShown(p, qi) {
+  const w = p.questions[qi].when; if (!w) return true;
+  const pk = pollState(p).picks[w.q];
+  return typeof pk === "number" && p.questions[w.q].opts[pk] === w.is;
+}
+function pqOn(p, qi, oi) {
+  const pk = pollState(p).picks[qi];
+  return p.questions[qi].multi ? Array.isArray(pk) && pk.indexOf(oi) >= 0 : pk === oi;
+}
 const pollTodo  = () => openPolls().some(p => S && !S.claims[pollKey(p)]);
 function pollState(p) {
   V.pl = V.pl || {};
@@ -2626,21 +2701,28 @@ const CHECK_SVG = `<svg class="pchk" viewBox="0 0 20 20" aria-hidden="true"><pat
 /* 문항별로 답했는지 (보기를 골랐거나 직접 입력을 썼으면 답한 것) */
 function pollAnswered(p) {
   const st = pollState(p);
-  return p.questions.map((qq, qi) => typeof st.picks[qi] === "number" || !!String(st.etc[qi] || "").trim());
+  return p.questions.map((qq, qi) => !pqShown(p, qi)     // 숨은 문항은 답할 필요 없음
+    || (qq.multi ? Array.isArray(st.picks[qi]) && st.picks[qi].length > 0 : typeof st.picks[qi] === "number")
+    || !!String(st.etc[qi] || "").trim());
 }
 
 function pollsHTML() {
   return openPolls().map(p => {
     const did = !!S.claims[pollKey(p)];
-    const amt = Math.max(0, Number(p.cards) || 0);
-    if (did) return `
-      <section class="src poll done" id="poll-${p.id}">
+    const amt = pollCards(p);
+    if (did) {
+      const got = (S.log || []).some(l => l.key === pollKey(p) && l.n > 0);
+      return `
+      <section class="src poll done ${p.doneMsg ? "pcheck" : ""}" id="poll-${p.id}">
         <div class="pdone">
           <span class="pdot">${CHECK_SVG}</span>
           <div><div class="ttl">${p.title} 참여 완료</div>
-            <div class="meta">${amt ? `카드 ${amt}장을 받았어요. ` : ""}남겨 주신 의견은 특강과 경품을 정할 때 참고합니다.</div></div>
+            ${p.doneMsg ? `<div class="pwho">${esc(S.name || "")} · ${esc(S.sid || "")} · ${mdLabel(new Date(S.claims[pollKey(p)] + 9 * 3600e3).toISOString().slice(0, 10))} 참여</div>
+              <div class="pmsg">${esc(p.doneMsg)}</div>` : ""}
+            <div class="meta">${got ? `카드 ${Number(p.cards) || 0}장을 받았어요. ` : ""}남겨 주신 의견은 ${p.doneMsg ? "등대팀 활동을 돌아보고 다음 학기를 준비할 때" : "특강과 경품을 정할 때"} 참고합니다.</div></div>
         </div>
       </section>`;
+    }
     const st = pollState(p);
     const n = p.questions.length;
     const ok = pollAnswered(p);
@@ -2648,16 +2730,16 @@ function pollsHTML() {
     return `
       <section class="src poll" id="poll-${p.id}" aria-label="${p.title}">
         <div class="hd"><div class="ttl">${p.title}</div>${amt ? `<div class="amt">${amt}장</div>` : ""}</div>
-        <div class="meta">${n}문항${p.until ? " · " + mdLabel(p.until) + "까지" : ""} · 한 번만 참여할 수 있어요</div>
-        <div class="pbar" aria-hidden="true">${ok.map(x => `<i class="${x ? "on" : ""}"></i>`).join("")}</div>
+        <div class="meta">${p.questions.filter(x => !x.when).length}문항${p.until ? " · " + mdLabel(p.until) + "까지" : ""} · 한 번만 참여할 수 있어요${eventOver() ? " · 카드도감은 마감되어 카드는 지급되지 않아요" : ""}</div>
+        <div class="pbar" aria-hidden="true">${ok.map((x, i) => `<i class="${x ? "on" : ""}" data-pbi="${i}" ${pqShown(p, i) ? "" : "hidden"}></i>`).join("")}</div>
         ${p.questions.map((qq, qi) => `
-          <div class="pq">
-            <p class="pqn">질문 ${qi + 1}</p>
+          <div class="pq" data-pqi="${qi}" ${pqShown(p, qi) ? "" : "hidden"}>
+            <p class="pqn">질문 ${qi + 1}${qq.multi ? ` <span class="pmulti">여러 개 고를 수 있어요</span>` : ""}</p>
             <p class="pqt" id="pq-${p.id}-${qi}">${qq.q}</p>
-            <div class="pgroup" role="radiogroup" aria-labelledby="pq-${p.id}-${qi}">
+            <div class="pgroup" role="${qq.multi ? "group" : "radiogroup"}" aria-labelledby="pq-${p.id}-${qi}">
               ${qq.opts.map((o, i) => {
-                const on = st.picks[qi] === i;
-                return `<button class="prow2 ${on ? "on" : ""}" role="radio" aria-checked="${on}"
+                const on = pqOn(p, qi, i);
+                return `<button class="prow2 ${on ? "on" : ""} ${qq.multi ? "pm" : ""}" role="${qq.multi ? "checkbox" : "radio"}" aria-checked="${on}"
                   data-pl="${p.id}" data-plq="${qi}" data-plo="${i}"><span>${o}</span>${CHECK_SVG}</button>`;
               }).join("")}
               ${qq.etc ? `<label class="petc"><span class="sr">직접 입력</span>
@@ -2677,12 +2759,13 @@ function pollSync(p) {
   if (!box) return;
   const st = pollState(p);
   box.querySelectorAll("[data-pl]").forEach(el => {
-    const on = st.picks[Number(el.dataset.plq)] === Number(el.dataset.plo);
+    const on = pqOn(p, Number(el.dataset.plq), Number(el.dataset.plo));
     el.classList.toggle("on", on);
     el.setAttribute("aria-checked", on);
   });
+  box.querySelectorAll("[data-pqi]").forEach(el => { el.hidden = !pqShown(p, Number(el.dataset.pqi)); });
   const ok = pollAnswered(p), left = ok.filter(x => !x).length;
-  box.querySelectorAll(".pbar i").forEach((el, i) => el.classList.toggle("on", !!ok[i]));
+  box.querySelectorAll(".pbar i").forEach((el, i) => { el.classList.toggle("on", !!ok[i]); el.hidden = !pqShown(p, i); });
   const btn = box.querySelector("[data-plsend]"); if (btn) btn.disabled = left > 0;
   const hint = box.querySelector("[data-plhint]");
   if (hint) hint.textContent = left ? `${left}개 문항이 남았어요` : "모두 답했어요";
@@ -3492,7 +3575,7 @@ function remindExchange() {
 
 /* ───────── 12. 렌더 & 이벤트 ───────── */
 function render() {
-  if (!S) { app.innerHTML = viewLogin(); return bindLogin(); }
+  if (!S) { app.innerHTML = viewLogin(); refreshLoginNotice(); return bindLogin(); }
   if (V.tab === "get") app.innerHTML = viewGet();
   else if (V.tab === "draw") app.innerHTML = viewDraw();
   else if (V.tab === "album") app.innerHTML = viewAlbum();
@@ -3574,7 +3657,7 @@ function bindLogin() {
       V.tab = "get";
       render();
       window.scrollTo(0, 0);
-      setTimeout(() => UpQ.run(), 3000); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(autoUpgradeExchange, 1800); setTimeout(remindExchange, 2800); setTimeout(promoTabs, 3400);
+      setTimeout(() => UpQ.run(), 3000); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(jumpSurvey, 450); setTimeout(autoUpgradeExchange, 1800); if (!FROM_SURVEY) setTimeout(remindExchange, 2800); setTimeout(promoTabs, 3400);
       toast(mine ? "서버가 붐벼서 이 기기에 남은 기록으로 시작해요. 연결되면 자동으로 맞춰집니다."
                  : "서버가 붐벼서 임시로 시작해요. 연결되면 기존 기록이 있는지 확인해 자동으로 맞춰집니다.", 3800);
       return;
@@ -3618,7 +3701,7 @@ function bindLogin() {
     render();
     window.scrollTo(0, 0);
     if (msg) toast(msg, 3400);
-    setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(autoUpgradeExchange, 1800); setTimeout(remindExchange, 2800); setTimeout(promoTabs, 3400);      // 지난번에 못 올린 인증 사진이 있으면 이어서 올린다
+    setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(jumpSurvey, 450); setTimeout(autoUpgradeExchange, 1800); if (!FROM_SURVEY) setTimeout(remindExchange, 2800); setTimeout(promoTabs, 3400);      // 지난번에 못 올린 인증 사진이 있으면 이어서 올린다
   };
   [$("sid"), $("nm")].forEach(el => el.onkeydown = e => { if (e.key === "Enter") go.click(); });
 }
@@ -3685,8 +3768,15 @@ function bind() {
   });
   app.querySelectorAll("[data-pl]").forEach(el => el.onclick = () => {
     const p = pollOf(el.dataset.pl); if (!p) return;
-    const st = pollState(p), qi = Number(el.dataset.plq), oi = Number(el.dataset.plo);
-    st.picks[qi] = st.picks[qi] === oi ? null : oi;     // 같은 보기를 다시 누르면 선택 해제
+    const st = pollState(p), qi = Number(el.dataset.plq), oi = Number(el.dataset.plo), qq = p.questions[qi];
+    if (qq.multi) {
+      let arr = Array.isArray(st.picks[qi]) ? st.picks[qi].slice() : [];
+      const solo = i => (qq.only || []).indexOf(qq.opts[i]) >= 0;   // 예: '도움이 되지 않았다'는 혼자만
+      if (arr.indexOf(oi) >= 0) arr = arr.filter(x => x !== oi);
+      else arr = solo(oi) ? [oi] : arr.filter(x => !solo(x)).concat(oi);
+      st.picks[qi] = arr.sort((a, b) => a - b);
+    } else st.picks[qi] = st.picks[qi] === oi ? null : oi;     // 같은 보기를 다시 누르면 선택 해제
+    p.questions.forEach((x, k) => { if (!pqShown(p, k)) { st.picks[k] = null; st.etc[k] = ""; const e = app.querySelector(`[data-ple="${p.id}"][data-plq="${k}"]`); if (e) e.value = ""; } });
     pollSync(p);
   });
   app.querySelectorAll("[data-plsend]").forEach(el => el.onclick = async () => {
@@ -3699,14 +3789,16 @@ function bind() {
     const st = pollState(p);
     const week = weekKey(p.from ? p.from + "T00:00:00" : undefined);
     const now = Date.now();
-    p.questions.forEach((qq, qi) => S.surveys.push({
-      week, q: qq.q, poll: p.id,          // 서버가 '설문_<id>' 시트에 따로 정리하는 표시
-      answer: typeof st.picks[qi] === "number" ? qq.opts[st.picks[qi]] : "",
-      etc: String(st.etc[qi] || "").trim().slice(0, 100),
-      at: now,
-    }));
+    p.questions.forEach((qq, qi) => { if (!pqShown(p, qi)) return;   // 보이지 않은 문항은 보내지 않는다
+      const pk = st.picks[qi];
+      S.surveys.push({
+        week, q: qq.q, poll: p.id,          // 서버가 '설문_<id>' 시트에 따로 정리하는 표시
+        answer: qq.multi ? (Array.isArray(pk) ? pk.map(i => qq.opts[i]).join("; ") : "") : typeof pk === "number" ? qq.opts[pk] : "",
+        etc: String(st.etc[qi] || "").trim().slice(0, 100),
+        at: now,
+      }); });
     S.claims[pollKey(p)] = now;
-    const amt = Math.max(0, Number(p.cards) || 0);
+    const amt = pollCards(p);
     if (amt) { S.pending += amt; logPush({ k: "g", n: amt, key: pollKey(p) }); }
     V.needSync = true; S.syncDue = true;   // 시트로 옮길 때까지 기록에 남겨 둔다 (새로고침해도 다시 보냄)
     delete V.pl[p.id];
@@ -3934,7 +4026,7 @@ async function boot() {
       S = normalize(d);
       if (last.name) S.name = last.name;
       V.tab = "get";
-      setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(autoUpgradeExchange, 1800); setTimeout(remindExchange, 2800); setTimeout(promoTabs, 3400);
+      setTimeout(() => UpQ.run(), 1200); setTimeout(runPendingEvent, 600); setTimeout(claimDaily, 1500); setTimeout(jumpSurvey, 450); setTimeout(autoUpgradeExchange, 1800); if (!FROM_SURVEY) setTimeout(remindExchange, 2800); setTimeout(promoTabs, 3400);
       return render();
     }
   } catch (e) {

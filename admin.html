@@ -330,7 +330,7 @@ function rewardFor(st, key) {
 }
 const rewardOf = key => key === "follow" ? REWARD.follow : key === "tabs" ? (REWARD.tabs || 7)
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-11-22e";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-11-23a";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -1426,6 +1426,7 @@ const REJECT_PRESETS = [
   "인증 항목과 다른 화면입니다",
   "신청 완료 화면이 아닙니다 (프로그램 안내·목록 화면)",
   "다른 프로그램의 참여 기록입니다",
+  "2026학년도 2학기 참여 기록이 아닙니다 (이번 학기 기록으로 인증해 주세요)",
   "다른 사람의 캡처로 보입니다",
   "화면이 잘리거나 흐려서 확인할 수 없습니다",
 ];

@@ -1817,6 +1817,8 @@ function badge(tab) {
 }
 
 /* ───────── 7. 화면: 로그인 ───────── */
+/* 사이트에 올라간 파일이 최신인지 로그인 화면 맨 아래에서 확인한다 (파일을 고칠 때마다 바꿔 주세요) */
+const APP_VERSION = "11-23";
 function viewLogin() {
   return `
     <div id="skyfx"><div class="halo"></div><div class="beam"></div></div>
@@ -1870,6 +1872,7 @@ function viewLogin() {
       <p class="note" style="text-align:center;margin-top:14px">
         선물 교환 시 학생증을 확인합니다.<br>본인 학번으로 참여해 주세요.
       </p>
+      <p class="note" style="text-align:center;margin-top:10px;opacity:.45;font-size:11px">버전 ${APP_VERSION}</p>
     </div>`;
 }
 
@@ -2546,7 +2549,8 @@ function proofTips(key) {
 
 /* TABS 설문 인증 칸 — 인증 상태가 부스에서 전기손난로를 받는 조건이라 크게 보여 준다 */
 /* 부스 날짜까지(그날 포함) 홍보를 크게 한다 */
-function boothAhead() { const T = CONFIG.TABS || {}; return !!(T.booth && tabsOpen() && !store.tabsEnd); }
+/* 부스 홍보는 부스 날짜(booth)까지만 — 날짜가 지나면 로그인 화면·카드 얻기·안내 창 모두 숨긴다 */
+function boothAhead() { const T = CONFIG.TABS || {}; return !!(T.booth && todayStr() <= T.booth && tabsOpen() && !store.tabsEnd); }
 function boothDday() {
   const T = CONFIG.TABS || {}; if (!T.booth) return "";
   const d = Math.round((Date.parse(T.booth + "T00:00:00+09:00") - Date.parse(todayStr() + "T00:00:00+09:00")) / 864e5);
@@ -2607,17 +2611,18 @@ function tabsHTML() {
   const state = st === "no" ? `<span class="st no">반려</span>` : pr && pr.up ? `<span class="st wait">올리는 중</span>`
     : st === "ok" ? `<span class="st ok">승인</span>` : done ? `<span class="st wait">검토중</span>` : "";
   if (boothAhead()) return tabsHero(T, st, pr, done, state);
+  const over = !!store.tabsEnd || !!(T.booth && todayStr() > T.booth);   // 부스가 끝났으면 부스 안내 문구는 숨긴다
   return `<div class="src tabs">
     <div class="hd"><div class="ttl">${esc(T.title)}</div>${state}<div class="amt">${CONFIG.REWARD.tabs}장</div></div>
-    <div class="ttag">${store.tabsEnd ? "" : esc(T.tag) + " · "}${mdLabel(T.until)}까지</div>
+    <div class="ttag">${over ? "" : esc(T.tag) + " · "}${mdLabel(T.until)}까지</div>
     <div class="meta">${esc(T.desc)} · 1회 한정</div>
-    ${done ? `<div class="tok">✓ TABS 인증 완료${store.tabsEnd ? ` · 카드 ${CONFIG.REWARD.tabs}장 받음` : " — 부스에서 이 화면을 보여 주세요"}</div>` : ""}
+    ${done ? `<div class="tok">✓ TABS 인증 완료${over ? ` · 카드 ${CONFIG.REWARD.tabs}장 받음` : " — 부스에서 이 화면을 보여 주세요"}</div>` : ""}
     <div class="act">
       ${T.url ? `<button data-open="tabs">TABS 설문 하러 가기</button>` : ""}
       ${done ? `<button class="done" disabled>${pr && pr.up ? "사진 올리는 중" : "인증 완료"}</button>`
              : `<button data-proof="tabs">${st === "no" ? "다시 인증하기" : "완료 화면 인증하기"}</button>`}
     </div>
-    ${T.gift && !store.tabsEnd ? `<p class="note" style="margin-top:10px">🎁 ${esc(T.gift)}</p>` : ""}
+    ${T.gift && !over ? `<p class="note" style="margin-top:10px">🎁 ${esc(T.gift)}</p>` : ""}
   </div>`;
 }
 

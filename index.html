@@ -897,7 +897,7 @@ const CONFIG = {
   // 카드 지급량
   REWARD: {
     welcome: 5,      // 처음 시작할 때 바로 주는 카드 (0으로 두면 지급하지 않음)
-    follow: 5, quiz: 5, apply: 7, done: 10,
+    follow: 7, quiz: 5, apply: 7, done: 10,
     tabs: 7,         // TABS 설문 완료 인증 (더미래페스티벌 부스 이벤트)
     daily: 0,        // 2026-11-20 출석 보상 없앰 (이전 1) · 출석 보너스: 하루 한 번 접속하면 (0으로 두면 지급하지 않음)   // 2026-10-27부터 (이전: 팔로우 5 · 신청 5 · 완료 7)
     invited: 5,      // 추천인을 입력하고 가입한 학생이 받는 카드
@@ -1818,7 +1818,7 @@ function badge(tab) {
 
 /* ───────── 7. 화면: 로그인 ───────── */
 /* 사이트에 올라간 파일이 최신인지 로그인 화면 맨 아래에서 확인한다 (파일을 고칠 때마다 바꿔 주세요) */
-const APP_VERSION = "11-23";
+const APP_VERSION = "11-24";
 function viewLogin() {
   return `
     <div id="skyfx"><div class="halo"></div><div class="beam"></div></div>
@@ -1888,7 +1888,7 @@ function allEvents() {
 async function claimEvent(raw, fromQR) {
   raw = String(raw || "").trim().toUpperCase();
   const say = (ok, msg) => { V.evOk = ok; V.evMsg = msg; if (fromQR) toast(msg, 3200); if (V.tab === "get") render(); };
-  if (eventOver()) return endedToast();
+  if (noMoreCards()) return stopToast();
   const ev = allEvents().find(e => String(e.code).toUpperCase() === raw);
   if (!ev) return say(false, fromQR ? "QR 이벤트를 찾지 못했어요. 등대팀에 문의해 주세요." : "올바른 이벤트 코드가 아닙니다.");
   const until = typeof ev.until === "number" ? ev.until : ev.until ? Date.parse(ev.until + "T23:59:59+09:00") : 0;
@@ -1915,7 +1915,7 @@ async function claimEvent(raw, fromQR) {
 /* 출석 보너스: 하루 한 번(한국 날짜) 접속하면 카드를 준다. 이벤트가 끝나면 주지 않는다 */
 function claimDaily() {
   const n = Number(CONFIG.REWARD.daily) || 0;
-  if (!S || !n || eventOver()) return false;
+  if (!S || !n || noMoreCards()) return false;
   const key = "daily:" + todayStr();
   if (S.claims[key]) return false;
   S.claims[key] = Date.now();
@@ -1966,6 +1966,11 @@ function recapHTML() {
   </div>`;
 }
 function eventOver() { return !!store.closedAt; }
+/* 굿즈를 받은(지급 완료) 학생은 카드도감 참여를 마친 것으로 본다 — 카드를 더 받거나 교환을 다시 신청할 수 없다.
+   기간 설문(11/25 활동 평가 설문 등)은 다른 이벤트라 응답은 받되 카드는 주지 않는다. 남은 미개봉 카드는 열 수 있다 */
+function meDone() { return !!(S && Object.keys(S.exchanged || {}).some(t => { const x = S.exchanged[t]; return x && x.status === "done"; })); }
+function noMoreCards() { return eventOver() || meDone(); }
+const stopToast = () => eventOver() ? endedToast() : toast("굿즈를 받은 학생은 카드도감 참여가 끝났어요. 카드를 더 받을 수 없어요.", 3200);
 function closedLabel() {
   const d = new Date(Number(store.closedAt) + 9 * 3600e3).toISOString().slice(0, 10);
   return mdLabel(d);
@@ -1986,6 +1991,20 @@ function viewGet() {
     </div>
     ${pollsHTML()}
     ${recapHTML()}`);
+  if (meDone()) { const g = Object.keys(S.exchanged).filter(t => S.exchanged[t] && S.exchanged[t].status === "done").sort((a, b) => ORDER[b] - ORDER[a])[0];
+    return shell(`
+    <div class="src ended">
+      <div class="hd"><div class="ttl">굿즈를 받았어요</div><span class="st ok">${g} 등급 지급 완료</span></div>
+      <p class="meta" style="margin-top:8px">카드도감 참여가 끝났어요. 함께해 줘서 고마워요! 이제 인증·퀴즈·이벤트 코드로 카드를 더 받을 수는 없어요.</p>
+      <ul class="endl">
+        <li>굿즈는 <b>1인 1개</b>라 다른 등급으로 다시 교환할 수는 없어요.</li>
+        <li>${S.pending ? `아직 열지 않은 카드 <b>${S.pending}장</b>은 <b>뽑기</b> 탭에서 열어 도감을 채울 수 있어요.` : "도감은 <b>도감</b> 탭에서 계속 볼 수 있어요."}</li>
+        ${openPolls().length ? `<li>아래 설문은 다른 이벤트라 그대로 참여할 수 있어요 (카드는 지급되지 않아요).</li>` : ""}
+      </ul>
+      <button class="btn ghost" id="passbtn2" style="margin-top:14px">수령 기록 보기</button>
+    </div>
+    ${pollsHTML()}
+    ${recapHTML()}`); }
   const R = CONFIG.REWARD;
   const followed = !!S.claims.follow;
 
@@ -2183,7 +2202,7 @@ const belowReq = t => { const b = topReq(); return b !== null && ORDER[t] < ORDE
    이미 받은 경우(지급 완료)는 등대팀이 정하므로 건드리지 않는다. 보내지 못하면 다음에 앱을 열 때 다시 한다 */
 let _upBusy = false;
 async function autoUpgradeExchange() {
-  if (!S || _upBusy) return;
+  if (!S || _upBusy || meDone()) return;
   const t = topReq(), cur = t && S.exchanged[t];
   if (!cur || cur.status !== "req") return;
   const hi = Object.keys(TIERS).filter(k => ORDER[k] > ORDER[t] && tierHave(k) === CARDS.filter(c => c.tier === k).length)
@@ -2202,6 +2221,7 @@ async function autoUpgradeExchange() {
 }
 /* 교환을 권할 등급: 완성했고, 아직 신청 안 했고, 지금 신청한 등급보다 높은 것 중 가장 높은 1개 */
 function bestToRequest() {
+  if (meDone()) return null;   // 이미 굿즈를 받은 학생은 더 신청하지 않는다
   const ok = Object.keys(TIERS).filter(t => tierHave(t) === CARDS.filter(c => c.tier === t).length
     && !(S.exchanged[t] && S.exchanged[t].status !== "cancel") && !belowReq(t));
   return ok.length ? ok.sort((a, b) => ORDER[b] - ORDER[a])[0] : null;
@@ -2248,6 +2268,7 @@ function viewAlbum() {
     else if (sent && low) act = `<div class="okd">${topReq()} 등급으로 ${S.exchanged[topReq()].status === "done" ? "받았어요" : "받아요"}</div>`;
     else if (sent) act = `<div class="okd">연락 예정</div>`;
     else if (full && low) act = `<div class="okd">${topReq()} 등급 ${S.exchanged[topReq()].status === "done" ? "받음" : "신청함"}</div>`;
+    else if (full && meDone()) act = `<div class="okd">추가 교환 없음</div>`;   // 굿즈는 1인 1개 — 이미 받은 학생
     else if (full) act = `<button class="xbtn" data-x="${t}">교환 신청</button>`;
 
     let code = "";
@@ -2574,7 +2595,7 @@ function tabsHero(T, st, pr, done, state) {
 /* 하루 한 번 TABS 안내 창 (부스 날짜까지, 아직 인증 안 한 학생에게만) */
 function promoTabs() {
   if (FROM_SURVEY) return;   // 설문 QR로 들어온 학생에게는 띄우지 않는다
-  if (!S || !boothAhead() || S.claims.tabs || eventOver() || window.__noPromo) return;
+  if (!S || !boothAhead() || S.claims.tabs || noMoreCards() || window.__noPromo) return;
   if (document.querySelector(".celebrate, .modal, #stage, #proofModal, .sheet, #passov")) { setTimeout(promoTabs, 4000); return; }
   const key = "dingle:tabspromo:" + S.sid, mark = todayStr();
   try { if (localStorage.getItem(key) === mark) return; } catch (e) {}
@@ -2680,7 +2701,7 @@ function todayStr() {
 const pollKey  = p => "survey:" + p.id;
 const pollOpen = p => { const t = todayStr(); return (!p.from || t >= p.from) && (!p.until || t <= p.until); };
 const openPolls = () => (typeof POLLS === "undefined" ? [] : POLLS).filter(p => pollOpen(p) && (!eventOver() || p.afterClose));
-const pollCards = p => eventOver() ? 0 : Math.max(0, Number(p.cards) || 0);   // 마감 뒤에는 카드 없이 응답만
+const pollCards = p => noMoreCards() ? 0 : Math.max(0, Number(p.cards) || 0);   // 마감 뒤·굿즈를 받은 학생은 카드 없이 응답만
 /* 문항이 지금 보이는지 (when: 앞 문항이 그 답일 때만) */
 function pqShown(p, qi) {
   const w = p.questions[qi].when; if (!w) return true;
@@ -2735,7 +2756,7 @@ function pollsHTML() {
     return `
       <section class="src poll" id="poll-${p.id}" aria-label="${p.title}">
         <div class="hd"><div class="ttl">${p.title}</div>${amt ? `<div class="amt">${amt}장</div>` : ""}</div>
-        <div class="meta">${p.questions.filter(x => !x.when).length}문항${p.until ? " · " + mdLabel(p.until) + "까지" : ""} · 한 번만 참여할 수 있어요${eventOver() ? " · 카드도감은 마감되어 카드는 지급되지 않아요" : ""}</div>
+        <div class="meta">${p.questions.filter(x => !x.when).length}문항${p.until ? " · " + mdLabel(p.until) + "까지" : ""} · 한 번만 참여할 수 있어요${eventOver() ? " · 카드도감은 마감되어 카드는 지급되지 않아요" : meDone() ? " · 굿즈를 받은 학생은 카드 없이 응답만 받아요" : ""}</div>
         <div class="pbar" aria-hidden="true">${ok.map((x, i) => `<i class="${x ? "on" : ""}" data-pbi="${i}" ${pqShown(p, i) ? "" : "hidden"}></i>`).join("")}</div>
         ${p.questions.map((qq, qi) => `
           <div class="pq" data-pqi="${qi}" ${pqShown(p, qi) ? "" : "hidden"}>
@@ -2781,7 +2802,7 @@ const Proof = {
   key: null, data: null, busy: false,
 
   open(key) {
-    if (eventOver()) return endedToast();
+    if (noMoreCards()) return stopToast();
     if (key === "tabs" && !tabsOpen()) return toast("TABS 설문 인증 기간이 끝났어요.", 2600);
     this.key = key; this.data = null; this.busy = false; this.rate = 0;
     const isDone = key.indexOf("done:") === 0;
@@ -3815,7 +3836,7 @@ function bind() {
 
   // 퀴즈
   $("quizstart") && ($("quizstart").onclick = () => {
-    if (eventOver()) return endedToast();
+    if (noMoreCards()) return stopToast();
     if (!quizAvailable()) return;
     V.quizOpen = true; V.quizPick = null;
     V.quizIdx = S.quizDone.length % QUIZ.length;   // 회차마다 다음 문항
@@ -3884,7 +3905,7 @@ function bind() {
   // 이벤트 코드
   const evGo = $("evok");
   evGo && (evGo.onclick = async () => {
-    if (eventOver()) return endedToast();
+    if (noMoreCards()) return stopToast();
     const raw = ($("evcode").value || "").trim().toUpperCase();
     if (!raw) return;
     await claimEvent(raw);
@@ -3940,7 +3961,9 @@ function bind() {
 
   // 교환
   const pb = app.querySelector("#passbtn"); if (pb) pb.onclick = showPass;
+  const pb2 = app.querySelector("#passbtn2"); if (pb2) pb2.onclick = showPass;
   app.querySelectorAll("[data-x]").forEach(el => el.onclick = () => {
+    if (meDone()) return toast("이미 굿즈를 받았어요 (1인 1개)", 2600);
     V.codeOpen = el.dataset.x; V.codeErr = false; V.codeMsg = ""; render();
     setTimeout(() => $("xcontact") && $("xcontact").focus(), 30);
   });

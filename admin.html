@@ -348,7 +348,7 @@ function rewardFor(st, key) {
 }
 const rewardOf = key => key === "follow" ? REWARD.follow : key === "tabs" ? (REWARD.tabs || 7)
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-11-23b";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-11-24a";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -515,8 +515,9 @@ function stats() {
     const hid = !!(st.adm && st.adm.hide);   // 순위 제외 학생은 완성자 수에서 빼고 따로 센다 (학생 순위표와 같은 기준)
     TIER_KEYS.forEach(t => { if (tierDone(st, t) === PER_TIER[t]) (hid ? s.hidComp : s.comp)[t]++; });
     if (TIER_KEYS.every(t => tierDone(st, t) === PER_TIER[t])) hid ? s.hidFull++ : s.full++;
-    s.exch += String(st.exchanged || "").split(",").filter(Boolean).length;
   });
+  // 교환 완료 = 교환 시트에서 '지급 완료'인 학생 수 (1인 1개). 학생 기록의 exchanged 칸은 학생이 다시 접속해야 바뀌어서 쓰지 않는다
+  s.exch = new Set((D.exchanges || []).filter(x => x.status === "done").map(x => String(x.sid))).size;
   s.wait = D.proofs.filter(p => p.status === "wait").length;
   return s;
 }
@@ -3437,7 +3438,15 @@ function csv(rows, name) {
 
 /* ── 렌더 ── */
 let authed = false;
+/* 학생별 '받은 등급' 칸을 교환 시트(지급 완료) 기준으로 맞춘다 — 지급 완료를 누르면 바로 반영 */
+function syncExchangedField() {
+  if (!api || !Array.isArray(D.exchanges) || !Array.isArray(D.students)) return;
+  const by = {};
+  D.exchanges.forEach(x => { if (x.status === "done" && x.tier) (by[String(x.sid)] = by[String(x.sid)] || []).push(x.tier); });
+  D.students.forEach(st => { st.exchanged = (by[String(st.sid)] || []).filter((t, i, a) => a.indexOf(t) === i).join(","); });
+}
 function render() {
+  syncExchangedField();
   _exTopCache.live = false;   // 그리기 전에 교환 상태가 바뀌었을 수 있으니 한 번은 다시 확인
   if (!authed) { app.innerHTML = viewGate(); return bindGate(); }
   if (V.tab === "review") app.innerHTML = viewReview();

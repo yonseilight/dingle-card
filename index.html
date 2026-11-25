@@ -172,6 +172,11 @@
     padding:11px 6px;box-shadow:var(--lift)}
   .gate .stat b{display:block;font-size:20px;color:var(--beam2);line-height:1.2;font-weight:700;letter-spacing:-.02em}
   .gate .stat span{font-size:11px;color:var(--mist)}
+  .endcard{text-align:center;padding:26px 20px 22px!important}
+  .endcard .endk{margin:0;font-size:12.5px;color:var(--beam);font-weight:700;letter-spacing:.02em}
+  .endcard h2{margin:8px 0 12px;font-size:23px;color:var(--foam);letter-spacing:-.02em}
+  .endcard .endt{margin:0 0 12px;font-size:14px;line-height:1.65;color:var(--mist)}
+  .endcard .btn{display:flex;align-items:center;justify-content:center;text-decoration:none;margin-top:6px}
   .gate .card-form{background:var(--hull);border-radius:var(--r-lg);padding:18px 16px;
     box-shadow:var(--lift);margin-top:20px}
   /* 로그인 화면은 뒤에서 금빛 입자가 떠다니므로 면을 거의 불투명하게 */
@@ -902,7 +907,7 @@ const CONFIG = {
   // 카드 지급량
   REWARD: {
     welcome: 5,      // 처음 시작할 때 바로 주는 카드 (0으로 두면 지급하지 않음)
-    follow: 5, quiz: 5, apply: 7, done: 10,
+    follow: 7, quiz: 5, apply: 7, done: 10,
     tabs: 7,         // TABS 설문 완료 인증 (더미래페스티벌 부스 이벤트)
     daily: 0,        // 2026-11-20 출석 보상 없앰 (이전 1) · 출석 보너스: 하루 한 번 접속하면 (0으로 두면 지급하지 않음)   // 2026-10-27부터 (이전: 팔로우 5 · 신청 5 · 완료 7)
     invited: 5,      // 추천인을 입력하고 가입한 학생이 받는 카드
@@ -1755,6 +1760,7 @@ async function refreshLoginNotice() {
     const j = await r.json();
     if (!j || !j.v) return;
     store.takeMeta(j);
+    if (!S && !!document.querySelector(".endcard") !== loginClosed()) { render(); return; }   // 마감 여부가 바뀌었으면 다시 그림
     const el = document.getElementById("loginNotice");
     if (el && !S) el.outerHTML = loginNoticeHTML();
   } catch (e) { /* 공지는 못 받아도 로그인에는 지장 없음 */ }
@@ -1823,7 +1829,10 @@ function badge(tab) {
 
 /* ───────── 7. 화면: 로그인 ───────── */
 /* 사이트에 올라간 파일이 최신인지 로그인 화면 맨 아래에서 확인한다 (파일을 고칠 때마다 바꿔 주세요) */
-const APP_VERSION = "11-25";
+const APP_VERSION = "11-25b";
+/* 마감 뒤에는 로그인 칸 대신 마감 인사를 보여 준다 ([내 도감 보러 가기]를 누르면 로그인 칸,
+   그날 열린 설문 QR로 들어온 학생은 바로 로그인 칸) */
+function loginClosed() { return eventOver() && !V.showLogin && !(FROM_SURVEY && openPolls().length); }
 function viewLogin() {
   return `
     <div id="skyfx"><div class="halo"></div><div class="beam"></div></div>
@@ -1847,7 +1856,14 @@ function viewLogin() {
         </div>
       </div>
       ${loginNoticeHTML()}
-      <div class="card-form" style="margin-top:20px">
+      ${loginClosed() ? `<div class="card-form endcard" style="margin-top:20px">
+        <p class="endk">2026-2학기 딩글이 카드도감</p>
+        <h2>이벤트가 마감되었습니다</h2>
+        <p class="endt">9월 23일부터 ${closedLabel()}까지<br>딩글이 카드도감에 함께해 주셔서 감사합니다!</p>
+        <p class="endt" style="opacity:.8">등대팀 소식은 인스타그램에서 만나요.</p>
+        ${CONFIG.INSTAGRAM ? `<a class="btn" href="${CONFIG.INSTAGRAM}" target="_blank" rel="noopener">등대팀 인스타그램</a>` : ""}
+        <button class="btn ghost" id="showLogin" style="margin-top:10px">내 도감 보러 가기</button>
+      </div>` : `<div class="card-form" style="margin-top:20px">
       <div class="field">
         <label for="sid">학번</label>
         <input id="sid" placeholder="학번 10자리" inputmode="numeric" autocomplete="off">
@@ -1873,10 +1889,10 @@ function viewLogin() {
       ${typeof boothAhead === "function" && boothAhead() ? `<div class="welcome gtabs">🎁 ${mdLabel(CONFIG.TABS.booth)} ${esc(CONFIG.TABS.place)} · TABS 참여 인증하면 <b>${esc(CONFIG.TABS.prize)} 선착순 ${CONFIG.TABS.prizeCount}명</b></div>` : ""}
       ${welcomeCards() ? `<div class="welcome">지금 시작하면 카드 ${CONFIG.REWARD.welcome}장을 바로 받아요</div>` : ""}
       <button class="btn" id="go">시작하기</button>
-      </div>
-      <p class="note" style="text-align:center;margin-top:14px">
+      </div>`}
+      ${loginClosed() ? "" : `<p class="note" style="text-align:center;margin-top:14px">
         선물 교환 시 학생증을 확인합니다.<br>본인 학번으로 참여해 주세요.
-      </p>
+      </p>`}
       <p class="note" style="text-align:center;margin-top:10px;opacity:.45;font-size:11px">버전 ${APP_VERSION}</p>
     </div>`;
 }
@@ -3638,6 +3654,7 @@ function render() {
 }
 
 function bindLogin() {
+  const sl = $("showLogin"); if (sl) sl.onclick = () => { V.showLogin = true; render(); setTimeout(() => { const i = $("sid"); if (i) i.focus(); }, 50); };
   const sky = $("skyfx");
   if (sky && !sky.dataset.on) {
     sky.dataset.on = "1";
@@ -3676,6 +3693,7 @@ function bindLogin() {
   }
 
   const go = $("go");
+  if (!go) return;   // 마감 인사 화면
   go.onclick = async () => {
     const sid = $("sid").value.trim();
     const nm  = $("nm").value.trim();

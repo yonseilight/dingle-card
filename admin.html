@@ -348,7 +348,7 @@ function rewardFor(st, key) {
 }
 const rewardOf = key => key === "follow" ? REWARD.follow : key === "tabs" ? (REWARD.tabs || 7)
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-11-25a";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-11-25b";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -2011,7 +2011,8 @@ function hbarList(rows, base, color, unit) {
 /* 한 줄 100% 막대 (신규·기존 비율 등) */
 function splitBar(parts) {
   const tot = parts.reduce((a, p) => a + p[1], 0) || 1;
-  return `<div class="fsplit">${parts.map(([l, v, c]) => v ? `<i style="width:${(v / tot * 100).toFixed(1)}%;background:${c}"><span>${esc(l)} ${KO(v)}명 · ${PCT(v, tot)}%</span></i>` : "").join("")}</div>`;
+  return `<div class="fsplit">${parts.map(([l, v, c]) => v ? `<i style="width:${(v / tot * 100).toFixed(1)}%;background:${c}">${v / tot >= 0.14 ? `<span>${esc(l)} ${PCT(v, tot)}%</span>` : ""}</i>` : "").join("")}</div>
+    <div class="fleg" style="margin:-4px 0 8px">${parts.map(([l, v, c]) => `<span><i style="background:${c}"></i>${esc(l)} ${KO(v)}명</span>`).join("")}</div>`;
 }
 /* 날짜별 누적 */
 function dayRange(from, to) { const out = []; for (let t = ymdMs(from) + 12 * 3600e3; t <= ymdMs(to, true); t += 864e5) out.push(kstYmd(t)); return out; }
@@ -2023,14 +2024,26 @@ function cumByDay(days, times) {
 /* ───────── 이벤트(기간 설문)별 데이터 ───────── */
 const EV_KEY = "dingle:evRep";
 const EV_DEFAULT = {
+  booth: { name: "더미래페스티벌 등대팀 부스", place: "더미래페스티벌 등대팀 부스",
+    desc: "교내 학습지원 프로그램을 둘러보는 TABS 설문을 완료하고 카드도감에 인증하면 카드를 지급하고, 부스에서 인증 화면을 보여 준 학생에게 전기손난로(선착순)를 지급함. 학습지원 프로그램 퀴즈 참여자에게 인형 키링을 지급함." },
   "2026-11-25": { name: "크리스마스 소원트리 팝업", place: "컨버전스 110호 (등대팀 활동실)",
     desc: "카드도감 사이트에서 ‘등대팀 활동 평가 설문’에 참여한 학생이 연말 소원을 적어 트리에 달고 돌림판을 돌려 경품(치이카와 키링·2027 탁상 달력)을 받는 현장 이벤트. 같은 자리에서 카드도감 굿즈도 지급함." },
 };
+const BOOTH_YMD = "2026-11-10";
 function evList() {
-  return pollGroups().filter(g => g.people.length).map(g => {
+  const out = pollGroups().filter(g => g.people.length).map(g => {
     const def = POLL_DEF[g.id] || {};
     return { id: g.id, def, from: def.from || g.id, until: def.until || def.from || g.id, people: g.people, title: def.title || "기간 설문" };
-  }).sort((a, b) => a.from < b.from ? -1 : 1);
+  });
+  // 더미래페스티벌 부스 (TABS 설문 인증 연계) — 기간 설문은 아니지만 이벤트별 보고서에 함께 넣는다
+  const tabs = (D.proofs || []).filter(p => p.key === "tabs");
+  if (tabs.length) {
+    const ts = tabs.map(p => Number(p.at) || 0).filter(Boolean), lastDay = ts.length ? kstYmd(Math.max(...ts)) : BOOTH_YMD;
+    out.push({ id: "booth", kind: "booth", def: {}, from: BOOTH_YMD, until: BOOTH_YMD, title: "TABS 설문 인증",
+      tabsFrom: ts.length ? kstYmd(Math.min(...ts)) : BOOTH_YMD, tabsTo: lastDay < BOOTH_YMD ? BOOTH_YMD : lastDay,
+      people: tabs.map(p => ({ sid: p.sid, name: p.name, at: Number(p.at) || 0, status: p.status })) });
+  }
+  return out.sort((a, b) => a.from < b.from ? -1 : 1);
 }
 function evLoad(id) {
   const ev = evList().find(e => e.id === id) || { id, from: id, until: id, title: "기간 설문", def: {} };
@@ -2041,6 +2054,7 @@ function evLoad(id) {
 }
 function evSave(id, o) { try { const all = JSON.parse(localStorage.getItem(EV_KEY) || "{}") || {}; all[id] = o; localStorage.setItem(EV_KEY, JSON.stringify(all)); } catch (e) {} }
 function evData(ev) {
+  if (ev.kind === "booth") return boothData(ev);
   const S = D.students, t0 = ymdMs(ev.from), t1 = ymdMs(ev.until, true), inP = t => t && t >= t0 && t <= t1;
   const ppl = ev.people, sids = new Set(ppl.map(p => String(p.sid)));
   const newbies = S.filter(x => sids.has(String(x.sid)) && inP(x.created)).length;
@@ -2060,6 +2074,66 @@ function evData(ev) {
   return { n: ppl.length, newbies, old: ppl.length - newbies, before, after, proofs, goods, goodsKnown, single, slots, qs };
 }
 
+/* 더미래페스티벌 부스: TABS 인증 + 부스 경품 */
+function boothData(ev) {
+  const S = D.students, t0 = ymdMs(BOOTH_YMD), t1 = ymdMs(BOOTH_YMD, true), ppl = ev.people;
+  const sids = new Set(ppl.map(p => String(p.sid)));
+  const pre = ppl.filter(p => p.at && p.at < t0).length, day = ppl.filter(p => p.at >= t0 && p.at <= t1).length, post = ppl.filter(p => p.at > t1).length;
+  const ok = ppl.filter(p => p.status === "ok").length, no = ppl.filter(p => p.status === "no").length, wait = ppl.length - ok - no;
+  const newbies = S.filter(x => sids.has(String(x.sid)) && x.created >= t0 && x.created <= t1).length;
+  const before = S.filter(x => x.created && x.created < t0).length, after = S.filter(x => x.created && x.created <= t1).length;
+  const days = dayRange(ev.tabsFrom, ev.tabsTo);
+  const daily = days.map(d => [mdShort(d), ppl.filter(p => p.at && kstYmd(p.at) === d).length]);
+  const hs = ppl.filter(p => p.at >= t0 && p.at <= t1).map(p => new Date(p.at + 9 * 3600e3).getUTCHours());
+  const lo = Math.min(9, ...hs), hi = Math.max(17, ...hs), hourly = []; for (let h = lo; h <= hi; h++) hourly.push([h + "시", hs.filter(x => x === h).length]);
+  const r = reportData().booth;
+  return { n: ppl.length, newbies, old: ppl.length - newbies, before, after, pre, day, post, ok, no, wait, days, daily, hourly,
+    hand: r.hand, handT: r.handT || 30, quiz: r.quiz, keyT: r.keyT || 155, proofs: ppl.length, goods: 0, goodsKnown: false, single: true, slots: hourly, qs: [] };
+}
+function boothReportHTML(ev) {
+  const f = evLoad(ev.id), r = boothData(ev);
+  const lines = t => String(t || "").split("\n").map(x => x.trim()).filter(Boolean);
+  const ft = rows => `<table class="ft finfo"><thead><tr><th></th><th></th></tr></thead><tbody>${rows.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join("")}</tbody></table>`;
+  const peakD = r.daily.reduce((a, s) => s[1] > a[1] ? s : a, ["", 0]), peakH = r.hourly.reduce((a, s) => s[1] > a[1] ? s : a, ["", 0]);
+  const auto = [
+    `TABS 설문 인증 <b>${KO(r.n)}명</b> — 부스 전 사전 인증 ${KO(r.pre)}명, 부스 당일 ${KO(r.day)}명${r.post ? `, 이후 ${KO(r.post)}명` : ""}.`,
+    `검토 결과 승인 ${KO(r.ok)}명, 반려 ${KO(r.no)}명${r.wait ? `, 검토 전 ${KO(r.wait)}명` : ""} (승인율 ${PCT(r.ok, r.n)}%).`,
+    `부스 경품: 전기손난로 <b>${KO(r.hand)}개</b>${r.handT ? `(준비 ${KO(r.handT)}개)` : ""}, 학습지원 프로그램 퀴즈 인형 키링 <b>${KO(r.quiz)}개</b>${r.keyT ? `(준비 ${KO(r.keyT)}개)` : ""} 지급.`,
+    `부스 당일 카드도감에 처음 참여한 학생 ${KO(r.after - r.before)}명 (참여 학생 ${KO(r.before)} → ${KO(r.after)}명).`,
+    peakD[1] ? `TABS 인증이 가장 많았던 날: ${peakD[0]} (${KO(peakD[1])}명).` : "",
+  ].filter(Boolean);
+  return `<article class="rep fin" id="report"><table class="rpage"><thead><tr><td><div class="rrh"><span>${esc(f.name)} 결과보고서</span><span>미래융합교육혁신원 등대팀 20기</span></div></td></tr></thead>
+    <tfoot><tr><td><div class="rrf"></div></td></tr></tfoot><tbody><tr><td class="rbody">
+    <div class="fcov"><div class="forg">미래융합교육혁신원 등대팀(Lighthouse Team) 20기 · 딩글이 카드도감 연계 이벤트</div>
+      <h1>「${esc(f.name)}」 결과보고서</h1><div class="fsubt">${frYmd(BOOTH_YMD)} · TABS 설문 연계</div></div>
+    ${ft([["이벤트명", esc(f.name)], ["일시", frYmd(BOOTH_YMD)], ["장소", esc(f.place)], ["내용", esc(f.desc)],
+      ["TABS 인증 기간", `${frYmd(ev.tabsFrom)} ~ ${frYmd(ev.tabsTo)} (카드도감 ‘TABS 설문 참여 인증’)`], ["작성일", frDate(Date.now())]])}
+    <h2 class="fh1">주요 성과</h2>
+    <div class="fkpi">
+      <div><span>TABS 설문 인증</span><b>${KO(r.n)}<em>명</em></b><small>승인 ${KO(r.ok)}명 · ${PCT(r.ok, r.n)}%</small></div>
+      <div><span>부스 전 사전 인증</span><b>${KO(r.pre)}<em>명</em></b><small>당일 ${KO(r.day)}명</small></div>
+      <div><span>전기손난로 지급</span><b>${KO(r.hand)}<em>개</em></b><small>준비 ${KO(r.handT)}개</small></div>
+      <div><span>퀴즈 키링 지급</span><b>${KO(r.quiz)}<em>개</em></b><small>준비 ${KO(r.keyT)}개</small></div>
+    </div>
+    <ol class="fsum">${auto.map(l => `<li>${l}</li>`).join("")}</ol>
+    <h2 class="fh1">참여 현황</h2>
+    ${barChart({ title: "날짜별 TABS 설문 인증", sub: peakD[1] ? `가장 많은 날 ${peakD[0]} ${peakD[1]}명` : "", cats: r.daily.map(d => d[0]), series: [{ name: "인증", vals: r.daily.map(d => d[1]), color: CH.blue }], H: 180 })}
+    <div class="fc2">
+      ${barChart({ title: "부스 당일 시간대별 인증", sub: peakH[1] ? `가장 많을 때 ${peakH[0]} ${peakH[1]}명` : "당일 인증 없음", cats: r.hourly.map(s => s[0]), series: [{ name: "인증", vals: r.hourly.map(s => s[1]), color: CH.gold }], W: 460, H: 190 })}
+      <figure class="fchart"><figcaption><b>인증 시점과 검토 결과</b></figcaption>
+        ${splitBar([["사전", r.pre, CH.blue], ["당일", r.day, CH.gold], ["이후", r.post, CH.mute]])}
+        ${hbarList([["승인", r.ok], ["반려", r.no], ["검토 전", r.wait]], r.n, CH.green)}</figure>
+    </div>
+    <h2 class="fh1">부스 경품 지급</h2>
+    ${barChart({ title: "경품별 준비 수량과 지급 수량", sub: "개", cats: ["전기손난로 (TABS 인증)", "인형 키링 (프로그램 퀴즈)"], series: [{ name: "준비", vals: [r.handT, r.keyT], color: "#B8C0CE" }, { name: "지급", vals: [r.hand, r.quiz], color: CH.gold }], H: 160 })}
+    <h2 class="fh1">성과 및 개선점</h2>
+    <h3 class="fh2">성과</h3><ul class="fl">${auto.map(l => `<li>${l.replace(/<\/?b>/g, "")}</li>`).concat(lines(f.achieve).map(l => `<li>${esc(l)}</li>`)).join("")}</ul>
+    ${lines(f.improve).length ? `<h3 class="fh2">개선점</h3><ul class="fl">${lines(f.improve).map(l => `<li>${esc(l)}</li>`).join("")}</ul>` : ""}
+    <p class="fnote">※ 숫자는 카드도감 관리자 데이터 기준(${frDate(Date.now())}). 사전 인증 = ${frYmd(BOOTH_YMD)} 전에 TABS 인증을 올린 학생. 경품 수량은 현장·경품 탭 기록 기준.</p>
+    <div class="fend">— 끝 —</div>
+    </td></tr></tbody></table></article>`;
+}
+
 /* 설문 한 문항 → 가로 막대 */
 function qBars(q, color) {
   const opts = Object.keys(q.cnt).sort((a, b) => q.cnt[b] - q.cnt[a]);
@@ -2073,6 +2147,7 @@ function qBars(q, color) {
 /* ───────── 이벤트별 보고서 ───────── */
 function eventReportHTML(id) {
   const ev = evList().find(e => e.id === id);
+  if (ev && ev.kind === "booth") return boothReportHTML(ev);
   if (!ev) return `<article class="rep fin" id="report"><p>이 설문에 응답이 아직 없습니다.</p></article>`;
   const f = evLoad(id), r = evData(ev);
   const lines = t => String(t || "").split("\n").map(x => x.trim()).filter(Boolean);
@@ -2119,7 +2194,7 @@ function evEditorHTML(id) {
   const evs = evList(), f = evLoad(id);
   const ta = (k, label, rows, hint) => `<label class="fre"><span>${label}${hint ? ` <i>${hint}</i>` : ""}</span><textarea id="ev_${k}" rows="${rows}">${esc(f[k])}</textarea></label>`;
   return `<div class="panel">
-    <div class="ph"><h2>이벤트별 보고서</h2><span class="sub">기간 설문을 연 이벤트마다 따로 만듭니다 · 숫자·그래프는 자동</span>
+    <div class="ph"><h2>이벤트별 보고서</h2><span class="sub">기간 설문 이벤트와 더미래페스티벌 부스(TABS 설문)를 따로 만듭니다 · 숫자·그래프는 자동</span>
       <div class="right"><button class="btn sm" id="repprint">인쇄 · PDF로 저장</button><button class="btn gh sm" id="rephtml">HTML로 저장</button></div></div>
     <div class="pb">
       <div class="frm" style="margin-bottom:10px">${evs.map(e => `<button class="btn sm ${e.id === id ? "" : "gh"}" data-evrep="${e.id}">${esc(evLoad(e.id).name)}</button>`).join("") || `<span class="note">응답이 있는 기간 설문이 없습니다.</span>`}</div>
@@ -2152,8 +2227,6 @@ function growthChart(endMs) {
   const end = kstYmd(endMs), days = dayRange(EVENT_START, end);
   const marks = [];
   evList().forEach(e => { const i = days.indexOf(e.from); if (i >= 0) marks.push({ i, label: evLoad(e.id).name.split(" (")[0] }); });
-  const tabsP = D.proofs.filter(p => p.key === "tabs");
-  if (tabsP.length) { const i = days.indexOf("2026-11-10"); if (i >= 0 && !marks.some(m => m.i === i)) marks.push({ i, label: "더미래페스티벌 부스" }); }
   marks.sort((a, b) => a.i - b.i);
   return lineChart({ H: 215, title: "카드도감 참여 학생 누적 추이", sub: `${mdShort(EVENT_START)} ~ ${mdShort(end)} · 날짜별 누적`, days, marks,
     series: [{ name: "누적 참여 학생(명)", vals: cumByDay(days, D.students.map(x => x.created)), color: CH.blue, area: true },
@@ -2262,9 +2335,9 @@ function finalReportHTML() {
         [["TABS 설문 인증", r.booth.tabs + "명 (사전 " + r.booth.pre + "명)", ...(boothRows.some(b => b[2]) && f.showCost ? ["-"] : [])],
          ...boothRows.map(b => [b[0] + " 지급", b[1], ...(boothRows.some(z => z[2]) && f.showCost ? [b[2] ? WON(Number(b[2]) * parseInt(b[1], 10)) : "-"] : [])])], null, "fnum")}
       ${note("준비 수량(전기손난로 30개 · 인형 키링 155개)을 모두 지급함.")}` : ""}
-    ${evs.length ? `${H2(hasBooth ? 5 : 4, "기간 설문 이벤트 성과")}
-      ${barChart({ title: "이벤트별 참여 인원", sub: "명", long: true, cats: evs.map(e => e.f.name.split(" (")[0]), series: [{ name: "설문 참여", vals: evs.map(e => e.d.n), color: CH.blue }, { name: "처음 참여(가입)", vals: evs.map(e => e.d.newbies), color: CH.gold }], H: 200 })}
-      ${ft(["이벤트", "일시", "설문 참여", "처음 참여", "참여 학생 변화"], evs.map(e => [esc(e.f.name), e.e.from === e.e.until ? frYmd(e.e.from) : frYmd(e.e.from) + " ~ " + frYmd(e.e.until).replace(/^\d+\. /, ""), KO(e.d.n) + "명", KO(e.d.newbies) + "명", `${KO(e.d.before)} → ${KO(e.d.after)}명 (+${KO(e.d.after - e.d.before)})`]), null, "fnum")}
+    ${evs.length ? `${H2(hasBooth ? 5 : 4, "이벤트별 성과")}
+      ${barChart({ title: "이벤트별 참여 인원", sub: "명", long: true, cats: evs.map(e => e.f.name.split(" (")[0]), series: [{ name: "참여 (설문·TABS 인증)", vals: evs.map(e => e.d.n), color: CH.blue }, { name: "처음 참여(가입)", vals: evs.map(e => e.d.newbies), color: CH.gold }], H: 200 })}
+      ${ft(["이벤트", "일시", "참여 (설문·인증)", "처음 참여", "참여 학생 변화"], evs.map(e => [esc(e.f.name), e.e.from === e.e.until ? frYmd(e.e.from) : frYmd(e.e.from) + " ~ " + frYmd(e.e.until).replace(/^\d+\. /, ""), KO(e.d.n) + "명", KO(e.d.newbies) + "명", `${KO(e.d.before)} → ${KO(e.d.after)}명 (+${KO(e.d.after - e.d.before)})`]), null, "fnum")}
       ${note("이벤트마다 자세한 결과는 ‘이벤트별 보고서’에 따로 정리함.")}` : ""}`;
 
   /* Ⅲ. 설문 결과 */

@@ -308,6 +308,11 @@
   .petc input::placeholder{color:#5D729A}
   .petc:focus-within{background:rgba(255,201,74,.06)}
   .psend{margin-top:20px}
+  .pnav{display:flex;gap:8px;margin-top:20px}
+  .pnav .btn{flex:1;margin-top:0}
+  .pnav .pprev{flex:0 0 32%}
+  .pnav [hidden]{display:none}
+  .pbar i.cur{box-shadow:0 0 0 1.5px var(--beam)}
   .phint{margin:9px 0 0;text-align:center;font-size:12.5px;color:var(--dim)}
   .poll.done{padding:15px 16px}
   .pdone{display:flex;gap:12px;align-items:center}
@@ -897,7 +902,7 @@ const CONFIG = {
   // 카드 지급량
   REWARD: {
     welcome: 5,      // 처음 시작할 때 바로 주는 카드 (0으로 두면 지급하지 않음)
-    follow: 5, quiz: 5, apply: 7, done: 10,
+    follow: 7, quiz: 5, apply: 7, done: 10,
     tabs: 7,         // TABS 설문 완료 인증 (더미래페스티벌 부스 이벤트)
     daily: 0,        // 2026-11-20 출석 보상 없앰 (이전 1) · 출석 보너스: 하루 한 번 접속하면 (0으로 두면 지급하지 않음)   // 2026-10-27부터 (이전: 팔로우 5 · 신청 5 · 완료 7)
     invited: 5,      // 추천인을 입력하고 가입한 학생이 받는 카드
@@ -1818,7 +1823,7 @@ function badge(tab) {
 
 /* ───────── 7. 화면: 로그인 ───────── */
 /* 사이트에 올라간 파일이 최신인지 로그인 화면 맨 아래에서 확인한다 (파일을 고칠 때마다 바꿔 주세요) */
-const APP_VERSION = "11-24";
+const APP_VERSION = "11-25";
 function viewLogin() {
   return `
     <div id="skyfx"><div class="halo"></div><div class="beam"></div></div>
@@ -2732,6 +2737,18 @@ function pollAnswered(p) {
     || !!String(st.etc[qi] || "").trim());
 }
 
+/* 설문은 한 문항씩: 지금 문항에 답해야 [다음]으로 넘어간다 (마지막 문항에서 제출) */
+const pollList = p => p.questions.map((_, i) => i).filter(i => pqShown(p, i));   // 지금 보이는 문항 순서
+function pollCur(p) {
+  V.plStep = V.plStep || {};
+  const L = pollList(p); let c = V.plStep[p.id];
+  if (c == null || L.indexOf(c) < 0) {   // 처음이거나 그 문항이 숨겨졌으면: 아직 안 답한 첫 문항부터
+    const ok = pollAnswered(p);
+    c = L.find(i => !ok[i]); if (c == null) c = L[L.length - 1];
+    V.plStep[p.id] = c;
+  }
+  return c;
+}
 function pollsHTML() {
   return openPolls().map(p => {
     const did = !!S.claims[pollKey(p)];
@@ -2759,8 +2776,8 @@ function pollsHTML() {
         <div class="meta">${p.questions.filter(x => !x.when).length}문항${p.until ? " · " + mdLabel(p.until) + "까지" : ""} · 한 번만 참여할 수 있어요${eventOver() ? " · 카드도감은 마감되어 카드는 지급되지 않아요" : meDone() ? " · 굿즈를 받은 학생은 카드 없이 응답만 받아요" : ""}</div>
         <div class="pbar" aria-hidden="true">${ok.map((x, i) => `<i class="${x ? "on" : ""}" data-pbi="${i}" ${pqShown(p, i) ? "" : "hidden"}></i>`).join("")}</div>
         ${p.questions.map((qq, qi) => `
-          <div class="pq" data-pqi="${qi}" ${pqShown(p, qi) ? "" : "hidden"}>
-            <p class="pqn">질문 ${qi + 1}${qq.multi ? ` <span class="pmulti">여러 개 고를 수 있어요</span>` : ""}</p>
+          <div class="pq" data-pqi="${qi}" ${pqShown(p, qi) && qi === pollCur(p) ? "" : "hidden"}>
+            <p class="pqn">질문 <span data-pqno="${qi}">${pollList(p).indexOf(qi) + 1}</span> / <span data-pqtot>${pollList(p).length}</span>${qq.multi ? ` <span class="pmulti">여러 개 고를 수 있어요</span>` : ""}</p>
             <p class="pqt" id="pq-${p.id}-${qi}">${qq.q}</p>
             <div class="pgroup" role="${qq.multi ? "group" : "radiogroup"}" aria-labelledby="pq-${p.id}-${qi}">
               ${qq.opts.map((o, i) => {
@@ -2773,8 +2790,12 @@ function pollsHTML() {
                   placeholder="기타 · 직접 입력" value="${esc(st.etc[qi] || "")}" autocomplete="off"></label>` : ""}
             </div>
           </div>`).join("")}
-        <button class="btn psend" data-plsend="${p.id}" ${left ? "disabled" : ""}>${amt ? `제출하고 카드 ${amt}장 받기` : "설문 제출하기"}</button>
-        <p class="phint" data-plhint="${p.id}" aria-live="polite">${left ? `${left}개 문항이 남았어요` : "모두 답했어요"}</p>
+        <div class="pnav">
+          <button class="btn ghost pprev" data-plprev="${p.id}">이전</button>
+          <button class="btn pnext" data-plnext="${p.id}">다음</button>
+          <button class="btn psend" data-plsend="${p.id}" ${left ? "disabled" : ""}>${amt ? `제출하고 카드 ${amt}장 받기` : "설문 제출하기"}</button>
+        </div>
+        <p class="phint" data-plhint="${p.id}" aria-live="polite"></p>
       </section>`;
   }).join("");
 }
@@ -2789,12 +2810,19 @@ function pollSync(p) {
     el.classList.toggle("on", on);
     el.setAttribute("aria-checked", on);
   });
-  box.querySelectorAll("[data-pqi]").forEach(el => { el.hidden = !pqShown(p, Number(el.dataset.pqi)); });
+  const cur = pollCur(p), L = pollList(p), pos = L.indexOf(cur), last = pos === L.length - 1;
+  box.querySelectorAll("[data-pqi]").forEach(el => { const qi = Number(el.dataset.pqi); el.hidden = !(pqShown(p, qi) && qi === cur); });
+  box.querySelectorAll("[data-pqno]").forEach(el => { el.textContent = L.indexOf(Number(el.dataset.pqno)) + 1; });
+  box.querySelectorAll("[data-pqtot]").forEach(el => { el.textContent = L.length; });
   const ok = pollAnswered(p), left = ok.filter(x => !x).length;
-  box.querySelectorAll(".pbar i").forEach((el, i) => { el.classList.toggle("on", !!ok[i]); el.hidden = !pqShown(p, i); });
-  const btn = box.querySelector("[data-plsend]"); if (btn) btn.disabled = left > 0;
+  box.querySelectorAll(".pbar i").forEach((el, i) => { el.classList.toggle("on", !!ok[i]); el.classList.toggle("cur", i === cur); el.hidden = !pqShown(p, i); });
+  const prev = box.querySelector("[data-plprev]"), next = box.querySelector("[data-plnext]"), btn = box.querySelector("[data-plsend]");
+  if (prev) prev.hidden = pos <= 0;
+  if (next) { next.hidden = last; next.disabled = !ok[cur]; }
+  if (btn) { btn.hidden = !last; btn.disabled = left > 0; }
   const hint = box.querySelector("[data-plhint]");
-  if (hint) hint.textContent = left ? `${left}개 문항이 남았어요` : "모두 답했어요";
+  if (hint) hint.textContent = !ok[cur] ? (p.questions[cur].multi ? "하나 이상 골라야 다음으로 넘어갈 수 있어요" : "답을 골라야 다음으로 넘어갈 수 있어요")
+    : last ? (left ? `답하지 않은 문항이 ${left}개 있어요` : "모두 답했어요. 제출해 주세요") : "";
 }
 
 
@@ -3805,6 +3833,18 @@ function bind() {
     p.questions.forEach((x, k) => { if (!pqShown(p, k)) { st.picks[k] = null; st.etc[k] = ""; const e = app.querySelector(`[data-ple="${p.id}"][data-plq="${k}"]`); if (e) e.value = ""; } });
     pollSync(p);
   });
+  const pollGo = (id, d) => {
+    const p = pollOf(id); if (!p) return;
+    const cur = pollCur(p), L = pollList(p), pos = L.indexOf(cur);
+    if (d > 0 && !pollAnswered(p)[cur]) { pollSync(p); return toast(p.questions[cur].multi ? "하나 이상 골라 주세요" : "답을 하나 골라 주세요", 1800); }
+    const to = L[pos + d]; if (to == null) return;
+    V.plStep[p.id] = to; pollSync(p);
+    const box = document.getElementById("poll-" + p.id);
+    if (box && box.getBoundingClientRect().top < 0) box.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
+  app.querySelectorAll("[data-plnext]").forEach(el => el.onclick = () => pollGo(el.dataset.plnext, 1));
+  openPolls().forEach(p => { if (S && !S.claims[pollKey(p)]) pollSync(p); });   // 처음 그린 뒤 한 문항만 보이게
+  app.querySelectorAll("[data-plprev]").forEach(el => el.onclick = () => pollGo(el.dataset.plprev, -1));
   app.querySelectorAll("[data-plsend]").forEach(el => el.onclick = async () => {
     const p = pollOf(el.dataset.plsend);
     if (!p || V.plBusy) return;

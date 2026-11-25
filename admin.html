@@ -348,7 +348,7 @@ function rewardFor(st, key) {
 }
 const rewardOf = key => key === "follow" ? REWARD.follow : key === "tabs" ? (REWARD.tabs || 7)
   : String(key).indexOf("apply:") === 0 ? REWARD.apply : String(key).indexOf("done:") === 0 ? REWARD.done : 0;
-const ADMIN_PAGE_VERSION = "2026-11-24a";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
+const ADMIN_PAGE_VERSION = "2026-11-25a";   // 이 관리자 페이지 파일의 버전 (로그인 화면 아래에 표시)
 let SRV = null;                             // 로그인 화면에서 확인한 서버 상태
 let MISMATCH = "";                          // 학생 앱과 서버 주소가 다르면 경고 문구
 
@@ -1947,6 +1947,219 @@ function frLoad() {
 function frSave(o) { try { localStorage.setItem(FR_KEY, JSON.stringify(o)); } catch (e) {} }
 const WON = n => (Number(n) || 0).toLocaleString("ko-KR");
 
+/* ───────── 보고서 그래프 (인쇄용 흰 바탕 SVG) ───────── */
+const CH = { ink: "#0F1F3D", sub: "#4A5568", mute: "#7A8599", grid: "#E3E7EF", blue: "#2F5BD3", gold: "#E3A008", green: "#18A36B", purple: "#8F62DB", red: "#D64545" };
+const kstYmd = t => new Date(Number(t) + 9 * 3600e3).toISOString().slice(0, 10);
+const ymdMs = (ymd, end) => Date.parse(ymd + (end ? "T23:59:59.999+09:00" : "T00:00:00+09:00"));
+const mdShort = ymd => { const [, m, d] = ymd.split("-").map(Number); return m + "/" + d; };
+function niceMax(v) { if (v <= 5) return 5; const p = Math.pow(10, Math.floor(Math.log10(v))); for (const m of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= v) return m * p; return 10 * p; }
+/* 날짜별 꺾은선 (누적 추이) — series: [{name, vals, color, area}], marks: [{i, label}] */
+function lineChart(o) {
+  const W = o.W || 720, H = o.H || 260, P = { l: 44, r: 58, t: 34, b: 28 };
+  const n = o.days.length, max = niceMax(Math.max(1, ...o.series.flatMap(s => s.vals)));
+  const X = i => P.l + (W - P.l - P.r) * (n <= 1 ? 0 : i / (n - 1)), Y = v => H - P.b - (H - P.t - P.b) * v / max;
+  let g = "";
+  for (let k = 0; k <= 4; k++) { const v = max * k / 4, y = Y(v);
+    g += `<line x1="${P.l}" x2="${W - P.r}" y1="${y}" y2="${y}" stroke="${CH.grid}"/><text x="${P.l - 6}" y="${y + 3.5}" text-anchor="end" font-size="10" fill="${CH.mute}">${KO(Math.round(v))}</text>`; }
+  // x축: 매달 1일 + 처음·끝
+  o.days.forEach((d, i) => { if (i === 0 || i === n - 1 || d.slice(8) === "01") {
+    if (i !== 0 && i !== n - 1 && (i < n * 0.04 || i > n * 0.96)) return;
+    g += `<text x="${X(i)}" y="${H - 9}" text-anchor="${i === 0 ? "start" : i === n - 1 ? "end" : "middle"}" font-size="10" fill="${CH.mute}">${mdShort(d)}</text>`; } });
+  // 이벤트 표시
+  (o.marks || []).forEach((m, k) => { const x = X(m.i), ty = P.t - 8 - (k % 2) * 0;
+    g += `<line x1="${x}" x2="${x}" y1="${P.t - 4}" y2="${H - P.b}" stroke="${CH.gold}" stroke-dasharray="3 3"/>
+      <rect x="${x - 3}" y="${P.t - 7}" width="6" height="6" transform="rotate(45 ${x} ${P.t - 4})" fill="${CH.gold}"/>
+      <text x="${x}" y="${ty - 6 - (k % 2) * 11}" text-anchor="middle" font-size="10" font-weight="700" fill="${CH.ink}">${esc(m.label)}</text>`; });
+  o.series.forEach(s => {
+    const pts = s.vals.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`);
+    if (s.area) g += `<path d="M${X(0)},${Y(0)} L${pts.join(" L")} L${X(n - 1)},${Y(0)} Z" fill="${s.color}" opacity=".12"/>`;
+    g += `<polyline points="${pts.join(" ")}" fill="none" stroke="${s.color}" stroke-width="${s.area ? 2.6 : 1.8}" stroke-linejoin="round"/>`;
+    const lv = s.vals[n - 1] || 0;
+    g += `<circle cx="${X(n - 1)}" cy="${Y(lv)}" r="3.5" fill="${s.color}"/><text x="${X(n - 1) + 7}" y="${Y(lv) + 4}" font-size="12" font-weight="800" fill="${s.color}">${KO(lv)}</text>`;
+  });
+  const leg = o.series.map(s => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join("");
+  return `<figure class="fchart"><figcaption><b>${esc(o.title)}</b>${o.sub ? `<small>${esc(o.sub)}</small>` : ""}<span class="fleg">${leg}</span></figcaption>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(o.title)}">${g}</svg></figure>`;
+}
+/* 세로 막대 (묶음) — cats: 이름, series: [{name, vals, color}] */
+function barChart(o) {
+  const W = o.W || 720, H = o.H || 220, P = { l: 36, r: 10, t: 22, b: o.long ? 40 : 26 };
+  const n = o.cats.length, m = o.series.length, max = niceMax(Math.max(1, ...o.series.flatMap(s => s.vals)));
+  const gx = (W - P.l - P.r) / Math.max(1, n), bw = Math.min(46, gx * 0.72 / m), Y = v => H - P.b - (H - P.t - P.b) * v / max;
+  let g = "";
+  for (let k = 0; k <= 4; k++) { const v = max * k / 4, y = Y(v);
+    g += `<line x1="${P.l}" x2="${W - P.r}" y1="${y}" y2="${y}" stroke="${CH.grid}"/><text x="${P.l - 6}" y="${y + 3.5}" text-anchor="end" font-size="10" fill="${CH.mute}">${KO(Math.round(v))}</text>`; }
+  o.cats.forEach((c, i) => {
+    const x0 = P.l + gx * i + (gx - bw * m) / 2;
+    o.series.forEach((s, j) => { const v = s.vals[i] || 0, x = x0 + bw * j, y = Y(v);
+      g += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(bw - 3).toFixed(1)}" height="${(H - P.b - y).toFixed(1)}" rx="3" fill="${s.color}"/>
+        <text x="${(x + (bw - 3) / 2).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="700" fill="${CH.ink}">${KO(v)}</text>`; });
+    const lines = String(c).length > 9 && o.long ? [String(c).slice(0, 9), String(c).slice(9, 18)] : [c];
+    lines.forEach((t, k) => { g += `<text x="${(P.l + gx * i + gx / 2).toFixed(1)}" y="${H - P.b + 14 + k * 12}" text-anchor="middle" font-size="10.5" fill="${CH.sub}">${esc(t)}</text>`; });
+  });
+  const leg = m > 1 ? o.series.map(s => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join("") : "";
+  return `<figure class="fchart"><figcaption><b>${esc(o.title)}</b>${o.sub ? `<small>${esc(o.sub)}</small>` : ""}<span class="fleg">${leg}</span></figcaption>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(o.title)}">${g}</svg></figure>`;
+}
+/* 가로 막대 (설문 응답·깔때기) — rows: [[이름, 값]], base: 비율 기준 */
+function hbarList(rows, base, color, unit) {
+  const max = Math.max(1, ...rows.map(r => r[1])), top = Math.max(...rows.map(r => r[1]));
+  return `<div class="fhb">${rows.map(([l, v]) => `<div class="fhr${v === top && v > 0 ? " fhtop" : ""}"><span class="fhl">${esc(l)}</span>
+    <span class="fht"><i style="width:${Math.max(v ? 1.5 : 0, v / max * 100).toFixed(1)}%;background:${color || CH.blue}"></i></span>
+    <span class="fhn">${KO(v)}${unit || "명"}${base ? `<small>${PCT(v, base)}%</small>` : ""}</span></div>`).join("")}</div>`;
+}
+/* 한 줄 100% 막대 (신규·기존 비율 등) */
+function splitBar(parts) {
+  const tot = parts.reduce((a, p) => a + p[1], 0) || 1;
+  return `<div class="fsplit">${parts.map(([l, v, c]) => v ? `<i style="width:${(v / tot * 100).toFixed(1)}%;background:${c}"><span>${esc(l)} ${KO(v)}명 · ${PCT(v, tot)}%</span></i>` : "").join("")}</div>`;
+}
+/* 날짜별 누적 */
+function dayRange(from, to) { const out = []; for (let t = ymdMs(from) + 12 * 3600e3; t <= ymdMs(to, true); t += 864e5) out.push(kstYmd(t)); return out; }
+function cumByDay(days, times) {
+  const ts = times.filter(Boolean).map(Number).sort((a, b) => a - b); let j = 0, c = 0;
+  return days.map(d => { const end = ymdMs(d, true); while (j < ts.length && ts[j] <= end) { j++; c++; } return c; });
+}
+
+/* ───────── 이벤트(기간 설문)별 데이터 ───────── */
+const EV_KEY = "dingle:evRep";
+const EV_DEFAULT = {
+  "2026-11-25": { name: "크리스마스 소원트리 팝업", place: "컨버전스 110호 (등대팀 활동실)",
+    desc: "카드도감 사이트에서 ‘등대팀 활동 평가 설문’에 참여한 학생이 연말 소원을 적어 트리에 달고 돌림판을 돌려 경품(치이카와 키링·2027 탁상 달력)을 받는 현장 이벤트. 같은 자리에서 카드도감 굿즈도 지급함." },
+};
+function evList() {
+  return pollGroups().filter(g => g.people.length).map(g => {
+    const def = POLL_DEF[g.id] || {};
+    return { id: g.id, def, from: def.from || g.id, until: def.until || def.from || g.id, people: g.people, title: def.title || "기간 설문" };
+  }).sort((a, b) => a.from < b.from ? -1 : 1);
+}
+function evLoad(id) {
+  const ev = evList().find(e => e.id === id) || { id, from: id, until: id, title: "기간 설문", def: {} };
+  const d = Object.assign({ name: ev.from === ev.until ? `${ev.title} (${mdShort(ev.from)})` : `${ev.title} (${mdShort(ev.from)} ~ ${mdShort(ev.until)})`,
+    place: "카드도감 웹사이트", desc: `카드도감 사이트에서 ‘${ev.title}’을(를) 열고, 응답한 학생에게 카드 ${ev.def.cards || 0}장을 지급함.`, achieve: "", improve: "" }, EV_DEFAULT[id] || {});
+  let s = {}; try { s = (JSON.parse(localStorage.getItem(EV_KEY) || "{}") || {})[id] || {}; } catch (e) {}
+  return Object.assign(d, s);
+}
+function evSave(id, o) { try { const all = JSON.parse(localStorage.getItem(EV_KEY) || "{}") || {}; all[id] = o; localStorage.setItem(EV_KEY, JSON.stringify(all)); } catch (e) {} }
+function evData(ev) {
+  const S = D.students, t0 = ymdMs(ev.from), t1 = ymdMs(ev.until, true), inP = t => t && t >= t0 && t <= t1;
+  const ppl = ev.people, sids = new Set(ppl.map(p => String(p.sid)));
+  const newbies = S.filter(x => sids.has(String(x.sid)) && inP(x.created)).length;
+  const before = S.filter(x => x.created && x.created < t0).length, after = S.filter(x => x.created && x.created <= t1).length;
+  const proofs = D.proofs.filter(p => inP(p.at) && p.status !== "no").length;
+  const goods = (D.exchanges || []).filter(x => x.status === "done" && inP(Number(x.doneAt) || 0)).length;
+  const goodsKnown = (D.exchanges || []).some(x => x.status === "done" && x.doneAt);
+  const single = ev.from === ev.until;
+  // 응답 시각 분포: 하루면 시간대별, 여러 날이면 날짜별
+  let slots;
+  if (single) {
+    const hs = ppl.map(p => p.at ? new Date(p.at + 9 * 3600e3).getUTCHours() : -1).filter(h => h >= 0);
+    const lo = Math.min(9, ...hs), hi = Math.max(17, ...hs);
+    slots = []; for (let h = lo; h <= hi; h++) slots.push([h + "시", hs.filter(x => x === h).length]);
+  } else slots = dayRange(ev.from, ev.until).map(d => [mdShort(d), ppl.filter(p => p.at && kstYmd(p.at) === d).length]);
+  const qs = reportData().qs.filter(q => q.kind === "poll" && q.meta && q.meta.id === ev.id);
+  return { n: ppl.length, newbies, old: ppl.length - newbies, before, after, proofs, goods, goodsKnown, single, slots, qs };
+}
+
+/* 설문 한 문항 → 가로 막대 */
+function qBars(q, color) {
+  const opts = Object.keys(q.cnt).sort((a, b) => q.cnt[b] - q.cnt[a]);
+  const tot = q.multi ? q.n : opts.reduce((a, o) => a + q.cnt[o], 0);
+  return `<div class="fq"><h4>${esc(q.q)} <small>(응답 ${q.n}명${q.multi ? " · 복수 응답" : ""})</small></h4>
+    ${q.when ? `<p class="fnote" style="margin:0 0 2px">${q.when.n}번에서 '${esc(q.when.is)}'를 고른 학생만 답함</p>` : ""}
+    ${hbarList(opts.map(o => [o, q.cnt[o]]), tot, color)}
+    ${q.etc.length ? `<p class="fnote">직접 입력: ${q.etc.slice(0, 6).map(esc).join(" · ")}${q.etc.length > 6 ? ` 외 ${q.etc.length - 6}건` : ""}</p>` : ""}</div>`;
+}
+
+/* ───────── 이벤트별 보고서 ───────── */
+function eventReportHTML(id) {
+  const ev = evList().find(e => e.id === id);
+  if (!ev) return `<article class="rep fin" id="report"><p>이 설문에 응답이 아직 없습니다.</p></article>`;
+  const f = evLoad(id), r = evData(ev);
+  const lines = t => String(t || "").split("\n").map(x => x.trim()).filter(Boolean);
+  const period = ev.from === ev.until ? frYmd(ev.from) : `${frYmd(ev.from)} ~ ${frYmd(ev.until)}`;
+  const qs = r.qs, peak = r.slots.reduce((a, s) => s[1] > a[1] ? s : a, ["", 0]);
+  const ft = (rows) => `<table class="ft finfo"><thead><tr><th></th><th></th></tr></thead><tbody>${rows.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join("")}</tbody></table>`;
+  const auto = [
+    `설문 참여 <b>${KO(r.n)}명</b>${r.newbies ? ` — 이 중 <b>${KO(r.newbies)}명(${PCT(r.newbies, r.n)}%)</b>은 이벤트 기간에 카드도감에 처음 참여함` : ""}.`,
+    `카드도감 참여 학생이 이벤트 전 ${KO(r.before)}명에서 이벤트 뒤 <b>${KO(r.after)}명</b>으로 <b>${KO(r.after - r.before)}명</b> 늘어남.`,
+    peak[1] ? `${r.single ? "가장 붐빈 시간" : "가장 많이 참여한 날"}: ${peak[0]} (${KO(peak[1])}명).` : "",
+    r.proofs ? `이벤트 기간 학습지원 인증 ${KO(r.proofs)}건 접수.` : "",
+    r.goodsKnown && r.goods ? `카드도감 굿즈 ${KO(r.goods)}개 지급.` : "",
+  ].filter(Boolean);
+  return `<article class="rep fin" id="report"><table class="rpage"><thead><tr><td><div class="rrh"><span>${esc(f.name)} 결과보고서</span><span>미래융합교육혁신원 등대팀 20기</span></div></td></tr></thead>
+    <tfoot><tr><td><div class="rrf"></div></td></tr></tfoot><tbody><tr><td class="rbody">
+    <div class="fcov"><div class="forg">미래융합교육혁신원 등대팀(Lighthouse Team) 20기 · 딩글이 카드도감 연계 이벤트</div>
+      <h1>「${esc(f.name)}」 결과보고서</h1><div class="fsubt">${period}</div></div>
+    ${ft([["이벤트명", esc(f.name)], ["일시", period], ["장소", esc(f.place)], ["내용", esc(f.desc)], ["연계 설문", `${esc(ev.title)} (${qs.length}문항${ev.def.cards ? ` · 참여 카드 ${ev.def.cards}장` : ""})`], ["작성일", frDate(Date.now())]])}
+    <h2 class="fh1">주요 성과</h2>
+    <div class="fkpi">
+      <div><span>설문 참여</span><b>${KO(r.n)}<em>명</em></b></div>
+      <div><span>처음 참여한 학생</span><b>${KO(r.newbies)}<em>명</em></b><small>참여자의 ${PCT(r.newbies, r.n)}%</small></div>
+      <div><span>카드도감 참여 학생</span><b>+${KO(r.after - r.before)}<em>명</em></b><small>${KO(r.before)} → ${KO(r.after)}명</small></div>
+      <div><span>${r.goodsKnown ? "굿즈 지급" : "학습지원 인증"}</span><b>${KO(r.goodsKnown ? r.goods : r.proofs)}<em>${r.goodsKnown ? "개" : "건"}</em></b><small>이벤트 기간</small></div>
+    </div>
+    <ol class="fsum">${auto.map(l => `<li>${l}</li>`).join("")}</ol>
+    <h2 class="fh1">참여 현황</h2>
+    <div class="fc2">
+      ${barChart({ title: r.single ? "시간대별 설문 참여" : "날짜별 설문 참여", sub: peak[1] ? `가장 많을 때 ${peak[0]} ${peak[1]}명` : "", cats: r.slots.map(s => s[0]), series: [{ name: "참여", vals: r.slots.map(s => s[1]), color: CH.blue }], W: 460, H: 210 })}
+      <figure class="fchart"><figcaption><b>참여자 구성</b><small>이벤트 기간 처음 참여 vs 기존 참여</small></figcaption>
+        ${splitBar([["처음 참여", r.newbies, CH.gold], ["기존 참여", r.old, CH.blue]])}
+        ${hbarList([["설문 참여", r.n], ["처음 참여(가입)", r.newbies], ["기존 참여 학생", r.old]], r.n, CH.blue)}</figure>
+    </div>
+    <h2 class="fh1">설문 결과</h2>
+    <div class="fqg">${qs.map(q => qBars(q, CH.blue)).join("")}</div>
+    <h2 class="fh1">성과 및 개선점</h2>
+    <h3 class="fh2">성과</h3><ul class="fl">${auto.map(l => `<li>${l.replace(/<\/?b>/g, "")}</li>`).concat(lines(f.achieve).map(l => `<li>${esc(l)}</li>`)).join("")}</ul>
+    ${lines(f.improve).length ? `<h3 class="fh2">개선점</h3><ul class="fl">${lines(f.improve).map(l => `<li>${esc(l)}</li>`).join("")}</ul>` : ""}
+    <p class="fnote">※ 숫자는 카드도감 관리자 데이터 기준(${frDate(Date.now())}). 처음 참여 = 이벤트 기간에 카드도감에 가입하고 설문에 답한 학생.</p>
+    <div class="fend">— 끝 —</div>
+    </td></tr></tbody></table></article>`;
+}
+function evEditorHTML(id) {
+  const evs = evList(), f = evLoad(id);
+  const ta = (k, label, rows, hint) => `<label class="fre"><span>${label}${hint ? ` <i>${hint}</i>` : ""}</span><textarea id="ev_${k}" rows="${rows}">${esc(f[k])}</textarea></label>`;
+  return `<div class="panel">
+    <div class="ph"><h2>이벤트별 보고서</h2><span class="sub">기간 설문을 연 이벤트마다 따로 만듭니다 · 숫자·그래프는 자동</span>
+      <div class="right"><button class="btn sm" id="repprint">인쇄 · PDF로 저장</button><button class="btn gh sm" id="rephtml">HTML로 저장</button></div></div>
+    <div class="pb">
+      <div class="frm" style="margin-bottom:10px">${evs.map(e => `<button class="btn sm ${e.id === id ? "" : "gh"}" data-evrep="${e.id}">${esc(evLoad(e.id).name)}</button>`).join("") || `<span class="note">응답이 있는 기간 설문이 없습니다.</span>`}</div>
+      ${evs.length ? `<details class="fred" ${V.evOpen ? "open" : ""} id="evred"><summary>보고서 글 고치기 (이벤트명·장소·내용·성과·개선점)</summary>
+        <div class="fregrid">
+          <label class="fre"><span>이벤트명</span><input id="ev_name" value="${esc(f.name)}"></label>
+          <label class="fre"><span>장소</span><input id="ev_place" value="${esc(f.place)}"></label>
+          ${ta("desc", "내용", 3)}${ta("achieve", "성과 (추가)", 3, "자동 성과 아래에 붙습니다")}${ta("improve", "개선점", 3, "한 줄에 하나 · 비워 두면 빠짐")}
+        </div>
+        <div class="frm" style="margin-top:8px"><button class="btn gh sm" id="ev_reset">기본 문안으로 되돌리기</button><span class="note">이 컴퓨터에 자동 저장됩니다</span></div>
+      </details>` : ""}
+    </div></div>`;
+}
+function bindEventEditor(id) {
+  app.querySelectorAll("[data-evrep]").forEach(b => b.onclick = () => { V.evId = b.dataset.evrep; render(); });
+  $("evred") && ($("evred").ontoggle = e => { V.evOpen = e.currentTarget.open; });
+  let tmr = 0;
+  const keys = ["name", "place", "desc", "achieve", "improve"];
+  const redraw = () => {
+    const o = {}; keys.forEach(k => { const el = $("ev_" + k); if (el) o[k] = el.value; }); evSave(id, o);
+    clearTimeout(tmr); tmr = setTimeout(() => { const el = $("report"); if (el) el.outerHTML = eventReportHTML(id); }, 250);
+  };
+  keys.forEach(k => { const el = $("ev_" + k); if (el) el.oninput = redraw; });
+  $("ev_reset") && ($("ev_reset").onclick = () => { if (!confirm("고친 글을 지우고 기본 문안으로 되돌릴까요?")) return;
+    try { const all = JSON.parse(localStorage.getItem(EV_KEY) || "{}") || {}; delete all[id]; localStorage.setItem(EV_KEY, JSON.stringify(all)); } catch (e) {} render(); });
+}
+
+/* 통합 보고서: 날짜별 누적 참여 추이 (+ 이벤트 표시) */
+function growthChart(endMs) {
+  const end = kstYmd(endMs), days = dayRange(EVENT_START, end);
+  const marks = [];
+  evList().forEach(e => { const i = days.indexOf(e.from); if (i >= 0) marks.push({ i, label: evLoad(e.id).name.split(" (")[0] }); });
+  const tabsP = D.proofs.filter(p => p.key === "tabs");
+  if (tabsP.length) { const i = days.indexOf("2026-11-10"); if (i >= 0 && !marks.some(m => m.i === i)) marks.push({ i, label: "더미래페스티벌 부스" }); }
+  marks.sort((a, b) => a.i - b.i);
+  return lineChart({ H: 215, title: "카드도감 참여 학생 누적 추이", sub: `${mdShort(EVENT_START)} ~ ${mdShort(end)} · 날짜별 누적`, days, marks,
+    series: [{ name: "누적 참여 학생(명)", vals: cumByDay(days, D.students.map(x => x.created)), color: CH.blue, area: true },
+             { name: "누적 인증 건수(반려 제외)", vals: cumByDay(days, D.proofs.filter(p => p.status !== "no").map(p => p.at)), color: CH.gold }] });
+}
+
 function finalReportHTML() {
   const r = reportData(), k = r.k, f = frLoad(), cl = Number(D.meta.closed) || 0;
   const sumP = key => r.prog.reduce((a, p) => a + p[key], 0);
@@ -1959,6 +2172,7 @@ function finalReportHTML() {
   const note = t => `<p class="fnote">※ ${t}</p>`;
   const rate = p => { const o = r.rp[p.name]; return o && o.n ? `${(o.sum / o.n).toFixed(1)} (${o.n}명)` : "-"; };
   const hasBooth = !!(r.booth.tabs || r.booth.quiz);
+  const evs = evList().map(e => ({ e, f: evLoad(e.id), d: evData(e) }));
   const R = Object.assign({ welcome: 5, quiz: 5, invited: 5, referrer: 5 }, REWARD);
   const period = `${frYmd(EVENT_START)} ~ ${cl ? frDate(cl) : frDate(r.now) + " (운영 중)"}`;
   const left = (D.exchanges || []).filter(x => exWaiting(x) && !exBroken(x));
@@ -1967,7 +2181,7 @@ function finalReportHTML() {
   /* 표지 + 기본 정보 + 성과 요약 */
   const cover = `<div class="fcov">
       <div class="forg">미래융합교육혁신원 등대팀(Lighthouse Team) 20기</div>
-      <h1>「딩글이 카드도감」 운영 결과보고서</h1>
+      <h1>「딩글이 카드도감」 최종 통합 결과보고서</h1>
       <div class="fsubt">학습지원 프로그램 연계 참여 독려 이벤트</div>
     </div>
     ${ft(["구분", "내용"], [
@@ -1985,6 +2199,7 @@ function finalReportHTML() {
       <div><span>활동 완료 인증</span><b>${KO(sumP("done"))}<em>건</em></b><small>신청 → 완료 ${convAll}%</small></div>
       <div><span>굿즈 지급</span><b>${KO(k.exDone)}<em>개</em></b><small>${left.length ? "미수령 " + left.length + "건" : "전원 수령"}</small></div>
     </div>
+    ${growthChart(cl || r.now)}
     <ol class="fsum">
       <li>운영 기간 중 <b>${KO(k.total)}명</b>이 참여했으며, 이 중 <b>${KO(k.proofStu)}명(${PCT(k.proofStu, k.total)}%)</b>이 팔로우·TABS·학습지원 프로그램 인증을 1회 이상 함.</li>
       <li>학습지원 프로그램 <b>신청 인증 ${KO(sumP("apply"))}건</b>(${KO(k.applyStu)}명), <b>활동 완료 인증 ${KO(sumP("done"))}건</b>(${KO(k.doneStu)}명) — 신청한 학생의 ${convAll}%가 활동 완료까지 인증함.</li>
@@ -2028,23 +2243,29 @@ function finalReportHTML() {
   const boothRows = hasBooth ? [["전기손난로 (TABS 사전 인증)", r.booth.hand + "개", f.boothPrice.hand], ["인형 키링 (프로그램 퀴즈)", r.booth.quiz + "개", f.boothPrice.key]] : [];
   const s2 = `${H1("Ⅱ", "추진 실적")}
     ${H2(1, "참여 현황")}
-    ${ft(["구분", "인원", "참여 학생 대비"], funnel.map(([l, n]) => [l, KO(n) + "명", PCT(n, k.total) + "%"]), null, "fnum")}
+    <figure class="fchart"><figcaption><b>참여 단계별 인원</b><small>참여 학생 대비 비율</small></figcaption>${hbarList(funnel, k.total, CH.blue)}</figure>
     ${note("인증은 반려되지 않은 것만 셈. 한 학생이 여러 인증을 할 수 있음." + r.qs.filter(q => q.kind === "poll" && q.meta && q.meta.newbies).reduce((a, q) => a.some(x => x.id === q.meta.id) ? a : a.concat(q.meta), [])
       .map(m => ` 참여 학생에는 '${m.title}'(${frYmd(m.from)}) 때 처음 들어온 ${m.newbies}명이 포함됨.`).join(""))}
     <div class="r3 fcharts">${miniChart(r.weeks, "join", "주차별 신규 참여", "#2F5BD3")}${miniChart(r.weeks, "proof", "주차별 인증 제출", "#E3A008")}${miniChart(r.weeks, "quiz", "주차별 퀴즈 설문 응답", "#18A36B")}</div>
     ${H2(2, "학습지원 프로그램 연계 실적")}
+    ${barChart({ title: "프로그램별 신청·완료 인증", sub: "명", long: true, cats: r.prog.map(p => progShort(p.name)), series: [{ name: "신청 인증", vals: r.prog.map(p => p.apply), color: CH.blue }, { name: "활동 완료 인증", vals: r.prog.map(p => p.done), color: CH.green }] })}
     ${ft(["프로그램", "신청 인증", "활동 완료 인증", "신청 후 완료", "전환율", "만족도(5점)"],
       r.prog.map(p => [esc(progShort(p.name)), p.apply + "명", p.done + "명", p.both + "명", p.apply ? p.conv + "%" : "-", rate(p)]),
       ["합계", sumP("apply") + "건", sumP("done") + "건", sumP("both") + "건", convAll + "%", k.rateN ? `${k.rateAvg} (${k.rateN}명)` : "-"], "fnum")}
     ${note("전환율 = 같은 프로그램을 신청 인증한 학생 중 활동 완료까지 인증한 비율. 인증 수치는 학생이 카드도감에 올린 화면 캡처를 등대팀이 확인한 기준임.")}
     ${H2(3, "굿즈 지급 실적")}
+    ${barChart({ title: "등급별 완성 학생과 굿즈 지급", sub: "굿즈는 1인 1개(가장 높은 등급)라 지급 수가 완성 학생보다 적을 수 있음", cats: TIER_KEYS.map(t => t + " " + TIERS[t].word), series: [{ name: "완성 학생", vals: TIER_KEYS.map(t => r.exT.find(z => z.t === t).ready), color: CH.purple }, { name: "지급 완료", vals: TIER_KEYS.map(t => r.exT.find(z => z.t === t).done), color: CH.gold }], H: 200 })}
     ${ft(["등급", "완성 학생", "지급 완료", "미수령", ...(f.showCost ? ["단가(원)", "금액(원)"] : [])], goodsRows, goodsSum, "fnum")}
     ${note("완성 학생 = 그 등급 카드를 모두 모은 학생(인증 기준 미준수로 제외된 학생 제외). 굿즈는 학생 1명당 1개." + (f.showCost ? " 금액 = 지급 완료 × 단가." : ""))}
     ${hasBooth ? `${H2(4, "더미래페스티벌 부스 이벤트 (2026. 11. 10.)")}
       ${ft(["구분", "실적", ...(boothRows.some(b => b[2]) && f.showCost ? ["금액(원)"] : [])],
         [["TABS 설문 인증", r.booth.tabs + "명 (사전 " + r.booth.pre + "명)", ...(boothRows.some(b => b[2]) && f.showCost ? ["-"] : [])],
          ...boothRows.map(b => [b[0] + " 지급", b[1], ...(boothRows.some(z => z[2]) && f.showCost ? [b[2] ? WON(Number(b[2]) * parseInt(b[1], 10)) : "-"] : [])])], null, "fnum")}
-      ${note("준비 수량(전기손난로 30개 · 인형 키링 155개)을 모두 지급함.")}` : ""}`;
+      ${note("준비 수량(전기손난로 30개 · 인형 키링 155개)을 모두 지급함.")}` : ""}
+    ${evs.length ? `${H2(hasBooth ? 5 : 4, "기간 설문 이벤트 성과")}
+      ${barChart({ title: "이벤트별 참여 인원", sub: "명", long: true, cats: evs.map(e => e.f.name.split(" (")[0]), series: [{ name: "설문 참여", vals: evs.map(e => e.d.n), color: CH.blue }, { name: "처음 참여(가입)", vals: evs.map(e => e.d.newbies), color: CH.gold }], H: 200 })}
+      ${ft(["이벤트", "일시", "설문 참여", "처음 참여", "참여 학생 변화"], evs.map(e => [esc(e.f.name), e.e.from === e.e.until ? frYmd(e.e.from) : frYmd(e.e.from) + " ~ " + frYmd(e.e.until).replace(/^\d+\. /, ""), KO(e.d.n) + "명", KO(e.d.newbies) + "명", `${KO(e.d.before)} → ${KO(e.d.after)}명 (+${KO(e.d.after - e.d.before)})`]), null, "fnum")}
+      ${note("이벤트마다 자세한 결과는 ‘이벤트별 보고서’에 따로 정리함.")}` : ""}`;
 
   /* Ⅲ. 설문 결과 */
   const qblock = q => { const opts = Object.keys(q.cnt).sort((a, b) => q.cnt[b] - q.cnt[a]); const tot = q.multi ? q.n : opts.reduce((a, o) => a + q.cnt[o], 0);
@@ -2061,8 +2282,8 @@ function finalReportHTML() {
       return groups.map((g, gi) => { const m = g.meta || {};
         return `<h4 class="fh3">${"가나다라마바"[gi] || gi + 1}. ${esc(m.title || "기간 설문")} <small>(${m.from ? frYmd(m.from) + (m.until && m.until !== m.from ? " ~ " + frYmd(m.until).replace(/^\d+\. /, "") : "") + ", " : ""}참여 ${KO(m.people || 0)}명${m.cards ? `, 참여 카드 ${m.cards}장` : ""})</small></h4>
           ${m.newbies ? `<p class="fnote">이 설문 기간에 처음 참여(가입)한 학생 ${KO(m.newbies)}명 포함.</p>` : ""}
-          <div class="fqg">${g.list.map(qblock).join("")}</div>`; }).join(""); })()}` : ""}
-    ${weekly.length ? `${H2(polls.length ? 2 : 1, "퀴즈 참여 후 한 문항 설문")}<div class="fqg">${weekly.map(qblock).join("")}</div>
+          <div class="fqg">${g.list.map(q => qBars(q, CH.blue)).join("")}</div>`; }).join(""); })()}` : ""}
+    ${weekly.length ? `${H2(polls.length ? 2 : 1, "퀴즈 참여 후 한 문항 설문")}<div class="fqg">${weekly.map(q => qBars(q, CH.green)).join("")}</div>
       ${note("퀴즈를 푼 학생에게 회차마다 다른 문항을 한 개씩 물었음(응답 선택). 문항별 응답 수가 다름.")}` : ""}`;
 
   /* Ⅳ. 성과 및 개선 방향 */
@@ -2083,7 +2304,7 @@ function finalReportHTML() {
     ${ft(["인증 항목", "제출", "승인", "검토 전", "반려", "반려율"], r.pr.map(x => { const ps = x.label.split(" · "), suf = ps.length > 1 ? ps.pop() : ""; return [esc(progShort(ps.join(" · ")) + (suf ? " · " + suf : "")), x.n, x.ok, x.wait, x.no, PCT(x.no, x.n) + "%"]; }),
       ["합계", ...["n", "ok", "wait", "no"].map(q => r.pr.reduce((a, x) => a + x[q], 0)), PCT(r.pr.reduce((a, x) => a + x.no, 0), r.pr.reduce((a, x) => a + x.n, 0)) + "%"], "fnum fsm")}` : ""}`;
 
-  return `<article class="rep fin" id="report"><table class="rpage"><thead><tr><td><div class="rrh"><span>「딩글이 카드도감」 운영 결과보고서</span><span>미래융합교육혁신원 등대팀 20기</span></div></td></tr></thead>
+  return `<article class="rep fin" id="report"><table class="rpage"><thead><tr><td><div class="rrh"><span>「딩글이 카드도감」 최종 통합 결과보고서</span><span>미래융합교육혁신원 등대팀 20기</span></div></td></tr></thead>
     <tfoot><tr><td><div class="rrf"></div></td></tr></tfoot><tbody><tr><td class="rbody">
     ${cover}${s1}${s2}${s3}${s4}${ap}
     <div class="fend">— 끝 —</div>
@@ -2118,14 +2339,25 @@ const FINAL_CSS = `
 .fkpi div{padding:12px 10px;text-align:center;border-left:1px solid #C9D0DC;display:flex;flex-direction:column;gap:2px}.fkpi div:first-child{border-left:0}
 .fkpi span{font-size:11.5px;color:#4A5568;font-weight:600}.fkpi b{font-size:24px;color:#0F1F3D;line-height:1.2}.fkpi b em{font-style:normal;font-size:13px;margin-left:2px}
 .fkpi small{font-size:11px;color:#5A6478}
-.fsum{margin:0;padding:12px 16px 12px 34px;background:#F6F8FB;border:1px solid #DCE1EA}.fsum li{margin:4px 0}
+.rep .fsum{display:block;margin:0;padding:12px 16px 12px 34px;background:#F6F8FB;border:1px solid #DCE1EA}.fsum li{margin:4px 0}
 .fcharts{margin:10px 0 4px}
 .fqg{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px}.fq{break-inside:avoid;page-break-inside:avoid}
 .fq h4{font-size:12.5px;margin:8px 0 2px;color:#0F1F3D}
 .rep.fin .fh3{font-size:13px;color:#0F1F3D;margin:12px 0 4px;break-after:avoid;page-break-after:avoid}.rep.fin .fh3 small{font-weight:500;color:#4A5568}.fq h4 small{font-weight:500;color:#5A6478}
 .fend{text-align:center;margin:26px 0 6px;font-size:12px;color:#4A5568;letter-spacing:.2em}
+.fchart{margin:10px 0 12px;padding:10px 12px 6px;border:1px solid #DCE1EA;border-radius:8px;break-inside:avoid;page-break-inside:avoid;background:#fff}
+.fchart figcaption{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-bottom:4px;font-size:12px}
+.fchart figcaption b{color:#0F1F3D;font-size:12.5px}.fchart figcaption small{color:#5A6478;font-size:10.5px}
+.fleg{margin-left:auto;display:flex;gap:10px;font-size:10.5px;color:#4A5568}.fleg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.fhb{margin:4px 0}.fhr{display:grid;grid-template-columns:minmax(0,46%) 1fr 78px;gap:8px;align-items:center;font-size:11.5px;margin:3px 0}
+.fhl{color:#2B3446;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fhr.fhtop .fhl{font-weight:800;color:#0F1F3D}
+.fht{height:11px;background:#EEF1F6;border-radius:3px;overflow:hidden}.fht i{display:block;height:100%;border-radius:3px;opacity:.55}.fhr.fhtop .fht i{opacity:1}
+.fhn{text-align:right;font-weight:700;white-space:nowrap;color:#0F1F3D}.fhn small{display:inline-block;min-width:30px;margin-left:4px;font-weight:500;color:#7A8599;font-size:10px}
+.fsplit{display:flex;height:30px;border-radius:6px;overflow:hidden;margin:6px 0 10px}.fsplit i{display:flex;align-items:center;justify-content:center;min-width:0}
+.fsplit span{color:#fff;font-size:10.5px;font-weight:700;white-space:nowrap;overflow:hidden;padding:0 6px}
+.fc2{display:grid;grid-template-columns:1.15fr 1fr;gap:12px;align-items:start}.fc2 .fchart{margin:6px 0}
 @media print{ .rep.fin .fbrk{break-before:page;page-break-before:always;margin-top:0} }
-@media (max-width:640px){ .fkpi{grid-template-columns:1fr 1fr} .fkpi div:nth-child(3){border-left:0} .fqg{grid-template-columns:1fr} .rep.fin .fcov h1{font-size:20px} .ft{display:block;overflow-x:auto} }
+@media (max-width:640px){ .fc2{grid-template-columns:1fr} .fleg{margin-left:0} .fkpi{grid-template-columns:1fr 1fr} .fkpi div:nth-child(3){border-left:0} .fqg{grid-template-columns:1fr} .rep.fin .fcov h1{font-size:20px} .ft{display:block;overflow-x:auto} }
 `;
 /* 편집 칸 (화면에만 보임) */
 function frEditorHTML() {
@@ -2260,13 +2492,16 @@ const REPORT_CSS = `
 
 /* 마감하면 최종 결과보고서가 기본, 마감 전에는 운영 현황 보고서가 기본 (위 버튼으로 바꿔 볼 수 있음) */
 const repFinal = () => V.repMode ? V.repMode === "final" : !!Number(D.meta.closed);
+const repEvent = () => V.repMode === "event";
+const evCur = () => { const l = evList(); if (!l.some(e => e.id === V.evId)) V.evId = l.length ? l[l.length - 1].id : ""; return V.evId; };
 function viewReport() {
-  const fin = repFinal();
+  const fin = repFinal(), evm = repEvent();
   const sw = `<div class="frm repsw" style="margin:0 0 10px">
-      <button class="btn sm ${fin ? "" : "gh"}" data-repmode="final">최종 결과보고서${Number(D.meta.closed) ? "" : " (미리보기)"}</button>
-      <button class="btn sm ${fin ? "gh" : ""}" data-repmode="ops">운영 현황 보고서</button></div>`;
+      <button class="btn sm ${fin ? "" : "gh"}" data-repmode="final">최종 통합 보고서${Number(D.meta.closed) ? "" : " (미리보기)"}</button>
+      <button class="btn sm ${evm ? "" : "gh"}" data-repmode="event">이벤트별 보고서</button>
+      <button class="btn sm ${fin || evm ? "gh" : ""}" data-repmode="ops">운영 현황 보고서</button></div>`;
   return shell(`${sw}
-    ${fin ? frEditorHTML() : `<div class="panel"><div class="ph"><h2>운영 현황 보고서</h2>
+    ${evm ? evEditorHTML(evCur()) : fin ? frEditorHTML() : `<div class="panel"><div class="ph"><h2>운영 현황 보고서</h2>
       <span class="sub">지금 불러온 데이터로 만든 보고서입니다. 최신으로 만들려면 [새로고침] 후 다시 보세요.</span>
       <div class="right"><button class="btn sm" id="repprint">인쇄 · PDF로 저장</button><button class="btn gh sm" id="rephtml">HTML로 저장</button></div></div></div>`}
     <style>${REPORT_CSS}${FINAL_CSS}
@@ -2276,13 +2511,15 @@ function viewReport() {
       @media (max-width:760px){ .fregrid{grid-template-columns:1fr} }
       @media print{ body{background:#fff!important} .top,.tabbar,.panel,.toast,.vwarn,.repsw{display:none!important}
         .wrap{padding:0!important;max-width:none!important} }</style>
-    ${fin ? finalReportHTML() : reportHTML()}`);
+    ${evm ? eventReportHTML(evCur()) : fin ? finalReportHTML() : reportHTML()}`);
 }
 function bindReport() {
-  const fin = repFinal();
-  const fname = () => (fin ? "딩글이카드도감_운영결과보고서_" : "딩글이카드도감_운영현황보고서_") + new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10).replace(/-/g, "");
+  const fin = repFinal(), evm = repEvent();
+  const day = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10).replace(/-/g, "");
+  const fname = () => evm ? (evLoad(evCur()).name.replace(/[\\/:*?"<>|()\s]+/g, "_").replace(/_+$/, "") + "_결과보고서_" + day())
+    : (fin ? "딩글이카드도감_최종통합보고서_" : "딩글이카드도감_운영현황보고서_") + day();
   app.querySelectorAll("[data-repmode]").forEach(b => b.onclick = () => { V.repMode = b.dataset.repmode; render(); });
-  if (fin) bindFinalEditor();
+  if (evm) bindEventEditor(evCur()); else if (fin) bindFinalEditor();
   $("repprint") && ($("repprint").onclick = () => {
     const t0 = document.title; document.title = fname();          // 'PDF로 저장' 기본 파일 이름
     const back = () => { document.title = t0; window.removeEventListener("afterprint", back); };
